@@ -25,12 +25,7 @@ Screenshots will be added in the folder below as the interface evolves:
 - PyMuPDF, pypdf, reportlab, Pillow
 - python-docx, openpyxl, pandas
 
-## 🚀 Installation
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
 ```
 
 ### Run the application
