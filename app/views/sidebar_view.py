@@ -32,15 +32,26 @@ class SidebarView(QWidget):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
 
-        title = QLabel("Ferramentas")
+        title = QLabel("SmartFile")
         title.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        title.setStyleSheet("font-weight:bold;")
+        title.setStyleSheet("font-weight:bold;font-size:18px;")
+        title.setObjectName("sidebarTitle")
         layout.addWidget(title)
 
+        subtitle = QLabel("Mini GED")
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        subtitle.setObjectName("sidebarSubtitle")
+        layout.addWidget(subtitle)
+
+        section = QLabel("FERRAMENTAS")
+        section.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        section.setObjectName("sidebarSection")
+        layout.addWidget(section)
+
+        self._add_button(layout, "Documentos", "ged")
         self._add_button(layout, "Converter", "converter")
         self._add_button(layout, "PDF Tools", "pdf")
         self._add_button(layout, "Scanner", "scanner")
-        self._add_button(layout, "Mini GED", "ged")
 
         layout.addStretch()
 
@@ -50,6 +61,7 @@ class SidebarView(QWidget):
     def _add_button(self, layout, text: str, tool_name: str):
 
         button = QPushButton(text)
+        button.setObjectName("sidebarButton")
 
         button.setSizePolicy(
             QSizePolicy.Policy.Expanding,
@@ -78,8 +90,10 @@ class SidebarView(QWidget):
         for name, button in self._buttons.items():
 
             if name == tool_name:
-                button.setStyleSheet(
-                    "background-color:#2e7d32;color:white;"
-                )
+                button.setProperty("selected", True)
             else:
-                button.setStyleSheet("")
+                button.setProperty("selected", False)
+
+        for button in self._buttons.values():
+            button.style().unpolish(button)
+            button.style().polish(button)

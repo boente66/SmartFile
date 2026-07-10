@@ -25,7 +25,7 @@ class MainView(QMainWindow):
     # Configuração da janela
     # -------------------------
     def _setup_window(self):
-        self.setWindowTitle("FileConverte")
+        self.setWindowTitle("SmartFile")
         self.resize(1200, 800)
 
     # -------------------------
@@ -43,9 +43,11 @@ class MainView(QMainWindow):
         # Sidebar
         self.sidebar = SidebarView()
         self.sidebar.setFixedWidth(220)
+        self.sidebar.setObjectName("sidebar")
 
         # Workspace
         self.workspace = WorkspaceView()
+        self.workspace.setObjectName("workspace")
 
         layout.addWidget(self.sidebar)
         layout.addWidget(self.workspace, 1)

@@ -33,18 +33,24 @@ class DocumentView(QWidget):
         self._setup_ui()
 
     def _setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setSpacing(10)
+        # main two-column layout: list (left) + detail panel (right)
+        main_layout = QHBoxLayout(self)
+        main_layout.setSpacing(12)
+
+        # Left column: header, controls, actions, table
+        left = QWidget()
+        left_layout = QVBoxLayout(left)
+        left_layout.setSpacing(10)
 
         title = QLabel("Mini GED local")
-        title.setStyleSheet("font-size:18px;font-weight:bold;")
-        layout.addWidget(title)
+        title.setObjectName("title")
+        left_layout.addWidget(title)
 
         intro = QLabel(
             "Importe documentos, consulte o histórico e acesse arquivos locais sem depender de rede ou nuvem."
         )
         intro.setWordWrap(True)
-        layout.addWidget(intro)
+        left_layout.addWidget(intro)
 
         controls = QHBoxLayout()
         self.search_edit = QLineEdit()
@@ -58,10 +64,11 @@ class DocumentView(QWidget):
         self.type_combo.currentTextChanged.connect(self._emit_filter)
         controls.addWidget(QLabel("Tipo"))
         controls.addWidget(self.type_combo)
-        layout.addLayout(controls)
+        left_layout.addLayout(controls)
 
         actions = QHBoxLayout()
         self.btn_import = QPushButton("Importar")
+        self.btn_import.setObjectName("primary")
         self.btn_import.clicked.connect(self.import_requested.emit)
         self.btn_open = QPushButton("Abrir")
         self.btn_open.clicked.connect(self._emit_open)
@@ -80,10 +87,10 @@ class DocumentView(QWidget):
         actions.addWidget(self.btn_pdf)
         actions.addWidget(self.btn_delete)
         actions.addWidget(self.btn_favorite)
-        layout.addLayout(actions)
+        left_layout.addLayout(actions)
 
         self.status_label = QLabel("Nenhum documento importado")
-        layout.addWidget(self.status_label)
+        left_layout.addWidget(self.status_label)
 
         self.documents_table = QTableWidget(0, 5)
         self.documents_table.setHorizontalHeaderLabels(["Nome", "Tipo", "Categoria", "Tamanho", "Favorito"])
@@ -91,7 +98,27 @@ class DocumentView(QWidget):
         self.documents_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.documents_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.documents_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        layout.addWidget(self.documents_table, 1)
+        left_layout.addWidget(self.documents_table, 1)
+
+        # Right column: detail panel
+        from PyQt6.QtWidgets import QFrame, QTextEdit, QVBoxLayout as _VLayout
+
+        detail = QFrame()
+        detail.setObjectName("detailPanel")
+        detail_layout = _VLayout(detail)
+        detail_layout.setContentsMargins(12, 12, 12, 12)
+
+        self.detail_title = QLabel("Detalhes do documento")
+        self.detail_title.setStyleSheet("font-weight:600;")
+        detail_layout.addWidget(self.detail_title)
+
+        self.detail_text = QTextEdit()
+        self.detail_text.setReadOnly(True)
+        detail_layout.addWidget(self.detail_text, 1)
+
+        # assemble
+        main_layout.addWidget(left, 3)
+        main_layout.addWidget(detail, 1)
 
     def set_documents(self, documents: list[DocumentModel]):
         self.documents_table.setRowCount(len(documents))
@@ -106,6 +133,23 @@ class DocumentView(QWidget):
                 self.documents_table.item(row_index, column).setData(Qt.ItemDataRole.UserRole, document.id)
 
         self.documents_table.resizeColumnsToContents()
+
+    def show_document_details(self, document: DocumentModel | None):
+        """Populate the right-side detail panel for a document."""
+        if document is None:
+            self.detail_title.setText("Detalhes do documento")
+            self.detail_text.setPlainText("")
+            return
+
+        self.detail_title.setText(document.name)
+        details = [
+            f"Nome: {document.name}",
+            f"Caminho: {document.path}",
+            f"Tipo: {document.file_type}",
+            f"Tamanho: {self._format_size(document.size)}",
+            f"Favorito: {'Sim' if document.favorite else 'Não'}",
+        ]
+        self.detail_text.setPlainText("\n".join(details))
 
     def set_status(self, text: str):
         self.status_label.setText(text)
