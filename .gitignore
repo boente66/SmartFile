@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+*.so
+*.db
+*.sqlite3
+.pytest_cache/
+.venv/
+venv/
+build/
+dist/
+*.log
+.DS_Store
+.vscode/
+assets/screenshots/*.png
+assets/screenshots/*.jpg
+assets/screenshots/*.jpeg
+assets/screenshots/*.webp
