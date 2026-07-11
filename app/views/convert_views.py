@@ -12,6 +12,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import pyqtSignal as Signal
 
+from app.ui.icon_provider import IconProvider
+
 
 class ConvertView(QWidget):
     """
@@ -47,6 +49,7 @@ class ConvertView(QWidget):
         self.input_edit = QLineEdit()
 
         btn_input = QPushButton("Abrir")
+        IconProvider.apply(btn_input, "open")
         btn_input.clicked.connect(self._browse_input)
 
         input_layout = QHBoxLayout()
@@ -85,6 +88,7 @@ class ConvertView(QWidget):
         self.output_edit = QLineEdit()
 
         btn_output = QPushButton("Salvar como")
+        IconProvider.apply(btn_output, "save")
         btn_output.clicked.connect(self._browse_output)
 
         output_layout = QHBoxLayout()
@@ -99,6 +103,7 @@ class ConvertView(QWidget):
         # -------------------------
 
         btn_convert = QPushButton("Converter")
+        IconProvider.apply(btn_convert, "converter")
         btn_convert.setFixedHeight(36)
         btn_convert.clicked.connect(self._request_conversion)
 

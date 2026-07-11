@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app.models.document_model import DocumentModel
+from app.ui.icon_provider import IconProvider
 
 
 class DocumentView(QWidget):
@@ -71,16 +72,22 @@ class DocumentView(QWidget):
         actions = QHBoxLayout()
         self.btn_import = QPushButton("Importar")
         self.btn_import.setObjectName("primary")
+        IconProvider.apply(self.btn_import, "import")
         self.btn_import.clicked.connect(self.import_requested.emit)
         self.btn_open = QPushButton("Abrir")
+        IconProvider.apply(self.btn_open, "open")
         self.btn_open.clicked.connect(self._emit_open)
         self.btn_convert = QPushButton("Converter")
+        IconProvider.apply(self.btn_convert, "converter")
         self.btn_convert.clicked.connect(self._emit_convert)
         self.btn_pdf = QPushButton("PDF Tools")
+        IconProvider.apply(self.btn_pdf, "pdf")
         self.btn_pdf.clicked.connect(self._emit_pdf_tools)
         self.btn_delete = QPushButton("Excluir")
+        IconProvider.apply(self.btn_delete, "trash")
         self.btn_delete.clicked.connect(self._emit_delete)
         self.btn_favorite = QPushButton("Favorito")
+        IconProvider.apply(self.btn_favorite, "star")
         self.btn_favorite.clicked.connect(self._emit_favorite)
 
         actions.addWidget(self.btn_import)

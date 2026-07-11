@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
 from app.views.sidebar_view import SidebarView
 from app.views.workspace_view import WorkspaceView
 from app.ui.progress_manager import ProgressManager
+from app.ui.icon_provider import IconProvider
 
 
 class MainView(QMainWindow):
@@ -26,6 +27,7 @@ class MainView(QMainWindow):
     # -------------------------
     def _setup_window(self):
         self.setWindowTitle("SmartFile")
+        self.setWindowIcon(IconProvider.icon("app"))
         self.resize(1200, 800)
 
     # -------------------------

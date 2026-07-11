@@ -5,6 +5,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import pyqtSignal as Signal, Qt, QSize
 from PyQt6.QtGui import QIcon
 
+from app.ui.icon_provider import IconProvider
+
 
 class ScanView(QWidget):
     """
@@ -102,12 +104,15 @@ class ScanView(QWidget):
         # -------------------------
 
         btn_scan = QPushButton("Escanear Página")
+        IconProvider.apply(btn_scan, "scan")
         btn_scan.clicked.connect(lambda: self.scan_requested.emit())
 
         btn_remove = QPushButton("Excluir Página")
+        IconProvider.apply(btn_remove, "trash")
         btn_remove.clicked.connect(self._request_remove)
 
         btn_save = QPushButton("Salvar PDF")
+        IconProvider.apply(btn_save, "save")
         btn_save.clicked.connect(lambda: self.save_pdf_requested.emit())
 
         layout.addWidget(btn_scan)

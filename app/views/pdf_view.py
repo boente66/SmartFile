@@ -7,6 +7,7 @@ from PyQt6.QtGui import QPixmap, QIcon
 from PyQt6.QtCore import Qt, pyqtSignal as Signal, QSize
 
 from app.views.widgets.preview_widget import PreviewWidget
+from app.ui.icon_provider import IconProvider
 
 
 class PDFView(QWidget):
@@ -53,12 +54,15 @@ class PDFView(QWidget):
         btn_layout = QHBoxLayout()
 
         btn_add = QPushButton("Abrir PDF")
+        IconProvider.apply(btn_add, "open")
         btn_add.clicked.connect(self._open_pdf)
 
         btn_remove = QPushButton("Excluir páginas")
+        IconProvider.apply(btn_remove, "trash")
         btn_remove.clicked.connect(self._request_remove)
 
         btn_save = QPushButton("Salvar PDF")
+        IconProvider.apply(btn_save, "save")
         btn_save.clicked.connect(self._request_save)
 
         btn_layout.addWidget(btn_add)

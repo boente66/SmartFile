@@ -5,7 +5,9 @@ from PyQt6.QtWidgets import (
     QLabel,
     QSizePolicy
 )
-from PyQt6.QtCore import pyqtSignal as Signal, Qt
+from PyQt6.QtCore import pyqtSignal as Signal, Qt, QSize
+
+from app.ui.icon_provider import IconProvider
 
 
 class SidebarView(QWidget):
@@ -62,6 +64,7 @@ class SidebarView(QWidget):
 
         button = QPushButton(text)
         button.setObjectName("sidebarButton")
+        IconProvider.apply(button, tool_name, QSize(20, 20))
 
         button.setSizePolicy(
             QSizePolicy.Policy.Expanding,
