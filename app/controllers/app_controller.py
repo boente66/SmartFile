@@ -39,7 +39,8 @@ class AppController:
         self.main_view.sidebar.tool_selected.connect(self.on_tool_selected)
 
         # Tela inicial
-        self.convert_controller.activate()
+        self.document_controller.activate()
+        self.main_view.sidebar.set_active_tool("documents")
 
     def on_tool_selected(self, tool_name: str):
         if tool_name == "converter":
@@ -48,5 +49,5 @@ class AppController:
             self.pdf_controller.activate()
         elif tool_name == "scanner":
             self.scan_controller.activate()
-        elif tool_name == "ged":
+        elif tool_name == "documents":
             self.document_controller.activate()

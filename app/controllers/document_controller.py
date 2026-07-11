@@ -38,12 +38,13 @@ class DocumentController:
         self.view.pdf_tools_requested.connect(self.on_pdf_tools_document)
         self.view.delete_requested.connect(self.on_delete_document)
         self.view.favorite_requested.connect(self.on_toggle_favorite)
+        self.view.document_selected.connect(self.on_document_selected)
 
     def _register_view(self):
-        self.workspace.register_view("ged", self.view)
+        self.workspace.register_view("documents", self.view)
 
     def activate(self):
-        self.workspace.show_view("ged")
+        self.workspace.show_view("documents")
         self.on_refresh_documents()
 
     def on_import_document(self):
@@ -84,6 +85,10 @@ class DocumentController:
         except Exception as exc:
             QMessageBox.critical(self.view, "Mini GED", str(exc))
 
+    def on_document_selected(self, document_id: int):
+        document = self.service.get_document(document_id)
+        self.view.show_document_details(document)
+
     def on_convert_document(self, document_id: int):
         document = self.service.get_document(document_id)
         if document is None:
@@ -93,8 +98,7 @@ class DocumentController:
             QMessageBox.warning(self.view, "Mini GED", "Módulo de conversão não está disponível.")
             return
 
-        self.convert_controller.activate()
-        self.convert_controller.view.input_edit.setText(document.path)
+        self.convert_controller.open_document(document.path)
         self.view.set_status(f"Arquivo enviado para conversão: {document.name}")
 
     def on_pdf_tools_document(self, document_id: int):
@@ -106,9 +110,8 @@ class DocumentController:
             QMessageBox.warning(self.view, "Mini GED", "Módulo de PDF Tools não está disponível.")
             return
 
-        self.pdf_controller.activate()
         if document.path.lower().endswith(".pdf"):
-            self.pdf_controller.on_open_pdf(document.path)
+            self.pdf_controller.open_document(document.path)
         else:
             QMessageBox.information(self.view, "Mini GED", "PDF Tools é indicado para arquivos PDF.")
         self.view.set_status(f"Arquivo enviado para PDF Tools: {document.name}")
@@ -135,7 +138,6 @@ class DocumentController:
     def on_toggle_favorite(self, document_id: int):
         try:
             document = self.service.toggle_favorite(document_id)
-            self.view.set_status("Favorito atualizado")
             self._refresh_documents()
             self.view.set_status(f"Favorito atualizado: {document.name}")
         except Exception as exc:
@@ -151,6 +153,7 @@ class DocumentController:
             documents = [document for document in documents if self._current_search.lower() in document.name.lower() or self._current_search.lower() in (document.category or "").lower()]
 
         self.view.set_documents(documents)
+        self.view.show_document_details(None)
         if not documents:
             self.view.set_status("Nenhum documento encontrado")
         else:

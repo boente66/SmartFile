@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, pyqtSignal as Signal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -11,22 +11,24 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
-    QFileDialog,
+    QFrame,
+    QTextEdit,
 )
 
 from app.models.document_model import DocumentModel
 
 
 class DocumentView(QWidget):
-    import_requested = Signal()
-    search_requested = Signal(str)
-    filter_requested = Signal(str)
-    refresh_requested = Signal()
-    open_requested = Signal(int)
-    convert_requested = Signal(int)
-    pdf_tools_requested = Signal(int)
-    delete_requested = Signal(int)
-    favorite_requested = Signal(int)
+    import_requested = pyqtSignal()
+    search_requested = pyqtSignal(str)
+    filter_requested = pyqtSignal(str)
+    refresh_requested = pyqtSignal()
+    document_selected = pyqtSignal(int)
+    open_requested = pyqtSignal(int)
+    convert_requested = pyqtSignal(int)
+    pdf_tools_requested = pyqtSignal(int)
+    delete_requested = pyqtSignal(int)
+    favorite_requested = pyqtSignal(int)
 
     def __init__(self):
         super().__init__()
@@ -98,14 +100,13 @@ class DocumentView(QWidget):
         self.documents_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.documents_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.documents_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.documents_table.itemSelectionChanged.connect(self._on_selection_changed)
         left_layout.addWidget(self.documents_table, 1)
 
         # Right column: detail panel
-        from PyQt6.QtWidgets import QFrame, QTextEdit, QVBoxLayout as _VLayout
-
         detail = QFrame()
         detail.setObjectName("detailPanel")
-        detail_layout = _VLayout(detail)
+        detail_layout = QVBoxLayout(detail)
         detail_layout.setContentsMargins(12, 12, 12, 12)
 
         self.detail_title = QLabel("Detalhes do documento")
@@ -119,6 +120,7 @@ class DocumentView(QWidget):
         # assemble
         main_layout.addWidget(left, 3)
         main_layout.addWidget(detail, 1)
+        self._set_document_actions_enabled(False)
 
     def set_documents(self, documents: list[DocumentModel]):
         self.documents_table.setRowCount(len(documents))
@@ -172,6 +174,19 @@ class DocumentView(QWidget):
 
     def _emit_search(self, text: str):
         self.search_requested.emit(text)
+
+    def _on_selection_changed(self):
+        document_id = self.selected_document_id()
+        self._set_document_actions_enabled(document_id is not None)
+        if document_id is not None:
+            self.document_selected.emit(document_id)
+
+    def _set_document_actions_enabled(self, enabled: bool):
+        self.btn_open.setEnabled(enabled)
+        self.btn_convert.setEnabled(enabled)
+        self.btn_pdf.setEnabled(enabled)
+        self.btn_delete.setEnabled(enabled)
+        self.btn_favorite.setEnabled(enabled)
 
     def _emit_filter(self, value: str):
         self.filter_requested.emit(value)

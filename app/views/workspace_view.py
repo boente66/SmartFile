@@ -6,6 +6,7 @@ class WorkspaceView(QWidget):
     Área central da aplicação.
 
     Responsável por exibir um módulo por vez:
+    - Documentos
     - Converter
     - PDF Tools
     - Scanner

@@ -48,7 +48,7 @@ class SidebarView(QWidget):
         section.setObjectName("sidebarSection")
         layout.addWidget(section)
 
-        self._add_button(layout, "Documentos", "ged")
+        self._add_button(layout, "Documentos", "documents")
         self._add_button(layout, "Converter", "converter")
         self._add_button(layout, "PDF Tools", "pdf")
         self._add_button(layout, "Scanner", "scanner")

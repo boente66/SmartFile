@@ -110,6 +110,9 @@ class ConvertView(QWidget):
     # UI Actions
     # -------------------------
 
+    def set_input_path(self, path: str):
+        self.input_edit.setText(path)
+
     def _browse_input(self):
 
         path, _ = QFileDialog.getOpenFileName(

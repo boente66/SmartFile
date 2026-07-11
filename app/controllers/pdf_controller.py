@@ -30,6 +30,11 @@ class PDFController:
     def activate(self):
         self.workspace.show_view("pdf")
 
+    def open_document(self, path: str):
+        """Abre o PDF Tools e carrega o documento informado."""
+        self.activate()
+        self.on_open_pdf(path)
+
     # -------------------------
     # Conexões
     # -------------------------

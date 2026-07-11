@@ -38,6 +38,11 @@ class ConvertController:
     def activate(self):
         self.workspace.show_view("converter")
 
+    def open_document(self, input_path: str):
+        """Abre o conversor com um documento previamente selecionado."""
+        self.view.set_input_path(input_path)
+        self.activate()
+
     # -------------------------
     # Solicitação de conversão
     # -------------------------
