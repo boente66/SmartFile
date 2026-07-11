@@ -24,7 +24,7 @@ class DOCService:
         convert(str(job.input_path), str(job.output_path))
 
         if progress:
-            progress(100, "DOCX convertido para PDF")
+            progress(90, "DOCX convertido para PDF")
 
     # -------------------------
     # DOCX → JPG
@@ -57,7 +57,7 @@ class DOCService:
                 image.save(output_file, "JPEG")
 
                 if progress:
-                    value = int(((i + 1) / total) * 100)
+                    value = 40 + int(((i + 1) / total) * 50)
                     progress(value, f"Convertendo página {i+1}/{total}")
 
         finally:

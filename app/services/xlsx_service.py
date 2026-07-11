@@ -27,7 +27,7 @@ class XLSXService:
             df.to_csv(job.output_path, index=False)
 
             if progress:
-                progress(100, "XLSX convertido para CSV")
+                progress(90, "XLSX convertido para CSV")
 
         except Exception as e:
             raise RuntimeError(f"Erro ao converter XLSX para CSV: {e}")

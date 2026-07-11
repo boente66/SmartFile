@@ -42,11 +42,11 @@ class TXTService:
                     y = height - 40
 
                 if progress:
-                    value = int(((i + 1) / total) * 100)
+                    value = 20 + int(((i + 1) / total) * 70)
                     progress(value, f"Processando linha {i+1}/{total}")
 
         c.drawText(text)
         c.save()
 
         if progress:
-            progress(100, "TXT convertido para PDF")
+            progress(90, "TXT convertido para PDF")

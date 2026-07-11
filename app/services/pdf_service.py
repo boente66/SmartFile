@@ -37,7 +37,7 @@ class PDFService:
             image.save(output_file, "JPEG")
 
             if progress:
-                value = int(((i + 1) / total) * 100)
+                value = 20 + int(((i + 1) / total) * 70)
                 progress(value, f"Convertendo página {i+1}/{total}")
 
     # -------------------------
@@ -62,4 +62,4 @@ class PDFService:
         converter.close()
 
         if progress:
-            progress(100, "PDF convertido para DOCX")
+            progress(90, "PDF convertido para DOCX")
