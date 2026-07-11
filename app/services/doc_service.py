@@ -9,14 +9,14 @@ from app.models.convert_job import ConvertJob
 
 class DOCService:
     """
-    Serviço responsável por conversões envolvendo DOC/DOCX.
+    Serviço responsável por conversões envolvendo DOCX.
     """
 
     # -------------------------
-    # DOC/DOCX → PDF
+    # DOCX → PDF
     # -------------------------
     @staticmethod
-    def convert_doc_to_pdf(job: ConvertJob, progress=None):
+    def convert_docx_to_pdf(job: ConvertJob, progress=None):
 
         if progress:
             progress(10, "Convertendo documento para PDF")
@@ -24,20 +24,20 @@ class DOCService:
         convert(str(job.input_path), str(job.output_path))
 
         if progress:
-            progress(100, "DOC convertido para PDF")
+            progress(100, "DOCX convertido para PDF")
 
     # -------------------------
-    # DOC/DOCX → JPG
+    # DOCX → JPG
     # -------------------------
     @staticmethod
-    def convert_doc_to_jpg(job: ConvertJob, progress=None):
+    def convert_docx_to_jpg(job: ConvertJob, progress=None):
 
         temp_pdf = job.output_path.with_suffix(".pdf")
 
         try:
 
             if progress:
-                progress(10, "Convertendo DOC para PDF")
+                progress(10, "Convertendo DOCX para PDF")
 
             convert(str(job.input_path), str(temp_pdf))
 

@@ -37,16 +37,16 @@ class ConvertService:
             PDFService.convert_pdf_to_docx(job, progress)
 
         # -------------------------
-        # DOC
+        # DOCX
         # -------------------------
 
-        elif key == "DOC->PDF":
-            progress(10, "Convertendo DOC para PDF")
-            DOCService.convert_doc_to_pdf(job, progress)
+        elif key == "DOCX->PDF":
+            progress(10, "Convertendo DOCX para PDF")
+            DOCService.convert_docx_to_pdf(job, progress)
 
-        elif key == "DOC->JPG":
-            progress(10, "Convertendo DOC para JPG")
-            DOCService.convert_doc_to_jpg(job, progress)
+        elif key == "DOCX->JPG":
+            progress(10, "Convertendo DOCX para JPG")
+            DOCService.convert_docx_to_jpg(job, progress)
 
         # -------------------------
         # PLANILHAS

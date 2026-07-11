@@ -62,7 +62,7 @@ class DocumentView(QWidget):
         controls.addWidget(self.search_edit, 1)
 
         self.type_combo = QComboBox()
-        self.type_combo.addItems(["Todos", "PDF", "DOC", "SPREADSHEET", "IMAGE", "TEXT", "OTHER"])
+        self.type_combo.addItems(["Todos", "PDF", "DOCX", "SPREADSHEET", "IMAGE", "TEXT", "OTHER"])
         self.type_combo.currentTextChanged.connect(self._emit_filter)
         controls.addWidget(QLabel("Tipo"))
         controls.addWidget(self.type_combo)

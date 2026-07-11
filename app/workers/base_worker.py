@@ -1,4 +1,4 @@
-from PyQt6.QtCore import QThread, pyqtSignal as Signal
+from PyQt6.QtCore import QThread, pyqtSignal
 
 
 class BaseWorker(QThread):
@@ -6,9 +6,9 @@ class BaseWorker(QThread):
     Worker base para tarefas longas.
     """
 
-    progress = Signal(int, str)
-    finished = Signal()
-    failed = Signal(str)
+    progress = pyqtSignal(int, str)
+    succeeded = pyqtSignal()
+    failed = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()

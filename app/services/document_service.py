@@ -125,7 +125,7 @@ class DocumentService:
         if extension in {".pdf"}:
             return "PDF"
         if extension in {".doc", ".docx"}:
-            return "DOC"
+            return "DOCX"
         if extension in {".xls", ".xlsx", ".csv"}:
             return "SPREADSHEET"
         if extension in {".jpg", ".jpeg", ".png", ".tiff", ".bmp"}:

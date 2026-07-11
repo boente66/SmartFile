@@ -85,27 +85,30 @@ class ConvertController:
                 source_format=source_format,
                 target_format=target_format
             )
+            job.validate()
 
             # -------------------------
             # Worker
             # -------------------------
 
-            self._worker = ConvertWorker(job)
+            worker = ConvertWorker(job)
+            self._worker = worker
 
             progress = self.main_view.progress
             progress.start("Convertendo")
 
-            self._worker.progress.connect(
+            worker.progress.connect(
                 lambda v, m: progress.update(v, m)
             )
 
-            self._worker.finished.connect(self._on_finished)
-            self._worker.failed.connect(self._on_failed)
+            worker.succeeded.connect(self._on_succeeded)
+            worker.failed.connect(self._on_failed)
+            worker.finished.connect(
+                lambda worker=worker: self._cleanup_worker(worker)
+            )
+            worker.finished.connect(worker.deleteLater)
 
-            # garante destruição segura da thread
-            self._worker.finished.connect(self._worker.deleteLater)
-
-            self._worker.start()
+            worker.start()
 
         except Exception as e:
 
@@ -120,12 +123,10 @@ class ConvertController:
     # -------------------------
     # Conversão concluída
     # -------------------------
-    def _on_finished(self):
+    def _on_succeeded(self):
 
         if self.main_view and self.main_view.progress:
             self.main_view.progress.finish("Conversão concluída")
-
-        self._worker = None
 
     # -------------------------
     # Erro na conversão
@@ -141,4 +142,6 @@ class ConvertController:
             message
         )
 
-        self._worker = None
+    def _cleanup_worker(self, worker: ConvertWorker):
+        if self._worker is worker:
+            self._worker = None

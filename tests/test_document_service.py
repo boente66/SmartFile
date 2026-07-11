@@ -74,3 +74,15 @@ def test_base_persistence_initializes_database(tmp_path: Path):
         ).fetchall()
 
     assert len(tables) == 2
+
+
+def test_docx_is_classified_with_the_official_type(tmp_path: Path):
+    db_path = tmp_path / "smartfile.db"
+    service = DocumentService(db_path=str(db_path))
+    source = tmp_path / "contrato.docx"
+    source.write_bytes(b"docx-content")
+
+    document = service.import_document(str(source))
+
+    assert document.file_type == "DOCX"
+    assert service.filter_by_type("DOCX")[0].id == document.id
