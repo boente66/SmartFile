@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from app.database.base_persistence import BasePersistence
+from app.database.database import Database
 from app.services.document_service import DocumentService
 from app.services.history_service import HistoryService
 
@@ -64,11 +64,11 @@ def test_history_service_tracks_document_actions(tmp_path: Path):
     assert history[0].action == "import"
 
 
-def test_base_persistence_initializes_database(tmp_path: Path):
+def test_database_initializes_schema(tmp_path: Path):
     db_path = tmp_path / "smartfile.db"
-    persistence = BasePersistence(db_path=str(db_path))
+    database = Database(db_name=str(db_path))
 
-    with persistence.get_connection() as connection:
+    with database.connect() as connection:
         tables = connection.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('documents', 'history')"
         ).fetchall()

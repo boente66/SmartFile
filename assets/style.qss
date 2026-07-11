@@ -94,10 +94,32 @@ QHeaderView::section {
     font-weight: 600;
 }
 
-QFrame#detailPanel {
+QFrame#detailPanel,
+QFrame#documentDetailsPanel {
     background: white;
     border-left: 1px solid #e6e9ef;
     border-radius: 0px 12px 12px 0px;
+}
+
+QLabel#documentDetailsTitle {
+    color: #0f172a;
+    font-size: 17px;
+    font-weight: 700;
+}
+
+QLabel#documentDetailsSubtitle,
+QLabel#documentCount {
+    color: #64748b;
+}
+
+QLabel#documentDetailValue {
+    color: #334155;
+}
+
+QPushButton#dangerAction {
+    color: #dc2626;
+    background: #ffffff;
+    border-color: #fecaca;
 }
 
 QLineEdit, QComboBox {

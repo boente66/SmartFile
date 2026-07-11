@@ -11,12 +11,11 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
-    QFrame,
-    QTextEdit,
 )
 
 from app.models.document_model import DocumentModel
 from app.ui.icon_provider import IconProvider
+from app.views.widgets.document_details_widget import DocumentDetailsWidget
 
 
 class DocumentView(QWidget):
@@ -45,12 +44,12 @@ class DocumentView(QWidget):
         left_layout = QVBoxLayout(left)
         left_layout.setSpacing(10)
 
-        title = QLabel("Mini GED local")
+        title = QLabel("Documentos")
         title.setObjectName("title")
         left_layout.addWidget(title)
 
         intro = QLabel(
-            "Importe documentos, consulte o histórico e acesse arquivos locais sem depender de rede ou nuvem."
+            "Central de documentos do SmartFile"
         )
         intro.setWordWrap(True)
         left_layout.addWidget(intro)
@@ -67,38 +66,15 @@ class DocumentView(QWidget):
         self.type_combo.currentTextChanged.connect(self._emit_filter)
         controls.addWidget(QLabel("Tipo"))
         controls.addWidget(self.type_combo)
-        left_layout.addLayout(controls)
-
-        actions = QHBoxLayout()
-        self.btn_import = QPushButton("Importar")
+        self.btn_import = QPushButton("Adicionar documento")
         self.btn_import.setObjectName("primary")
         IconProvider.apply(self.btn_import, "import")
         self.btn_import.clicked.connect(self.import_requested.emit)
-        self.btn_open = QPushButton("Abrir")
-        IconProvider.apply(self.btn_open, "open")
-        self.btn_open.clicked.connect(self._emit_open)
-        self.btn_convert = QPushButton("Converter")
-        IconProvider.apply(self.btn_convert, "converter")
-        self.btn_convert.clicked.connect(self._emit_convert)
-        self.btn_pdf = QPushButton("PDF Tools")
-        IconProvider.apply(self.btn_pdf, "pdf")
-        self.btn_pdf.clicked.connect(self._emit_pdf_tools)
-        self.btn_delete = QPushButton("Excluir")
-        IconProvider.apply(self.btn_delete, "trash")
-        self.btn_delete.clicked.connect(self._emit_delete)
-        self.btn_favorite = QPushButton("Favorito")
-        IconProvider.apply(self.btn_favorite, "star")
-        self.btn_favorite.clicked.connect(self._emit_favorite)
-
-        actions.addWidget(self.btn_import)
-        actions.addWidget(self.btn_open)
-        actions.addWidget(self.btn_convert)
-        actions.addWidget(self.btn_pdf)
-        actions.addWidget(self.btn_delete)
-        actions.addWidget(self.btn_favorite)
-        left_layout.addLayout(actions)
+        controls.addWidget(self.btn_import)
+        left_layout.addLayout(controls)
 
         self.status_label = QLabel("Nenhum documento importado")
+        self.status_label.setObjectName("documentCount")
         left_layout.addWidget(self.status_label)
 
         self.documents_table = QTableWidget(0, 5)
@@ -110,23 +86,23 @@ class DocumentView(QWidget):
         self.documents_table.itemSelectionChanged.connect(self._on_selection_changed)
         left_layout.addWidget(self.documents_table, 1)
 
-        # Right column: detail panel
-        detail = QFrame()
-        detail.setObjectName("detailPanel")
-        detail_layout = QVBoxLayout(detail)
-        detail_layout.setContentsMargins(12, 12, 12, 12)
+        self.details = DocumentDetailsWidget()
+        self.details.open_requested.connect(self.open_requested.emit)
+        self.details.convert_requested.connect(self.convert_requested.emit)
+        self.details.pdf_tools_requested.connect(self.pdf_tools_requested.emit)
+        self.details.trash_requested.connect(self.delete_requested.emit)
+        self.details.favorite_requested.connect(self.favorite_requested.emit)
 
-        self.detail_title = QLabel("Detalhes do documento")
-        self.detail_title.setStyleSheet("font-weight:600;")
-        detail_layout.addWidget(self.detail_title)
-
-        self.detail_text = QTextEdit()
-        self.detail_text.setReadOnly(True)
-        detail_layout.addWidget(self.detail_text, 1)
+        # Compatibilidade para consumidores que referenciam as ações públicas.
+        self.btn_open = self.details.btn_open
+        self.btn_convert = self.details.btn_convert
+        self.btn_pdf = self.details.btn_pdf
+        self.btn_delete = self.details.btn_trash
+        self.btn_favorite = self.details.btn_favorite
 
         # assemble
         main_layout.addWidget(left, 3)
-        main_layout.addWidget(detail, 1)
+        main_layout.addWidget(self.details, 1)
         self._set_document_actions_enabled(False)
 
     def set_documents(self, documents: list[DocumentModel]):
@@ -144,21 +120,7 @@ class DocumentView(QWidget):
         self.documents_table.resizeColumnsToContents()
 
     def show_document_details(self, document: DocumentModel | None):
-        """Populate the right-side detail panel for a document."""
-        if document is None:
-            self.detail_title.setText("Detalhes do documento")
-            self.detail_text.setPlainText("")
-            return
-
-        self.detail_title.setText(document.name)
-        details = [
-            f"Nome: {document.name}",
-            f"Caminho: {document.path}",
-            f"Tipo: {document.file_type}",
-            f"Tamanho: {self._format_size(document.size)}",
-            f"Favorito: {'Sim' if document.favorite else 'Não'}",
-        ]
-        self.detail_text.setPlainText("\n".join(details))
+        self.details.set_document(document)
 
     def set_status(self, text: str):
         self.status_label.setText(text)
@@ -189,11 +151,7 @@ class DocumentView(QWidget):
             self.document_selected.emit(document_id)
 
     def _set_document_actions_enabled(self, enabled: bool):
-        self.btn_open.setEnabled(enabled)
-        self.btn_convert.setEnabled(enabled)
-        self.btn_pdf.setEnabled(enabled)
-        self.btn_delete.setEnabled(enabled)
-        self.btn_favorite.setEnabled(enabled)
+        self.details.set_actions_enabled(enabled)
 
     def _emit_filter(self, value: str):
         self.filter_requested.emit(value)
