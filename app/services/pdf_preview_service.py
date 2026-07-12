@@ -44,7 +44,7 @@ class PDFPreviewService:
                     pix.width,
                     pix.height,
                     pix.stride,
-                    QImage.Format_RGB888
+                    QImage.Format.Format_RGB888
                 ).copy()  # copia memória
 
                 images.append(img)

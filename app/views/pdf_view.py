@@ -111,7 +111,7 @@ class PDFView(QWidget):
             QMessageBox.warning(self, "Aviso", "Selecione páginas.")
             return
 
-        pages = [item.data(Qt.UserRole) for item in selected]
+        pages = [item.data(Qt.ItemDataRole.UserRole) for item in selected]
 
         self.remove_pages_requested.emit(pages)
 
@@ -132,7 +132,7 @@ class PDFView(QWidget):
 
         for i in range(self.page_list.count()):
             item = self.page_list.item(i)
-            order.append(item.data(Qt.UserRole))
+            order.append(item.data(Qt.ItemDataRole.UserRole))
 
         self.reorder_pages_requested.emit(order)
 
@@ -147,7 +147,7 @@ class PDFView(QWidget):
         for i, pixmap in enumerate(pixmaps):
 
             item = QListWidgetItem(f"Página {i + 1}")
-            item.setData(Qt.UserRole, i)
+            item.setData(Qt.ItemDataRole.UserRole, i)
 
             item.setIcon(
                 QIcon(

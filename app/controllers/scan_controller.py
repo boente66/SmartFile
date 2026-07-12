@@ -80,12 +80,16 @@ class ScanController:
             img = ScanService.scan_page(config)
             self._images.append(img)
 
+            rgb_image = img.convert("RGB")
+            data = rgb_image.tobytes("raw", "RGB")
             qimage = QImage(
-                img.tobytes("raw", "RGB"),
+                data,
                 img.width,
                 img.height,
-                QImage.Format_RGB888
-            )
+                img.width * 3,
+                QImage.Format.Format_RGB888
+            ).copy()
+            rgb_image.close()
             pixmap = QPixmap.fromImage(qimage)
 
             self.view.add_thumbnail(pixmap)

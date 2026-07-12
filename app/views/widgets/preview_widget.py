@@ -73,7 +73,8 @@ class PreviewWidget(QWidget):
     # Interno
     # -------------------------
     def _update_view(self):
-        if not self._pixmap_original:
+        if self._pixmap_original is None or self._pixmap_original.isNull():
+            self.image_label.clear()
             return
 
         scaled = self._pixmap_original.scaled(
