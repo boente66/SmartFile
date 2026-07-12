@@ -10,6 +10,10 @@ class DocumentEntity:
     name: str = ""
     original_name: str = ""
     path: str = ""
+    source_path: Optional[str] = None
+    storage_path: Optional[str] = None
+    internal_name: Optional[str] = None
+    managed: bool = False
     extension: str = ""
     file_type: str = ""
     size: int = 0

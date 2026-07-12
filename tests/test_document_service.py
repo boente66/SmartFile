@@ -18,7 +18,10 @@ def test_import_list_search_and_favorite(tmp_path: Path):
     document = service.import_document(str(source))
 
     assert document.name == "relatorio.pdf"
-    assert document.path == str(source.resolve())
+    assert document.path == document.storage_path
+    assert Path(document.storage_path).is_file()
+    assert document.source_path == str(source.resolve())
+    assert document.managed is True
     assert document.favorite is False
 
     documents = service.list_documents()

@@ -7,7 +7,7 @@ from pathlib import Path
 from app.errors.persistence_exceptions import DatabaseError
 
 logger = logging.getLogger(__name__)
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
 
 
 def _has_user_tables(connection: sqlite3.Connection) -> bool:
@@ -43,6 +43,10 @@ def _upgrade_documents(connection: sqlite3.Connection) -> None:
     additions = {
         "description": "TEXT",
         "status": "TEXT NOT NULL DEFAULT 'ACTIVE'",
+        "source_path": "TEXT",
+        "storage_path": "TEXT",
+        "internal_name": "TEXT",
+        "managed": "INTEGER NOT NULL DEFAULT 0",
     }
     for name, declaration in additions.items():
         if name not in columns:
@@ -55,6 +59,7 @@ def _upgrade_documents(connection: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_documents_favorite ON documents(favorite);
         CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status);
         CREATE INDEX IF NOT EXISTS idx_documents_created_at ON documents(created_at);
+        CREATE INDEX IF NOT EXISTS idx_documents_storage_path ON documents(storage_path);
         CREATE INDEX IF NOT EXISTS idx_history_document ON history(document_id);
         """
     )
@@ -79,6 +84,9 @@ def migrate(connection: sqlite3.Connection, schema_path: Path) -> int:
             current = 1
         if current < CURRENT_SCHEMA_VERSION:
             _upgrade_documents(connection)
+            connection.execute(
+                "UPDATE documents SET source_path = path WHERE source_path IS NULL"
+            )
             connection.execute(f"PRAGMA user_version = {CURRENT_SCHEMA_VERSION}")
             connection.commit()
             logger.info("Banco atualizado para versão %s", CURRENT_SCHEMA_VERSION)

@@ -120,7 +120,16 @@ def test_legacy_database_is_migrated_without_losing_documents(tmp_path: Path):
     assert migrated.execute("PRAGMA user_version").fetchone()[0] == CURRENT_SCHEMA_VERSION
     assert migrated.execute("SELECT name FROM documents").fetchone()[0] == "legado.pdf"
     columns = {row[1] for row in migrated.execute("PRAGMA table_info(documents)")}
-    assert {"description", "status"} <= columns
+    assert {
+        "description", "status", "source_path", "storage_path",
+        "internal_name", "managed",
+    } <= columns
+    legacy = migrated.execute(
+        "SELECT source_path, storage_path, managed FROM documents"
+    ).fetchone()
+    assert legacy[0] == "/tmp/legado.pdf"
+    assert legacy[1] is None
+    assert legacy[2] == 0
 
 
 def test_transaction_rolls_back_on_failure(tmp_path: Path):

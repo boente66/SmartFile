@@ -3,6 +3,10 @@ CREATE TABLE IF NOT EXISTS documents (
     name TEXT NOT NULL,
     original_name TEXT NOT NULL,
     path TEXT NOT NULL UNIQUE,
+    source_path TEXT,
+    storage_path TEXT,
+    internal_name TEXT,
+    managed INTEGER NOT NULL DEFAULT 0 CHECK (managed IN (0, 1)),
     extension TEXT NOT NULL,
     file_type TEXT NOT NULL,
     size INTEGER NOT NULL DEFAULT 0,
@@ -30,4 +34,5 @@ CREATE INDEX IF NOT EXISTS idx_documents_checksum ON documents(checksum);
 CREATE INDEX IF NOT EXISTS idx_documents_favorite ON documents(favorite);
 CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status);
 CREATE INDEX IF NOT EXISTS idx_documents_created_at ON documents(created_at);
+CREATE INDEX IF NOT EXISTS idx_documents_storage_path ON documents(storage_path);
 CREATE INDEX IF NOT EXISTS idx_history_document ON history(document_id);

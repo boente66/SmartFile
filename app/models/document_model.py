@@ -12,6 +12,10 @@ class DocumentModel:
     name: str = ""
     original_name: Optional[str] = None
     path: str = ""
+    source_path: Optional[str] = None
+    storage_path: Optional[str] = None
+    internal_name: Optional[str] = None
+    managed: bool = False
     file_type: Optional[str] = None
     extension: Optional[str] = None
     size: Optional[int] = None
@@ -32,6 +36,10 @@ class DocumentModel:
             name=entity.name,
             original_name=entity.original_name,
             path=entity.path,
+            source_path=entity.source_path,
+            storage_path=entity.storage_path,
+            internal_name=entity.internal_name,
+            managed=entity.managed,
             file_type=entity.file_type,
             extension=entity.extension,
             size=entity.size,
@@ -52,6 +60,10 @@ class DocumentModel:
             name=self.name,
             original_name=self.original_name or "",
             path=self.path,
+            source_path=self.source_path,
+            storage_path=self.storage_path,
+            internal_name=self.internal_name,
+            managed=self.managed,
             file_type=self.file_type or "",
             extension=self.extension or "",
             size=self.size or 0,

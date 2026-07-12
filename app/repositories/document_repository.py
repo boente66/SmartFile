@@ -23,10 +23,11 @@ class DocumentRepository(BaseRepository):
         cursor = self._write(
             """
             INSERT INTO documents (
-                name, original_name, path, extension, file_type, size, checksum,
+                name, original_name, path, source_path, storage_path, internal_name,
+                managed, extension, file_type, size, checksum,
                 category, description, favorite, status, created_at, updated_at,
                 last_accessed_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             self._values(entity),
         )
@@ -37,7 +38,8 @@ class DocumentRepository(BaseRepository):
         self._write(
             """
             UPDATE documents SET
-                name = ?, original_name = ?, path = ?, extension = ?,
+                name = ?, original_name = ?, path = ?, source_path = ?,
+                storage_path = ?, internal_name = ?, managed = ?, extension = ?,
                 file_type = ?, size = ?, checksum = ?, category = ?,
                 description = ?, favorite = ?, status = ?, created_at = ?,
                 updated_at = ?, last_accessed_at = ?
@@ -50,6 +52,9 @@ class DocumentRepository(BaseRepository):
     def delete(self, document_id: int) -> bool:
         """Compatibilidade: exclusão pública é lógica."""
         return self.soft_delete(document_id)
+
+    def hard_delete(self, document_id: int) -> bool:
+        return self._write("DELETE FROM documents WHERE id = ?", (document_id,)).rowcount > 0
 
     def find_by_id(self, document_id: int) -> Optional[DocumentEntity]:
         row = self._fetch_one("SELECT * FROM documents WHERE id = ?", (document_id,))
@@ -140,7 +145,8 @@ class DocumentRepository(BaseRepository):
     @staticmethod
     def _values(entity: DocumentEntity) -> tuple[object, ...]:
         return (
-            entity.name, entity.original_name, entity.path, entity.extension,
+            entity.name, entity.original_name, entity.path, entity.source_path,
+            entity.storage_path, entity.internal_name, int(entity.managed), entity.extension,
             entity.file_type, entity.size, entity.checksum, entity.category,
             entity.description, int(entity.favorite), entity.status,
             entity.created_at, entity.updated_at, entity.last_accessed_at,
@@ -150,7 +156,9 @@ class DocumentRepository(BaseRepository):
     def _row_to_entity(row) -> DocumentEntity:
         return DocumentEntity(
             id=row["id"], name=row["name"], original_name=row["original_name"],
-            path=row["path"], extension=row["extension"], file_type=row["file_type"],
+            path=row["path"], source_path=row["source_path"],
+            storage_path=row["storage_path"], internal_name=row["internal_name"],
+            managed=bool(row["managed"]), extension=row["extension"], file_type=row["file_type"],
             size=int(row["size"] or 0), checksum=row["checksum"],
             category=row["category"], description=row["description"],
             favorite=bool(row["favorite"]), status=row["status"] or "ACTIVE",

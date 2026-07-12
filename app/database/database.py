@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import logging
-import os
 import sqlite3
-import sys
 import threading
 from contextlib import contextmanager
 from pathlib import Path
@@ -11,18 +9,13 @@ from typing import Iterator, Optional, Sequence
 
 from app.database.migrations import migrate
 from app.errors.persistence_exceptions import DatabaseError
+from app.system.app_paths import AppPaths
 
 logger = logging.getLogger(__name__)
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
 
-def _default_data_dir() -> Path:
-    if sys.platform.startswith("win"):
-        return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "SmartFile"
-    return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "SmartFile"
-
-
-DEFAULT_DB_PATH = _default_data_dir() / "smartfile.db"
+DEFAULT_DB_PATH = AppPaths().database
 
 
 class Database:
@@ -30,6 +23,8 @@ class Database:
 
     def __init__(self, db_name: Optional[str] = None):
         self.db_path = Path(db_name).expanduser() if db_name else DEFAULT_DB_PATH
+        self.paths = AppPaths(self.db_path.parent)
+        self.paths.ensure_directories()
         self.db_name = str(self.db_path)
         self.conn: sqlite3.Connection | None = None
         self._lock = threading.RLock()
@@ -38,19 +33,15 @@ class Database:
 
     @property
     def data_dir(self) -> Path:
-        return self.db_path.parent
+        return self.paths.data_dir
 
     @property
     def storage_dir(self) -> Path:
-        path = self.data_dir / "storage"
-        path.mkdir(parents=True, exist_ok=True)
-        return path
+        return self.paths.storage
 
     @property
     def temp_dir(self) -> Path:
-        path = self.data_dir / "temp"
-        path.mkdir(parents=True, exist_ok=True)
-        return path
+        return self.paths.temp
 
     def connect(self) -> sqlite3.Connection:
         with self._lock:

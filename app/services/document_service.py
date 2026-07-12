@@ -6,14 +6,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from app.database.database import Database
 from app.entities.document_entity import DocumentEntity
 from app.errors.persistence_exceptions import (
     DuplicateDocumentError,
     InvalidDocumentError,
+    StorageError,
 )
 from app.models.document_model import DocumentModel
 from app.repositories.document_repository import DocumentRepository
 from app.services.history_service import HistoryService
+from app.services.document_storage_service import DocumentStorageService
 
 logger = logging.getLogger(__name__)
 
@@ -21,10 +24,17 @@ logger = logging.getLogger(__name__)
 class DocumentService:
     """Regras documentais sobre a API do DocumentRepository."""
 
-    def __init__(self, db_path: Optional[str] = None):
-        self.document_repository = DocumentRepository(db_path)
+    def __init__(
+        self,
+        db_path: Optional[str] = None,
+        *,
+        storage_service: DocumentStorageService | None = None,
+    ):
+        self.database = Database(db_name=db_path)
+        self.document_repository = DocumentRepository(database=self.database)
+        self.storage_service = storage_service or DocumentStorageService(self.database.paths)
         # Histórico básico preexistente é preservado, sem ampliar seu domínio.
-        self.history_service = HistoryService(db_path)
+        self.history_service = HistoryService(database=self.database)
 
     def import_document(self, file_path: str) -> DocumentModel:
         path = self._validated_path(file_path)
@@ -33,27 +43,40 @@ class DocumentService:
         if self.document_repository.exists_checksum(checksum):
             raise DuplicateDocumentError("Este documento já foi importado.")
 
+        stored = self.storage_service.store(path, checksum)
         now = self._now()
-        entity = DocumentEntity(
-            name=path.name,
-            original_name=path.name,
-            path=str(path),
-            extension=extension,
-            file_type=self._classify_file_type(extension),
-            size=path.stat().st_size,
-            checksum=checksum,
-            category=self._classify_category(extension),
-            description=None,
-            favorite=False,
-            status="ACTIVE",
-            created_at=now,
-            updated_at=now,
-            last_accessed_at=None,
-        )
-        created = self.document_repository.create(entity)
-        self._record_history(created.id, "IMPORT", f"Documento importado: {path.name}")
-        logger.info("Documento importado id=%s", created.id)
-        return DocumentModel.from_entity(created)
+        try:
+            with self.database.transaction():
+                entity = DocumentEntity(
+                    name=path.name,
+                    original_name=path.name,
+                    path=stored.storage_path,
+                    source_path=str(path),
+                    storage_path=stored.storage_path,
+                    internal_name=stored.internal_name,
+                    managed=True,
+                    extension=extension,
+                    file_type=self._classify_file_type(extension),
+                    size=stored.size,
+                    checksum=checksum,
+                    category=self._classify_category(extension),
+                    description=None,
+                    favorite=False,
+                    status="ACTIVE",
+                    created_at=now,
+                    updated_at=now,
+                    last_accessed_at=None,
+                )
+                created = self.document_repository.create(entity)
+                self._record_history(created.id, "IMPORT", f"Documento importado: {path.name}")
+            logger.info("Documento importado id=%s", created.id)
+            return DocumentModel.from_entity(created)
+        except Exception:
+            try:
+                self.storage_service.remove(stored.storage_path)
+            except StorageError:
+                logger.exception("Falha ao remover arquivo após rollback da importação")
+            raise
 
     def get_document(self, document_id: int) -> Optional[DocumentModel]:
         entity = self.document_repository.find_by_id(document_id)
@@ -113,7 +136,12 @@ class DocumentService:
             raise InvalidDocumentError("Documento não encontrado.")
         if entity.status != "ACTIVE":
             raise InvalidDocumentError("O documento está na lixeira.")
-        path = Path(entity.path).expanduser().resolve()
+        if entity.managed:
+            if not entity.storage_path or not self.storage_service.exists(entity.storage_path):
+                raise InvalidDocumentError("O arquivo interno do documento não foi encontrado.")
+            path = Path(entity.storage_path)
+        else:
+            path = Path(entity.path).expanduser().resolve()
         if not path.exists() or not path.is_file():
             raise InvalidDocumentError("O arquivo não existe mais no caminho registrado.")
         entity.last_accessed_at = self._now()
@@ -121,6 +149,37 @@ class DocumentService:
         updated = self.document_repository.update(entity)
         self._record_history(entity.id, "OPEN", f"Documento aberto: {entity.name}")
         return DocumentModel.from_entity(updated)
+
+    def permanently_delete_document(self, document_id: int) -> bool:
+        """Remove registro e arquivo gerenciado; ainda não exposto pela interface."""
+        entity = self.document_repository.find_by_id(document_id)
+        if entity is None:
+            return False
+        quarantine: Path | None = None
+        original_storage: Path | None = None
+        if entity.managed and entity.storage_path:
+            original_storage = Path(entity.storage_path).resolve()
+            if not self.storage_service.is_managed_path(original_storage):
+                raise StorageError("Caminho interno inválido para exclusão permanente.")
+            if original_storage.exists():
+                quarantine = self.storage_service.create_temp_path(original_storage.suffix)
+                original_storage.replace(quarantine)
+        try:
+            with self.database.transaction():
+                self._record_history(
+                    document_id,
+                    "PERMANENT_DELETE",
+                    f"Documento excluído permanentemente: {entity.name}",
+                )
+                deleted = self.document_repository.hard_delete(document_id)
+            if quarantine and quarantine.exists():
+                quarantine.unlink()
+            return deleted
+        except Exception:
+            if quarantine and quarantine.exists() and original_storage:
+                original_storage.parent.mkdir(parents=True, exist_ok=True)
+                quarantine.replace(original_storage)
+            raise
 
     def _record_history(self, document_id: Optional[int], action: str, description: str) -> None:
         self.history_service.record_action(document_id, action, description)
