@@ -147,3 +147,45 @@ QTextEdit {
 QLabel {
     color: #0f1720;
 }
+
+QLabel#scanSubtitle,
+QLabel#scanHint {
+    color: #64748b;
+}
+
+QLabel#scanSectionTitle {
+    color: #0f172a;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+QFrame#scanToolbar,
+QFrame#scanPanel {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+}
+
+QFrame#scanSeparator {
+    color: #e2e8f0;
+    background: #e2e8f0;
+    max-height: 1px;
+}
+
+QWidget#scanPreview QScrollArea {
+    background: #e5e7eb;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+}
+
+QListWidget {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+}
+
+QListWidget::item:selected {
+    background: #dcfce7;
+    border: 1px solid #22c55e;
+    color: #166534;
+}

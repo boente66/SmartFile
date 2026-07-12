@@ -22,10 +22,10 @@ class ScanController:
 
         # Estado mínimo: imagens PIL
         self._images = []
+        self._devices_loaded = False
 
         self._connect_signals()
         self._register_view()
-        self._load_devices()
 
     # -------------------------
     # Inicialização
@@ -34,6 +34,8 @@ class ScanController:
         self.view.scan_requested.connect(self.on_scan_requested)
         self.view.remove_requested.connect(self.on_remove_requested)
         self.view.save_pdf_requested.connect(self.on_save_pdf_requested)
+        self.view.clear_requested.connect(self.on_clear_requested)
+        self.view.refresh_devices_requested.connect(self._load_devices)
 
     def _register_view(self):
         self.workspace.register_view("scanner", self.view)
@@ -41,19 +43,15 @@ class ScanController:
     def _load_devices(self):
         devices = ScanService.list_devices()
         self.view.set_devices(devices)
-
-        if not devices:
-            QMessageBox.warning(
-                self.view,
-                "Scanner",
-                "Nenhum scanner encontrado."
-            )
+        self._devices_loaded = True
 
     # -------------------------
     # API pública
     # -------------------------
     def activate(self):
-        self.workspace.show_view("scanner")     # alteração feita agora
+        self.workspace.show_view("scanner")
+        if not self._devices_loaded:
+            self._load_devices()
 
 
     # -------------------------
@@ -70,13 +68,13 @@ class ScanController:
             )
             return
 
-        config = ScanConfigModel(
-            device_name=cfg["device"],
-            dpi=cfg["dpi"],
-            color_mode=cfg["color"]
-        )
-
         try:
+            config = ScanConfigModel(
+                device_name=cfg["device"],
+                dpi=cfg["dpi"],
+                color_mode=cfg["color"]
+            )
+            config.validate()
             img = ScanService.scan_page(config)
             self._images.append(img)
 
@@ -103,8 +101,14 @@ class ScanController:
 
     def on_remove_requested(self, index: int):
         if 0 <= index < len(self._images):
-            self._images.pop(index)
+            self._images.pop(index).close()
             self.view.remove_thumbnail(index)
+
+    def on_clear_requested(self):
+        for image in self._images:
+            image.close()
+        self._images.clear()
+        self.view.clear_pages()
 
     def on_save_pdf_requested(self):
         if not self._images:
