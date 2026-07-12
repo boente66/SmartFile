@@ -51,6 +51,33 @@ QWidget#workspace {
     background: transparent;
 }
 
+QScrollArea#documentsScrollArea,
+QWidget#documentsScrollContent {
+    background: transparent;
+}
+
+QScrollArea#documentsScrollArea QScrollBar:vertical {
+    background: #e2e8f0;
+    width: 11px;
+    margin: 2px;
+    border-radius: 5px;
+}
+
+QScrollArea#documentsScrollArea QScrollBar::handle:vertical {
+    background: #94a3b8;
+    min-height: 32px;
+    border-radius: 4px;
+}
+
+QScrollArea#documentsScrollArea QScrollBar::handle:vertical:hover {
+    background: #64748b;
+}
+
+QScrollArea#documentsScrollArea QScrollBar::add-line:vertical,
+QScrollArea#documentsScrollArea QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
 QLabel#title {
     font-size: 20px;
     font-weight: 700;

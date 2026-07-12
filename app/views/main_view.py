@@ -28,7 +28,8 @@ class MainView(QMainWindow):
     def _setup_window(self):
         self.setWindowTitle("SmartFile")
         self.setWindowIcon(IconProvider.icon("app"))
-        self.resize(1200, 800)
+        self.resize(1100, 700)
+        self.setMinimumSize(800, 560)
 
     # -------------------------
     # UI principal
@@ -44,7 +45,7 @@ class MainView(QMainWindow):
 
         # Sidebar
         self.sidebar = SidebarView()
-        self.sidebar.setFixedWidth(220)
+        self.sidebar.setFixedWidth(200)
         self.sidebar.setObjectName("sidebar")
 
         # Workspace

@@ -2,11 +2,16 @@ from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
+    QBoxLayout,
     QComboBox,
+    QFrame,
+    QHeaderView,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -32,16 +37,35 @@ class DocumentView(QWidget):
 
     def __init__(self):
         super().__init__()
+        self._compact = False
         self._setup_ui()
 
     def _setup_ui(self):
-        # main two-column layout: list (left) + detail panel (right)
-        main_layout = QHBoxLayout(self)
-        main_layout.setSpacing(12)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setObjectName("documentsScrollArea")
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        root.addWidget(self.scroll_area)
+
+        self.scroll_content = QWidget()
+        self.scroll_content.setObjectName("documentsScrollContent")
+        self.main_layout = QBoxLayout(QBoxLayout.Direction.LeftToRight, self.scroll_content)
+        self.main_layout.setContentsMargins(18, 16, 18, 16)
+        self.main_layout.setSpacing(12)
+        self.scroll_area.setWidget(self.scroll_content)
 
         # Left column: header, controls, actions, table
         left = QWidget()
+        left.setObjectName("documentsListPanel")
+        self.list_panel = left
+        left.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(10)
 
         title = QLabel("Documentos")
@@ -54,24 +78,27 @@ class DocumentView(QWidget):
         intro.setWordWrap(True)
         left_layout.addWidget(intro)
 
-        controls = QHBoxLayout()
+        search_row = QHBoxLayout()
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("Buscar por nome, categoria ou tags")
         self.search_edit.textChanged.connect(self._emit_search)
-        controls.addWidget(QLabel("Buscar"))
-        controls.addWidget(self.search_edit, 1)
+        search_row.addWidget(QLabel("Buscar"))
+        search_row.addWidget(self.search_edit, 1)
+        left_layout.addLayout(search_row)
 
+        filter_row = QHBoxLayout()
         self.type_combo = QComboBox()
         self.type_combo.addItems(["Todos", "PDF", "DOCX", "SPREADSHEET", "IMAGE", "TEXT", "OTHER"])
         self.type_combo.currentTextChanged.connect(self._emit_filter)
-        controls.addWidget(QLabel("Tipo"))
-        controls.addWidget(self.type_combo)
+        filter_row.addWidget(QLabel("Tipo"))
+        filter_row.addWidget(self.type_combo)
+        filter_row.addStretch(1)
         self.btn_import = QPushButton("Adicionar documento")
         self.btn_import.setObjectName("primary")
         IconProvider.apply(self.btn_import, "import")
         self.btn_import.clicked.connect(self.import_requested.emit)
-        controls.addWidget(self.btn_import)
-        left_layout.addLayout(controls)
+        filter_row.addWidget(self.btn_import)
+        left_layout.addLayout(filter_row)
 
         self.status_label = QLabel("Nenhum documento importado")
         self.status_label.setObjectName("documentCount")
@@ -83,6 +110,13 @@ class DocumentView(QWidget):
         self.documents_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.documents_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.documents_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.documents_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.documents_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.documents_table.setMinimumHeight(280)
+        header = self.documents_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        for column in range(1, self.documents_table.columnCount()):
+            header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
         self.documents_table.itemSelectionChanged.connect(self._on_selection_changed)
         left_layout.addWidget(self.documents_table, 1)
 
@@ -100,10 +134,30 @@ class DocumentView(QWidget):
         self.btn_delete = self.details.btn_trash
         self.btn_favorite = self.details.btn_favorite
 
-        # assemble
-        main_layout.addWidget(left, 3)
-        main_layout.addWidget(self.details, 1)
+        self.main_layout.addWidget(left, 3)
+        self.main_layout.addWidget(self.details, 1)
         self._set_document_actions_enabled(False)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._apply_compact_layout(event.size().width() < 980)
+
+    def _apply_compact_layout(self, compact: bool) -> None:
+        if compact == self._compact:
+            return
+        self._compact = compact
+        self.main_layout.setDirection(
+            QBoxLayout.Direction.TopToBottom if compact else QBoxLayout.Direction.LeftToRight
+        )
+        if compact:
+            self.details.setMinimumHeight(460)
+            self.main_layout.setStretch(0, 0)
+            self.main_layout.setStretch(1, 0)
+        else:
+            self.details.setMinimumHeight(0)
+            self.main_layout.setStretch(0, 3)
+            self.main_layout.setStretch(1, 1)
+        self.scroll_content.updateGeometry()
 
     def set_documents(self, documents: list[DocumentModel]):
         self.documents_table.setRowCount(len(documents))
@@ -117,7 +171,7 @@ class DocumentView(QWidget):
             for column in range(self.documents_table.columnCount()):
                 self.documents_table.item(row_index, column).setData(Qt.ItemDataRole.UserRole, document.id)
 
-        self.documents_table.resizeColumnsToContents()
+        self.documents_table.resizeRowsToContents()
 
     def show_document_details(self, document: DocumentModel | None):
         self.details.set_document(document)
