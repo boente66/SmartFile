@@ -8,18 +8,16 @@ from typing import Optional
 class DocumentEntity:
     id: Optional[int] = None
     name: str = ""
-    original_name: Optional[str] = None
+    original_name: str = ""
     path: str = ""
-    file_type: Optional[str] = None
-    extension: Optional[str] = None
-    size: Optional[int] = None
+    extension: str = ""
+    file_type: str = ""
+    size: int = 0
+    checksum: str = ""
     category: Optional[str] = None
-    category_id: Optional[int] = None
-    tags: Optional[str] = None
-    favorite: int = 0
-    checksum: Optional[str] = None
-    internal_name: Optional[str] = None
+    description: Optional[str] = None
+    favorite: bool = False
     status: str = "ACTIVE"
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    created_at: str = ""
+    updated_at: str = ""
     last_accessed_at: Optional[str] = None

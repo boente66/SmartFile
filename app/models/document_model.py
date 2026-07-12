@@ -16,11 +16,10 @@ class DocumentModel:
     extension: Optional[str] = None
     size: Optional[int] = None
     category: Optional[str] = None
-    category_id: Optional[int] = None
     tags: Optional[str] = None
+    description: Optional[str] = None
     favorite: bool = False
     checksum: Optional[str] = None
-    internal_name: Optional[str] = None
     status: str = "ACTIVE"
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -37,11 +36,10 @@ class DocumentModel:
             extension=entity.extension,
             size=entity.size,
             category=entity.category,
-            category_id=entity.category_id,
-            tags=entity.tags,
+            tags=None,
+            description=entity.description,
             favorite=bool(entity.favorite),
             checksum=entity.checksum,
-            internal_name=entity.internal_name,
             status=entity.status,
             created_at=entity.created_at,
             updated_at=entity.updated_at,
@@ -52,19 +50,17 @@ class DocumentModel:
         return DocumentEntity(
             id=self.id,
             name=self.name,
-            original_name=self.original_name,
+            original_name=self.original_name or "",
             path=self.path,
-            file_type=self.file_type,
-            extension=self.extension,
-            size=self.size,
+            file_type=self.file_type or "",
+            extension=self.extension or "",
+            size=self.size or 0,
             category=self.category,
-            category_id=self.category_id,
-            tags=self.tags,
+            description=self.description,
             favorite=int(self.favorite),
-            checksum=self.checksum,
-            internal_name=self.internal_name,
+            checksum=self.checksum or "",
             status=self.status,
-            created_at=self.created_at,
-            updated_at=self.updated_at,
+            created_at=self.created_at or "",
+            updated_at=self.updated_at or "",
             last_accessed_at=self.last_accessed_at,
         )

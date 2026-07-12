@@ -144,13 +144,10 @@ class DocumentController:
             QMessageBox.critical(self.view, "Mini GED", str(exc))
 
     def _refresh_documents(self):
-        if self._current_type and self._current_type != "Todos":
-            documents = self.service.filter_by_type(self._current_type)
-        else:
-            documents = self.service.list_documents()
-
-        if self._current_search:
-            documents = [document for document in documents if self._current_search.lower() in document.name.lower() or self._current_search.lower() in (document.category or "").lower()]
+        documents = self.service.search_documents(
+            self._current_search,
+            self._current_type,
+        )
 
         self.view.set_documents(documents)
         self.view.show_document_details(None)

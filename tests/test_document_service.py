@@ -18,9 +18,7 @@ def test_import_list_search_and_favorite(tmp_path: Path):
     document = service.import_document(str(source))
 
     assert document.name == "relatorio.pdf"
-    assert Path(document.path).parent == tmp_path / "storage"
-    assert Path(document.path).exists()
-    assert document.internal_name == Path(document.path).name
+    assert document.path == str(source.resolve())
     assert document.favorite is False
 
     documents = service.list_documents()
@@ -85,7 +83,7 @@ def test_database_initializes_schema(tmp_path: Path):
             ).fetchall()
         }
 
-    assert {"documents", "history", "categories", "tags", "settings"} <= tables
+    assert {"documents", "history"} <= tables
 
 
 def test_docx_is_classified_with_the_official_type(tmp_path: Path):
