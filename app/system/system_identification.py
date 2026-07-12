@@ -7,7 +7,7 @@ from pathlib import Path
 class SystemIdentification:
     """
     Responsável por identificar o ambiente do sistema
-    onde o FileConvert está executando.
+    onde o SmartFlie está executando.
     """
 
     # -------------------------

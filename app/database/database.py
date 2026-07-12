@@ -1,90 +1,131 @@
 from __future__ import annotations
 
+import logging
+import os
 import sqlite3
+import sys
+import threading
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Optional
+from typing import Iterator, Optional, Sequence
 
-DEFAULT_DB_PATH = Path.home() / ".smartfile" / "smartfile.db"
+from app.database.migrations import migrate
+from app.errors.persistence_exceptions import DatabaseError
+
+logger = logging.getLogger(__name__)
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
 
+def _default_data_dir() -> Path:
+    if sys.platform.startswith("win"):
+        return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "SmartFile"
+    return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "SmartFile"
+
+
+DEFAULT_DB_PATH = _default_data_dir() / "smartfile.db"
+
+
 class Database:
-    """
-    Classe base de persistência de dados.
-    Equivalente ao Connection/JDBC.
-    """
+    """Gerencia conexão, transações e evolução do schema SQLite."""
 
     def __init__(self, db_name: Optional[str] = None):
+        self.db_path = Path(db_name).expanduser() if db_name else DEFAULT_DB_PATH
+        self.db_name = str(self.db_path)
         self.conn: sqlite3.Connection | None = None
-        self.db_name = db_name or str(DEFAULT_DB_PATH)
+        self._lock = threading.RLock()
         self.connect()
         self.create_tables()
 
+    @property
+    def data_dir(self) -> Path:
+        return self.db_path.parent
+
+    @property
+    def storage_dir(self) -> Path:
+        path = self.data_dir / "storage"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    @property
+    def temp_dir(self) -> Path:
+        path = self.data_dir / "temp"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
     def connect(self) -> sqlite3.Connection:
-        if self.conn is None:
-            db_path = Path(self.db_name)
-
-            if db_path.parent != Path("."):
-                db_path.parent.mkdir(parents=True, exist_ok=True)
-
-            self.conn = sqlite3.connect(
-                self.db_name,
-                timeout=30,
-                check_same_thread=False,
-            )
-            self.conn.execute("PRAGMA foreign_keys = ON;")
-            self.conn.execute("PRAGMA journal_mode = WAL;")
-            self.conn.execute("PRAGMA synchronous = NORMAL;")
-            self.conn.row_factory = sqlite3.Row
-
-        return self.conn
+        with self._lock:
+            if self.conn is None:
+                try:
+                    self.db_path.parent.mkdir(parents=True, exist_ok=True)
+                    self.conn = sqlite3.connect(
+                        self.db_name,
+                        timeout=30,
+                        check_same_thread=False,
+                        isolation_level=None,
+                    )
+                    self.conn.row_factory = sqlite3.Row
+                    self.conn.execute("PRAGMA foreign_keys = ON")
+                    self.conn.execute("PRAGMA journal_mode = WAL")
+                    self.conn.execute("PRAGMA synchronous = NORMAL")
+                    self.conn.execute("PRAGMA busy_timeout = 30000")
+                    logger.info("Banco conectado: %s", self.db_path)
+                except (sqlite3.Error, OSError) as exc:
+                    raise DatabaseError(f"Não foi possível abrir o banco: {exc}") from exc
+            return self.conn
 
     def create_tables(self) -> None:
-        if not SCHEMA_PATH.exists():
-            return
+        migrate(self.connect(), SCHEMA_PATH)
 
-        with self.connect() as conn:
-            schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
-            conn.executescript(schema_sql)
-            conn.commit()
-            conn.execute("PRAGMA user_version = 1;")
-            conn.commit()
+    @contextmanager
+    def transaction(self) -> Iterator[sqlite3.Connection]:
+        connection = self.connect()
+        with self._lock:
+            nested = connection.in_transaction
+            savepoint = f"smartfile_{id(threading.current_thread())}"
+            try:
+                connection.execute(f"SAVEPOINT {savepoint}" if nested else "BEGIN IMMEDIATE")
+                yield connection
+                connection.execute(f"RELEASE SAVEPOINT {savepoint}" if nested else "COMMIT")
+            except Exception:
+                if connection.in_transaction:
+                    connection.execute(
+                        f"ROLLBACK TO SAVEPOINT {savepoint}" if nested else "ROLLBACK"
+                    )
+                    if nested:
+                        connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+                raise
 
-    def execute_query(self, query: str, params: tuple = ()):
+    def execute_query(self, query: str, params: Sequence[object] = ()) -> sqlite3.Cursor:
         try:
-            with self.connect() as conn:
-                cursor = conn.cursor()
-                cursor.execute(query, params)
-                conn.commit()
-                return cursor
+            with self.transaction() as connection:
+                return connection.execute(query, tuple(params))
         except sqlite3.Error as exc:
-            print(f"Erro ao executar a consulta: {exc}")
-            return None
+            raise DatabaseError(f"Falha ao executar consulta: {exc}") from exc
 
-    def fetch_all(self, query: str, params=None):
+    def fetch_all(self, query: str, params: Sequence[object] = ()) -> list[sqlite3.Row]:
         try:
-            with self.connect() as conn:
-                cursor = conn.cursor()
-                cursor.execute(query, params or ())
-                return cursor.fetchall()
+            return self.connect().execute(query, tuple(params)).fetchall()
         except sqlite3.Error as exc:
-            print(f"Erro ao buscar dados: {exc}")
-            return []
+            raise DatabaseError(f"Falha ao consultar dados: {exc}") from exc
 
-    def fetch_one(self, query: str, params=None):
+    def fetch_one(self, query: str, params: Sequence[object] = ()) -> sqlite3.Row | None:
         try:
-            with self.connect() as conn:
-                cursor = conn.cursor()
-                cursor.execute(query, params or ())
-                return cursor.fetchone()
+            return self.connect().execute(query, tuple(params)).fetchone()
         except sqlite3.Error as exc:
-            print(f"Erro ao buscar dado: {exc}")
-            return None
+            raise DatabaseError(f"Falha ao consultar dado: {exc}") from exc
 
     def close(self) -> None:
-        if self.conn is not None:
-            self.conn.close()
-            self.conn = None
+        with self._lock:
+            if self.conn is not None:
+                self.conn.close()
+                self.conn = None
+                logger.info("Banco fechado: %s", self.db_path)
+
+    def __enter__(self) -> "Database":
+        return self
+
+    def __exit__(self, *_args) -> None:
+        self.close()
 
 
 def get_default_db_path() -> str:
@@ -97,5 +138,4 @@ def initialize_database(db_path: Optional[str] = None) -> str:
 
 
 def get_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
-    database = Database(db_name=db_path or get_default_db_path())
-    return database.connect()
+    return Database(db_name=db_path or get_default_db_path()).connect()
