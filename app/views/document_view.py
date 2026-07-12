@@ -12,8 +12,11 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QSplitter,
     QTableWidget,
     QTableWidgetItem,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -34,9 +37,22 @@ class DocumentView(QWidget):
     pdf_tools_requested = pyqtSignal(int)
     delete_requested = pyqtSignal(int)
     favorite_requested = pyqtSignal(int)
+    organization_changed = pyqtSignal(int)
+    create_organization_requested = pyqtSignal()
+    edit_organization_requested = pyqtSignal()
+    delete_organization_requested = pyqtSignal()
+    folder_selected = pyqtSignal(object)
+    create_folder_requested = pyqtSignal()
+    rename_folder_requested = pyqtSignal()
+    delete_folder_requested = pyqtSignal()
+    scope_changed = pyqtSignal(str)
+    scanner_requested = pyqtSignal()
+    visualize_requested = pyqtSignal(int)
+    sign_requested = pyqtSignal(int)
 
     def __init__(self):
         super().__init__()
+        self.setObjectName("documentsView")
         self._compact = False
         self._setup_ui()
 
@@ -78,6 +94,47 @@ class DocumentView(QWidget):
         intro.setWordWrap(True)
         left_layout.addWidget(intro)
 
+        organization_row = QHBoxLayout()
+        organization_row.addWidget(QLabel("Organização"))
+        self.organization_combo = QComboBox()
+        self.organization_combo.setObjectName("organizationSelector")
+        self.organization_combo.currentIndexChanged.connect(self._emit_organization)
+        organization_row.addWidget(self.organization_combo, 1)
+        self.btn_new_organization = self._icon_button("Nova organização", "organization_add")
+        self.btn_edit_organization = self._icon_button("Editar organização", "edit")
+        self.btn_delete_organization = self._icon_button("Excluir organização", "action_trash")
+        self.btn_new_organization.clicked.connect(self.create_organization_requested.emit)
+        self.btn_edit_organization.clicked.connect(self.edit_organization_requested.emit)
+        self.btn_delete_organization.clicked.connect(self.delete_organization_requested.emit)
+        organization_row.addWidget(self.btn_new_organization)
+        organization_row.addWidget(self.btn_edit_organization)
+        organization_row.addWidget(self.btn_delete_organization)
+        left_layout.addLayout(organization_row)
+
+        actions = QHBoxLayout()
+        actions.setSpacing(4)
+        self.document_toolbar_buttons = []
+        action_specs = (
+            ("Novo", "new", self.create_folder_requested.emit),
+            ("Importar", "import", self.import_requested.emit),
+            ("Abrir", "viewer_open", lambda: self._emit_for_selected(self.open_requested)),
+            ("Scanner", "scanner", self.scanner_requested.emit),
+            ("Visualizar", "visualize", lambda: self._emit_for_selected(self.visualize_requested)),
+            ("PDF Tools", "pdf", lambda: self._emit_for_selected(self.pdf_tools_requested)),
+            ("Converter", "converter", lambda: self._emit_for_selected(self.convert_requested)),
+            ("Assinar", "sign", lambda: self._emit_for_selected(self.sign_requested)),
+            ("Favorito", "action_star", lambda: self._emit_for_selected(self.favorite_requested)),
+            ("Excluir", "action_trash", lambda: self._emit_for_selected(self.delete_requested)),
+            ("Mais", "more", lambda: None),
+        )
+        for text, icon, callback in action_specs:
+            widget = self._icon_button(text, icon)
+            widget.clicked.connect(callback)
+            actions.addWidget(widget)
+            self.document_toolbar_buttons.append(widget)
+        actions.addStretch(1)
+        left_layout.addLayout(actions)
+
         search_row = QHBoxLayout()
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("Buscar por nome, categoria ou tags")
@@ -118,7 +175,52 @@ class DocumentView(QWidget):
         for column in range(1, self.documents_table.columnCount()):
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
         self.documents_table.itemSelectionChanged.connect(self._on_selection_changed)
-        left_layout.addWidget(self.documents_table, 1)
+        browser = QSplitter(Qt.Orientation.Horizontal)
+        browser.setObjectName("documentBrowserSplitter")
+        folders_panel = QFrame()
+        folders_panel.setObjectName("foldersPanel")
+        folders_layout = QVBoxLayout(folders_panel)
+        folders_layout.setContentsMargins(10, 10, 10, 10)
+        navigation = (
+            ("Documentos", "documents", "documents"),
+            ("Favoritos", "action_star", "favorites"),
+            ("Recentes", "recent", "recent"),
+            ("Pastas", "folder", "folders"),
+            ("Lixeira", "action_trash", "trash"),
+        )
+        self.scope_buttons = {}
+        for text, icon, scope in navigation:
+            nav_button = QPushButton(text)
+            nav_button.setObjectName("documentNavigationButton")
+            nav_button.setCheckable(True)
+            IconProvider.apply(nav_button, icon)
+            nav_button.clicked.connect(lambda _checked=False, value=scope: self._select_scope(value))
+            folders_layout.addWidget(nav_button)
+            self.scope_buttons[scope] = nav_button
+        self.scope_buttons["documents"].setChecked(True)
+        folders_header = QHBoxLayout()
+        folders_header.addWidget(QLabel("Pastas"))
+        folders_header.addStretch()
+        self.btn_new_folder = self._icon_button("Nova pasta", "folder_add")
+        self.btn_rename_folder = self._icon_button("Renomear pasta", "edit")
+        self.btn_delete_folder = self._icon_button("Excluir pasta", "action_trash")
+        self.btn_new_folder.clicked.connect(self.create_folder_requested.emit)
+        self.btn_rename_folder.clicked.connect(self.rename_folder_requested.emit)
+        self.btn_delete_folder.clicked.connect(self.delete_folder_requested.emit)
+        folders_header.addWidget(self.btn_new_folder)
+        folders_header.addWidget(self.btn_rename_folder)
+        folders_header.addWidget(self.btn_delete_folder)
+        folders_layout.addLayout(folders_header)
+        self.folder_tree = QTreeWidget()
+        self.folder_tree.setHeaderHidden(True)
+        self.folder_tree.currentItemChanged.connect(self._emit_folder)
+        folders_layout.addWidget(self.folder_tree, 1)
+        browser.addWidget(folders_panel)
+        browser.addWidget(self.documents_table)
+        browser.setSizes([220, 720])
+        browser.setCollapsible(0, True)
+        left_layout.addWidget(browser, 1)
+        self.browser_splitter = browser
 
         self.details = DocumentDetailsWidget()
         self.details.open_requested.connect(self.open_requested.emit)
@@ -173,6 +275,49 @@ class DocumentView(QWidget):
 
         self.documents_table.resizeRowsToContents()
 
+    def set_organizations(self, organizations, active_id: int) -> None:
+        self.organization_combo.blockSignals(True)
+        self.organization_combo.clear()
+        active_index = 0
+        for index, organization in enumerate(organizations):
+            self.organization_combo.addItem(organization.name, organization.id)
+            if organization.id == active_id:
+                active_index = index
+        self.organization_combo.setCurrentIndex(active_index)
+        self.organization_combo.blockSignals(False)
+
+    def set_folders(self, organization_name: str, folders) -> None:
+        self.folder_tree.blockSignals(True)
+        self.folder_tree.clear()
+        root = QTreeWidgetItem([organization_name])
+        root.setData(0, Qt.ItemDataRole.UserRole, None)
+        root.setIcon(0, IconProvider.icon("organization"))
+        self.folder_tree.addTopLevelItem(root)
+        items = {}
+        for folder in folders:
+            item = QTreeWidgetItem([folder.name])
+            item.setData(0, Qt.ItemDataRole.UserRole, folder.id)
+            item.setIcon(0, IconProvider.icon("folder"))
+            items[folder.id] = item
+        for folder in folders:
+            parent = items.get(folder.parent_id, root)
+            parent.addChild(items[folder.id])
+        root.setExpanded(True)
+        self.folder_tree.setCurrentItem(root)
+        self.folder_tree.expandAll()
+        self.folder_tree.blockSignals(False)
+        self.folder_selected.emit(None)
+
+    def selected_folder_id(self) -> int | None:
+        item = self.folder_tree.currentItem()
+        return item.data(0, Qt.ItemDataRole.UserRole) if item else None
+
+    def _select_scope(self, scope: str) -> None:
+        for name, button in self.scope_buttons.items():
+            button.setChecked(name == scope)
+        self.folder_tree.setVisible(scope in {"documents", "folders"})
+        self.scope_changed.emit(scope)
+
     def show_document_details(self, document: DocumentModel | None):
         self.details.set_document(document)
 
@@ -209,6 +354,31 @@ class DocumentView(QWidget):
 
     def _emit_filter(self, value: str):
         self.filter_requested.emit(value)
+
+    def _emit_organization(self, index: int) -> None:
+        organization_id = self.organization_combo.itemData(index)
+        if organization_id is not None:
+            self.organization_changed.emit(int(organization_id))
+
+    def _emit_folder(self, current, _previous) -> None:
+        self.folder_selected.emit(
+            current.data(0, Qt.ItemDataRole.UserRole) if current else None
+        )
+
+    def _emit_for_selected(self, signal) -> None:
+        document_id = self.selected_document_id()
+        if document_id is not None:
+            signal.emit(document_id)
+
+    @staticmethod
+    def _icon_button(text: str, icon: str) -> QPushButton:
+        button = QPushButton()
+        button.setObjectName("documentToolbarButton")
+        button.setToolTip(text)
+        button.setAccessibleName(text)
+        button.setFixedSize(38, 38)
+        IconProvider.apply(button, icon)
+        return button
 
     def _emit_open(self):
         document_id = self.selected_document_id()

@@ -83,9 +83,9 @@ class ScanView(QWidget):
 
         layout.addWidget(QLabel("Fonte de papel"), 0, 3)
         self.source_combo = QComboBox()
-        self.source_combo.addItem("Bandeja principal")
+        self.source_combo.addItem("Detectando fontes…", None)
         self.source_combo.setEnabled(False)
-        self.source_combo.setToolTip("A seleção de fonte depende do backend do scanner")
+        self.source_combo.setToolTip("Fonte física utilizada na digitalização")
         layout.addWidget(self.source_combo, 1, 3)
 
         layout.addWidget(QLabel("Resolução"), 0, 4)
@@ -241,6 +241,26 @@ class ScanView(QWidget):
         self.btn_scan_more.setEnabled(True)
         self.device_combo.addItems(devices)
 
+    def set_sources(self, sources: list[tuple[str, str]]) -> None:
+        """Preenche as fontes usando (rótulo amigável, valor do backend)."""
+        self.source_combo.clear()
+        if not sources:
+            self.source_combo.addItem("Fonte automática", None)
+            self.source_combo.setEnabled(False)
+            return
+        for label, backend_value in sources:
+            self.source_combo.addItem(label, backend_value)
+        self.source_combo.setEnabled(len(sources) > 1)
+        flatbed_index = next(
+            (
+                index
+                for index, (_label, value) in enumerate(sources)
+                if "flatbed" in value.lower() or "platen" in value.lower()
+            ),
+            0,
+        )
+        self.source_combo.setCurrentIndex(flatbed_index)
+
     def add_thumbnail(self, pixmap: QPixmap) -> None:
         self._pixmaps.append(pixmap)
         item = QListWidgetItem(f"Página {len(self._pixmaps)}")
@@ -277,6 +297,7 @@ class ScanView(QWidget):
             "device": self.device_combo.currentText() if self.device_combo.isEnabled() else "",
             "dpi": int(self.dpi_combo.currentData()),
             "color": str(self.color_combo.currentData()),
+            "source": self.source_combo.currentData(),
         }
 
     def _request_remove(self) -> None:

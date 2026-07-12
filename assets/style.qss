@@ -53,7 +53,120 @@ QWidget#workspace {
 
 QScrollArea#documentsScrollArea,
 QWidget#documentsScrollContent {
+    background: #10171e;
+}
+
+QWidget#documentsView {
+    background: #10171e;
+    color: #e5e7eb;
+}
+
+QWidget#documentsView QLabel {
+    color: #dbe4ee;
+}
+
+QWidget#documentsView QLabel#title {
+    color: #ffffff;
+}
+
+QWidget#documentsView QLineEdit,
+QWidget#documentsView QComboBox {
+    background: #17212a;
+    color: #e5e7eb;
+    border: 1px solid #2d3a45;
+}
+
+QWidget#documentsView QPushButton#documentToolbarButton {
+    background: #17212a;
+    border: 1px solid #27343f;
+    border-radius: 7px;
+    padding: 6px;
+}
+
+QWidget#documentsView QPushButton#documentToolbarButton:hover {
+    background: #22313c;
+    border-color: #3b82f6;
+}
+
+QFrame#foldersPanel {
+    background: #111a22;
+    border: 1px solid #27343f;
+    border-radius: 8px;
+}
+
+QFrame#foldersPanel QTreeWidget {
+    background: #111a22;
+    color: #dbe4ee;
+    border: none;
+}
+
+QFrame#foldersPanel QTreeWidget::item:selected {
+    background: #14532d;
+    color: #ffffff;
+}
+
+QFrame#foldersPanel QPushButton#documentNavigationButton {
     background: transparent;
+    color: #cbd5e1;
+    border: none;
+    text-align: left;
+    padding: 7px 9px;
+}
+
+QFrame#foldersPanel QPushButton#documentNavigationButton:checked {
+    background: #14532d;
+    color: #ffffff;
+}
+
+QWidget#documentsView QTableWidget {
+    background: #111a22;
+    alternate-background-color: #15212a;
+    color: #e5e7eb;
+    border-color: #27343f;
+    gridline-color: #27343f;
+}
+
+QWidget#documentsView QHeaderView::section {
+    background: #17212a;
+    color: #cbd5e1;
+    border-color: #27343f;
+}
+
+QWidget#documentsView QTableWidget::item:selected {
+    background: #14532d;
+    color: #ffffff;
+}
+
+QWidget#documentsView QFrame#documentDetailsPanel {
+    background: #111a22;
+    border-color: #27343f;
+}
+
+QWidget#documentsView QFrame#documentDetailsPanel QLabel {
+    color: #dbe4ee;
+}
+
+QWidget#documentsView QScrollArea#documentDetailsScroll,
+QWidget#documentsView QWidget#documentDetailsContent,
+QWidget#documentsView QScrollArea#documentDetailsScroll QWidget#qt_scrollarea_viewport {
+    background: #111a22;
+    border: none;
+}
+
+QWidget#documentsView QFrame#documentDetailsPanel QPushButton {
+    background: #17212a;
+    color: #e5e7eb;
+    border-color: #2d3a45;
+}
+
+QWidget#documentsView QFrame#documentDetailsPanel QPushButton#primary {
+    background: #2563eb;
+    color: #ffffff;
+}
+
+QWidget#documentsView QFrame#documentDetailsPanel QPushButton:disabled {
+    background: #151e26;
+    color: #64748b;
 }
 
 QScrollArea#documentsScrollArea QScrollBar:vertical {
@@ -232,12 +345,24 @@ QWidget#pdfViewerToolbar QPushButton {
     background: transparent;
     color: #e5e7eb;
     border: 1px solid transparent;
-    padding: 6px 8px;
+    padding: 5px 7px;
+    min-width: 0px;
 }
 
 QWidget#pdfViewerToolbar QPushButton:hover {
     background: #29313a;
     border-color: #3b4652;
+}
+
+QWidget#pdfViewerToolbar QLineEdit,
+QWidget#pdfViewerToolbar QComboBox {
+    background: #20262d;
+    color: #f8fafc;
+    border: 1px solid #3b4652;
+    border-radius: 6px;
+    min-height: 0px;
+    max-height: 34px;
+    padding: 2px 6px;
 }
 
 QWidget#pdfViewerToolbar QLabel,
@@ -254,6 +379,43 @@ QWidget#pdfThumbnailPanel,
 QTabWidget#pdfViewerTabs {
     background: #161b21;
     color: #e5e7eb;
+}
+
+QTabWidget#pdfViewerTabs::pane {
+    background: #161b21;
+    border: 1px solid #303841;
+}
+
+QTabWidget#pdfViewerTabs QTabBar::tab {
+    background: #20262d;
+    color: #cbd5e1;
+    padding: 8px 12px;
+    border: 1px solid #303841;
+}
+
+QTabWidget#pdfViewerTabs QTabBar::tab:selected {
+    background: #161b21;
+    color: #ffffff;
+    border-bottom-color: #3b82f6;
+}
+
+QWidget#pdfInfoPanel,
+QScrollArea#pdfInfoScroll,
+QWidget#pdfInfoContent,
+QScrollArea#pdfInfoScroll QWidget#qt_scrollarea_viewport {
+    background: #161b21;
+    border: none;
+}
+
+QWidget#pdfInfoPanel QLabel,
+QWidget#pdfInfoContent QLabel {
+    color: #d1d5db;
+}
+
+QLabel#pdfViewerPanelTitle {
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 14px;
 }
 
 QWidget#pdfThumbnailPanel QListWidget {

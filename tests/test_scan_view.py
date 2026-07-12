@@ -29,6 +29,7 @@ def test_scan_view_exposes_supported_configuration_and_page_state():
         "device": "Scanner de teste",
         "dpi": 300,
         "color": "bw",
+        "source": None,
     }
     assert view.btn_save.isEnabled() is False
 
@@ -44,6 +45,20 @@ def test_scan_view_exposes_supported_configuration_and_page_state():
     view.remove_thumbnail(0)
     assert view.page_list.count() == 0
     assert view.btn_save.isEnabled() is False
+    view.close()
+
+
+def test_scan_view_prefers_flatbed_and_preserves_backend_value():
+    _app()
+    view = ScanView()
+    view.set_sources([
+        ("Alimentador automático (ADF)", "ADF"),
+        ("Mesa de vidro", "Flatbed"),
+    ])
+
+    assert view.source_combo.isEnabled() is True
+    assert view.source_combo.currentText() == "Mesa de vidro"
+    assert view.get_scan_config()["source"] == "Flatbed"
     view.close()
 
 

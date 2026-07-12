@@ -194,7 +194,7 @@ def test_worker_preserves_native_finished_signal():
 def test_viewer_keeps_three_signature_actions_separate():
     _app()
     view = PDFViewerView()
-    labels = {button.text(): button for button in view.buttons}
+    labels = {button.accessibleName(): button for button in view.buttons}
     assert {"Assinar digitalmente", "Assinatura manuscrita", "Validar assinaturas"} <= labels.keys()
     assert not labels["Assinatura manuscrita"].icon().isNull()
     view.close()

@@ -18,6 +18,7 @@ from app.errors.pdf_viewer_exceptions import (
 from app.models.pdf_document_info import PDFDocumentInfo
 from app.models.pdf_render_request import PDFRenderRequest
 from app.services.pdf_viewer_service import PDFViewerService
+from app.views.pdf_viewer_view import PDFViewerView
 from app.views.workspace_view import WorkspaceView
 from app.workers.pdf_render_worker import PDFRenderWorker
 
@@ -142,3 +143,23 @@ def test_navigation_and_zoom_are_bounded_and_pdf_tools_key_is_preserved(tmp_path
     assert "pdf_viewer" in workspace.list_views()
     assert "finished" not in PDFRenderWorker.__dict__
     workspace.close()
+
+
+def test_toolbar_uses_icons_without_clipping_at_workspace_width():
+    app = _app()
+    view = PDFViewerView()
+    view.resize(1160, 700)
+    view.show()
+    app.processEvents()
+
+    assert view._compact_toolbar is True
+    assert all(button.text() == "" for button in view.buttons)
+    assert all(button.width() == 38 for button in view.buttons)
+    assert all(button.toolTip() for button in view.buttons)
+    assert view.toolbar.sizeHint().width() <= view.width()
+
+    view.resize(1700, 700)
+    app.processEvents()
+    assert view._compact_toolbar is False
+    assert view.btn_sign.text() == "Assinar digitalmente"
+    view.close()

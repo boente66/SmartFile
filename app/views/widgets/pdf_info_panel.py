@@ -7,14 +7,17 @@ from app.models.pdf_document_info import PDFDocumentInfo
 class PDFInfoPanel(QWidget):
     def __init__(self):
         super().__init__()
+        self.setObjectName("pdfInfoPanel")
         self._labels = {}
         root = QVBoxLayout(self)
         heading = QLabel("Informações do documento")
         heading.setObjectName("pdfViewerPanelTitle")
         root.addWidget(heading)
         scroll = QScrollArea()
+        scroll.setObjectName("pdfInfoScroll")
         scroll.setWidgetResizable(True)
         content = QWidget()
+        content.setObjectName("pdfInfoContent")
         form = QFormLayout(content)
         fields = (
             ("name", "Nome"), ("path", "Caminho"), ("size", "Tamanho"),

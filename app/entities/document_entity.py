@@ -7,6 +7,8 @@ from typing import Optional
 @dataclass
 class DocumentEntity:
     id: Optional[int] = None
+    organization_id: int = 1
+    folder_id: Optional[int] = None
     name: str = ""
     original_name: str = ""
     path: str = ""

@@ -26,10 +26,21 @@ class HistoryRepository(BaseRepository):
         )
         return [self._row_to_entity(row) for row in rows]
 
-    def find_recent(self, limit: int = 10) -> list[HistoryEntity]:
-        rows = self._fetch_all(
-            "SELECT * FROM history ORDER BY created_at DESC, id DESC LIMIT ?", (limit,)
-        )
+    def find_recent(self, limit: int = 10, organization_id: int | None = None) -> list[HistoryEntity]:
+        if organization_id is None:
+            rows = self._fetch_all(
+                "SELECT * FROM history ORDER BY created_at DESC, id DESC LIMIT ?", (limit,)
+            )
+        else:
+            rows = self._fetch_all(
+                """
+                SELECT history.* FROM history
+                JOIN documents ON documents.id = history.document_id
+                WHERE documents.organization_id = ?
+                ORDER BY history.created_at DESC, history.id DESC LIMIT ?
+                """,
+                (organization_id, limit),
+            )
         return [self._row_to_entity(row) for row in rows]
 
     @staticmethod

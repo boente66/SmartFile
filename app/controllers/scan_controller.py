@@ -36,6 +36,7 @@ class ScanController:
         self.view.save_pdf_requested.connect(self.on_save_pdf_requested)
         self.view.clear_requested.connect(self.on_clear_requested)
         self.view.refresh_devices_requested.connect(self._load_devices)
+        self.view.device_changed.connect(self._load_sources)
 
     def _register_view(self):
         self.workspace.register_view("scanner", self.view)
@@ -44,6 +45,12 @@ class ScanController:
         devices = ScanService.list_devices()
         self.view.set_devices(devices)
         self._devices_loaded = True
+
+    def _load_sources(self, device_name: str):
+        if not device_name or device_name == "Nenhum scanner encontrado":
+            self.view.set_sources([])
+            return
+        self.view.set_sources(ScanService.list_sources(device_name))
 
     # -------------------------
     # API pública
@@ -72,7 +79,8 @@ class ScanController:
             config = ScanConfigModel(
                 device_name=cfg["device"],
                 dpi=cfg["dpi"],
-                color_mode=cfg["color"]
+                color_mode=cfg["color"],
+                source_name=cfg["source"],
             )
             config.validate()
             img = ScanService.scan_page(config)
@@ -96,7 +104,7 @@ class ScanController:
             QMessageBox.critical(
                 self.view,
                 "Erro ao escanear",
-                str(e)
+                ScanService.friendly_error(e, cfg.get("source"))
             )
 
     def on_remove_requested(self, index: int):

@@ -49,9 +49,11 @@ class DocumentDetailsWidget(QFrame):
         layout.addWidget(self.original_name_label)
 
         scroll = QScrollArea()
+        scroll.setObjectName("documentDetailsScroll")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         content = QWidget()
+        content.setObjectName("documentDetailsContent")
         form = QFormLayout(content)
         form.setContentsMargins(0, 8, 0, 8)
         form.setHorizontalSpacing(14)

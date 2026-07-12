@@ -9,6 +9,8 @@ from app.entities.document_entity import DocumentEntity
 @dataclass
 class DocumentModel:
     id: Optional[int] = None
+    organization_id: int = 1
+    folder_id: Optional[int] = None
     name: str = ""
     original_name: Optional[str] = None
     path: str = ""
@@ -33,6 +35,8 @@ class DocumentModel:
     def from_entity(cls, entity: DocumentEntity) -> "DocumentModel":
         return cls(
             id=entity.id,
+            organization_id=entity.organization_id,
+            folder_id=entity.folder_id,
             name=entity.name,
             original_name=entity.original_name,
             path=entity.path,
@@ -57,6 +61,8 @@ class DocumentModel:
     def to_entity(self) -> DocumentEntity:
         return DocumentEntity(
             id=self.id,
+            organization_id=self.organization_id,
+            folder_id=self.folder_id,
             name=self.name,
             original_name=self.original_name or "",
             path=self.path,

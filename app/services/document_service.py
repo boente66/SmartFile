@@ -17,6 +17,8 @@ from app.models.document_model import DocumentModel
 from app.repositories.document_repository import DocumentRepository
 from app.services.history_service import HistoryService
 from app.services.document_storage_service import DocumentStorageService
+from app.services.folder_service import FolderService
+from app.services.organization_service import OrganizationService
 
 logger = logging.getLogger(__name__)
 
@@ -32,15 +34,29 @@ class DocumentService:
     ):
         self.database = Database(db_name=db_path)
         self.document_repository = DocumentRepository(database=self.database)
+        self.organization_service = OrganizationService(self.database)
+        self.folder_service = FolderService(self.database)
         self.storage_service = storage_service or DocumentStorageService(self.database.paths)
         # Histórico básico preexistente é preservado, sem ampliar seu domínio.
         self.history_service = HistoryService(database=self.database)
 
-    def import_document(self, file_path: str) -> DocumentModel:
+    @property
+    def active_organization_id(self) -> int:
+        return self.organization_service.active_id
+
+    def set_active_organization(self, organization_id: int):
+        return self.organization_service.set_active(organization_id)
+
+    def import_document(self, file_path: str, folder_id: int | None = None) -> DocumentModel:
         path = self._validated_path(file_path)
         extension = path.suffix.lower()
         checksum = self._calculate_checksum(path)
-        if self.document_repository.exists_checksum(checksum):
+        organization_id = self.active_organization_id
+        if folder_id is not None:
+            folder = self.folder_service.repository.find_by_id(folder_id, organization_id)
+            if folder is None or folder.status != "ACTIVE":
+                raise InvalidDocumentError("A pasta selecionada não pertence à organização ativa.")
+        if self.document_repository.exists_checksum(checksum, organization_id):
             raise DuplicateDocumentError("Este documento já foi importado.")
 
         stored = self.storage_service.store(path, checksum)
@@ -48,6 +64,8 @@ class DocumentService:
         try:
             with self.database.transaction():
                 entity = DocumentEntity(
+                    organization_id=organization_id,
+                    folder_id=folder_id,
                     name=path.name,
                     original_name=path.name,
                     path=stored.storage_path,
@@ -79,59 +97,71 @@ class DocumentService:
             raise
 
     def get_document(self, document_id: int) -> Optional[DocumentModel]:
-        entity = self.document_repository.find_by_id(document_id)
+        entity = self.document_repository.find_by_id(document_id, self.active_organization_id)
         return DocumentModel.from_entity(entity) if entity else None
 
-    def list_documents(self) -> list[DocumentModel]:
-        return self._models(self.document_repository.find_all())
+    def list_documents(self, folder_id: int | None = None) -> list[DocumentModel]:
+        return self._models(self.document_repository.find_all(self.active_organization_id, folder_id))
 
     def search_documents(
         self,
         term: str,
         file_type: str | None = None,
+        folder_id: int | None = None,
     ) -> list[DocumentModel]:
         if not term.strip():
-            return self.filter_by_type(file_type or "Todos")
-        return self._models(self.document_repository.search(term, file_type))
+            return self.filter_by_type(file_type or "Todos", folder_id)
+        return self._models(
+            self.document_repository.search(
+                term, file_type, self.active_organization_id, folder_id
+            )
+        )
 
-    def filter_by_type(self, file_type: str) -> list[DocumentModel]:
+    def filter_by_type(self, file_type: str, folder_id: int | None = None) -> list[DocumentModel]:
         if not file_type or file_type.lower() == "todos":
-            return self.list_documents()
-        return self._models(self.document_repository.find_by_type(file_type))
+            return self.list_documents(folder_id)
+        return self._models(
+            self.document_repository.find_by_type(
+                file_type, self.active_organization_id, folder_id
+            )
+        )
 
     def get_recent_documents(self) -> list[DocumentModel]:
-        return self._models(self.document_repository.find_recent())
+        return self._models(self.document_repository.find_recent(10, self.active_organization_id))
 
     def get_favorite_documents(self) -> list[DocumentModel]:
-        return self._models(self.document_repository.find_favorites())
+        return self._models(self.document_repository.find_favorites(self.active_organization_id))
+
+    def get_trashed_documents(self) -> list[DocumentModel]:
+        return self._models(self.document_repository.find_trashed(self.active_organization_id))
 
     def toggle_favorite(self, document_id: int) -> DocumentModel:
-        updated = self.document_repository.toggle_favorite(document_id)
+        updated = self.document_repository.toggle_favorite(document_id, self.active_organization_id)
         if updated is None:
             raise InvalidDocumentError("Documento não encontrado.")
         self._record_history(updated.id, "FAVORITE", f"Favorito atualizado: {updated.name}")
         return DocumentModel.from_entity(updated)
 
     def delete_document(self, document_id: int) -> bool:
-        entity = self.document_repository.find_by_id(document_id)
+        entity = self.document_repository.find_by_id(document_id, self.active_organization_id)
         if entity is None:
             return False
-        changed = self.document_repository.soft_delete(document_id)
+        changed = self.document_repository.soft_delete(document_id, self.active_organization_id)
         if changed:
             self._record_history(document_id, "DELETE", f"Documento movido para lixeira: {entity.name}")
         return changed
 
     def restore_document(self, document_id: int) -> DocumentModel:
-        if not self.document_repository.restore(document_id):
+        if not self.document_repository.restore(document_id, self.active_organization_id):
             raise InvalidDocumentError("Documento não encontrado.")
-        restored = self.document_repository.find_by_id(document_id)
+        restored = self.document_repository.find_by_id(document_id, self.active_organization_id)
         if restored is None:
             raise InvalidDocumentError("Documento não encontrado.")
         self._record_history(document_id, "RESTORE", f"Documento restaurado: {restored.name}")
         return DocumentModel.from_entity(restored)
 
     def open_document(self, document_id: int) -> DocumentModel:
-        entity = self.document_repository.find_by_id(document_id)
+        entity = self.document_repository.find_by_id(document_id, self.active_organization_id)
         if entity is None:
             raise InvalidDocumentError("Documento não encontrado.")
         if entity.status != "ACTIVE":
@@ -152,7 +182,7 @@ class DocumentService:
 
     def permanently_delete_document(self, document_id: int) -> bool:
         """Remove registro e arquivo gerenciado; ainda não exposto pela interface."""
-        entity = self.document_repository.find_by_id(document_id)
+        entity = self.document_repository.find_by_id(document_id, self.active_organization_id)
         if entity is None:
             return False
         quarantine: Path | None = None
@@ -171,7 +201,7 @@ class DocumentService:
                     "PERMANENT_DELETE",
                     f"Documento excluído permanentemente: {entity.name}",
                 )
-                deleted = self.document_repository.hard_delete(document_id)
+                deleted = self.document_repository.hard_delete(document_id, self.active_organization_id)
             if quarantine and quarantine.exists():
                 quarantine.unlink()
             return deleted
@@ -180,6 +210,27 @@ class DocumentService:
                 original_storage.parent.mkdir(parents=True, exist_ok=True)
                 quarantine.replace(original_storage)
             raise
+
+    def move_document(self, document_id: int, folder_id: int | None) -> DocumentModel:
+        if folder_id is not None:
+            folder = self.folder_service.repository.find_by_id(folder_id, self.active_organization_id)
+            if folder is None or folder.status != "ACTIVE":
+                raise InvalidDocumentError("Pasta inválida para a organização ativa.")
+        if not self.document_repository.move_to_folder(
+            document_id, self.active_organization_id, folder_id
+        ):
+            raise InvalidDocumentError("Documento não encontrado na organização ativa.")
+        document = self.get_document(document_id)
+        if document is None:
+            raise InvalidDocumentError("Documento não encontrado.")
+        self._record_history(document_id, "MOVE", "Documento movido para outra pasta lógica")
+        return document
+
+    def delete_folder(self, folder_id: int) -> bool:
+        changed = self.folder_service.delete(self.active_organization_id, folder_id)
+        if changed:
+            self.document_repository.clear_deleted_folders(self.active_organization_id)
+        return changed
 
     def _record_history(self, document_id: Optional[int], action: str, description: str) -> None:
         self.history_service.record_action(document_id, action, description)

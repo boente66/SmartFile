@@ -12,6 +12,7 @@ class ScanConfigModel:
     device_name: str
     dpi: int = 300
     color_mode: str = "color"  # color | gray | bw
+    source_name: str | None = None
 
     VALID_COLOR_MODES = {"color", "gray", "bw"}
 

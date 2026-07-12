@@ -34,8 +34,10 @@ class HistoryService:
         entities = self.repository.find_by_document_id(document_id)
         return [HistoryModel.from_entity(entity) for entity in entities]
 
-    def get_recent_history(self, limit: int = 10) -> list[HistoryModel]:
-        entities = self.repository.find_recent(limit)
+    def get_recent_history(
+        self, limit: int = 10, organization_id: int | None = None
+    ) -> list[HistoryModel]:
+        entities = self.repository.find_recent(limit, organization_id)
         return [HistoryModel.from_entity(entity) for entity in entities]
 
     def _now(self) -> str:

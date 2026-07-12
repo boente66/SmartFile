@@ -4,7 +4,7 @@ from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QKeySequence, QPixmap, QShortcut
 from PyQt6.QtWidgets import (
     QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QSplitter, QTabWidget, QVBoxLayout, QWidget,
+    QSizePolicy, QSplitter, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from app.models.pdf_document_info import PDFDocumentInfo
@@ -42,6 +42,7 @@ class PDFViewerView(QWidget):
         self.setObjectName("pdfViewer")
         self._page_count = 0
         self._current_zoom = 1.0
+        self._compact_toolbar: bool | None = None
         self._setup_ui()
         self._setup_shortcuts()
         self.set_document_loaded(False)
@@ -60,6 +61,7 @@ class PDFViewerView(QWidget):
         root.addWidget(self.search_bar)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.content_splitter = splitter
         self.thumbnails = PDFThumbnailPanel()
         self.thumbnails.setObjectName("pdfThumbnailPanel")
         self.thumbnails.page_selected.connect(self.page_requested.emit)
@@ -99,12 +101,18 @@ class PDFViewerView(QWidget):
         toolbar.setObjectName("pdfViewerToolbar")
         layout = QHBoxLayout(toolbar)
         layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(3)
+        self.toolbar_layout = layout
         self.buttons = []
 
         def button(text, callback, icon=None):
             widget = QPushButton(text)
             if icon:
                 IconProvider.apply(widget, icon)
+            widget.setProperty("actionText", text)
+            widget.setAccessibleName(text)
+            widget.setToolTip(text)
+            widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
             widget.clicked.connect(callback)
             layout.addWidget(widget)
             self.buttons.append(widget)
@@ -125,16 +133,17 @@ class PDFViewerView(QWidget):
         button("Próxima", self.next_requested.emit, "viewer_next_page")
         button("Última", self.last_requested.emit, "viewer_last_page")
         layout.addSpacing(10)
-        button("−", lambda: self._step_zoom(-0.25), "viewer_zoom_out")
+        button("Diminuir zoom", lambda: self._step_zoom(-0.25), "viewer_zoom_out")
         self.zoom_combo = QComboBox()
         for percent in (50, 75, 100, 125, 150, 200):
             self.zoom_combo.addItem(f"{percent}%", percent / 100)
         self.zoom_combo.setCurrentText("100%")
+        self.zoom_combo.setFixedWidth(82)
         self.zoom_combo.currentIndexChanged.connect(
             lambda: self.zoom_requested.emit(float(self.zoom_combo.currentData()))
         )
         layout.addWidget(self.zoom_combo)
-        button("+", lambda: self._step_zoom(0.25), "viewer_zoom_in")
+        button("Aumentar zoom", lambda: self._step_zoom(0.25), "viewer_zoom_in")
         button("Ajustar largura", self.fit_width_requested.emit, "viewer_fit_width")
         button("Ajustar página", self.fit_page_requested.emit, "viewer_fit_page")
         button("Girar esq.", self.rotate_left_requested.emit, "viewer_rotate_left")
@@ -149,7 +158,29 @@ class PDFViewerView(QWidget):
             "Validar assinaturas", self.validate_signatures_requested.emit, "viewer_validate"
         )
         layout.addStretch()
+        self._set_toolbar_compact(True)
         return toolbar
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._set_toolbar_compact(event.size().width() < 1500)
+
+    def _set_toolbar_compact(self, compact: bool) -> None:
+        if compact == self._compact_toolbar:
+            return
+        self._compact_toolbar = compact
+        self.toolbar_layout.setSpacing(3 if compact else 6)
+        for widget in self.buttons:
+            action_text = str(widget.property("actionText"))
+            if compact:
+                widget.setText("")
+                widget.setFixedSize(38, 38)
+            else:
+                widget.setText(action_text)
+                widget.setMinimumSize(0, 0)
+                widget.setMaximumSize(16777215, 38)
+        self.page_edit.setFixedWidth(46 if compact else 52)
+        self.zoom_combo.setFixedWidth(74 if compact else 82)
 
     def _setup_shortcuts(self) -> None:
         bindings = (

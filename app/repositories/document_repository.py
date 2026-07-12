@@ -23,11 +23,11 @@ class DocumentRepository(BaseRepository):
         cursor = self._write(
             """
             INSERT INTO documents (
-                name, original_name, path, source_path, storage_path, internal_name,
+                organization_id, folder_id, name, original_name, path, source_path, storage_path, internal_name,
                 managed, extension, file_type, size, checksum,
                 category, description, favorite, status, created_at, updated_at,
                 last_accessed_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             self._values(entity),
         )
@@ -38,7 +38,7 @@ class DocumentRepository(BaseRepository):
         self._write(
             """
             UPDATE documents SET
-                name = ?, original_name = ?, path = ?, source_path = ?,
+                organization_id = ?, folder_id = ?, name = ?, original_name = ?, path = ?, source_path = ?,
                 storage_path = ?, internal_name = ?, managed = ?, extension = ?,
                 file_type = ?, size = ?, checksum = ?, category = ?,
                 description = ?, favorite = ?, status = ?, created_at = ?,
@@ -53,19 +53,38 @@ class DocumentRepository(BaseRepository):
         """Compatibilidade: exclusão pública é lógica."""
         return self.soft_delete(document_id)
 
-    def hard_delete(self, document_id: int) -> bool:
-        return self._write("DELETE FROM documents WHERE id = ?", (document_id,)).rowcount > 0
+    def hard_delete(self, document_id: int, organization_id: int | None = None) -> bool:
+        query = "DELETE FROM documents WHERE id = ?"
+        params: tuple[object, ...] = (document_id,)
+        if organization_id is not None:
+            query += " AND organization_id = ?"
+            params += (organization_id,)
+        return self._write(query, params).rowcount > 0
 
-    def find_by_id(self, document_id: int) -> Optional[DocumentEntity]:
-        row = self._fetch_one("SELECT * FROM documents WHERE id = ?", (document_id,))
+    def find_by_id(self, document_id: int, organization_id: int | None = None) -> Optional[DocumentEntity]:
+        query = "SELECT * FROM documents WHERE id = ?"
+        params: tuple[object, ...] = (document_id,)
+        if organization_id is not None:
+            query += " AND organization_id = ?"
+            params += (organization_id,)
+        row = self._fetch_one(query, params)
         return self._row_to_entity(row) if row else None
 
-    def find_all(self) -> list[DocumentEntity]:
+    def find_all(self, organization_id: int | None = None, folder_id: int | None = None) -> list[DocumentEntity]:
+        query = "SELECT * FROM documents WHERE status = 'ACTIVE'"
+        params: list[object] = []
+        if organization_id is not None:
+            query += " AND organization_id = ?"
+            params.append(organization_id)
+        if folder_id is not None:
+            query += " AND folder_id = ?"
+            params.append(folder_id)
+        query += " ORDER BY created_at DESC, id DESC"
         return self._entities(
-            "SELECT * FROM documents WHERE status = 'ACTIVE' ORDER BY created_at DESC, id DESC"
+            query, params
         )
 
-    def search(self, term: str, file_type: str | None = None) -> list[DocumentEntity]:
+    def search(self, term: str, file_type: str | None = None, organization_id: int | None = None, folder_id: int | None = None) -> list[DocumentEntity]:
         pattern = f"%{term.strip().lower()}%"
         query = """
             SELECT * FROM documents
@@ -74,70 +93,117 @@ class DocumentRepository(BaseRepository):
                    OR lower(category) LIKE ? OR lower(description) LIKE ?)
         """
         params: list[object] = [pattern, pattern, pattern, pattern]
+        if organization_id is not None:
+            query += " AND organization_id = ?"
+            params.append(organization_id)
+        if folder_id is not None:
+            query += " AND folder_id = ?"
+            params.append(folder_id)
         if file_type and file_type.lower() != "todos":
             query += " AND file_type = ?"
             params.append(file_type)
         query += " ORDER BY created_at DESC, id DESC"
         return self._entities(query, params)
 
-    def find_by_type(self, file_type: str) -> list[DocumentEntity]:
+    def find_by_type(self, file_type: str, organization_id: int | None = None, folder_id: int | None = None) -> list[DocumentEntity]:
+        query = "SELECT * FROM documents WHERE status = 'ACTIVE' AND file_type = ?"
+        params: list[object] = [file_type]
+        if organization_id is not None:
+            query += " AND organization_id = ?"
+            params.append(organization_id)
+        if folder_id is not None:
+            query += " AND folder_id = ?"
+            params.append(folder_id)
+        query += " ORDER BY created_at DESC, id DESC"
+        return self._entities(
+            query, params,
+        )
+
+    def find_recent(self, limit: int = 10, organization_id: int | None = None) -> list[DocumentEntity]:
+        query = "SELECT * FROM documents WHERE status = 'ACTIVE'"
+        params: list[object] = []
+        if organization_id is not None:
+            query += " AND organization_id = ?"
+            params.append(organization_id)
+        query += " ORDER BY last_accessed_at DESC, updated_at DESC, created_at DESC LIMIT ?"
+        params.append(limit)
+        return self._entities(
+            query, params,
+        )
+
+    def find_favorites(self, organization_id: int | None = None) -> list[DocumentEntity]:
+        query = "SELECT * FROM documents WHERE status = 'ACTIVE' AND favorite = 1"
+        params: list[object] = []
+        if organization_id is not None:
+            query += " AND organization_id = ?"
+            params.append(organization_id)
+        query += " ORDER BY created_at DESC, id DESC"
+        return self._entities(
+            query, params
+        )
+
+    def find_trashed(self, organization_id: int) -> list[DocumentEntity]:
         return self._entities(
             """
-            SELECT * FROM documents WHERE status = 'ACTIVE' AND file_type = ?
-            ORDER BY created_at DESC, id DESC
+            SELECT * FROM documents WHERE status = 'TRASHED' AND organization_id = ?
+            ORDER BY updated_at DESC, id DESC
             """,
-            (file_type,),
+            (organization_id,),
         )
 
-    def find_recent(self, limit: int = 10) -> list[DocumentEntity]:
-        return self._entities(
-            """
-            SELECT * FROM documents WHERE status = 'ACTIVE'
-            ORDER BY last_accessed_at DESC, updated_at DESC, created_at DESC LIMIT ?
-            """,
-            (limit,),
-        )
-
-    def find_favorites(self) -> list[DocumentEntity]:
-        return self._entities(
-            """
-            SELECT * FROM documents WHERE status = 'ACTIVE' AND favorite = 1
-            ORDER BY created_at DESC, id DESC
-            """
-        )
-
-    def exists_checksum(self, checksum: str) -> bool:
-        return self._fetch_one(
-            "SELECT 1 FROM documents WHERE checksum = ? LIMIT 1", (checksum,)
-        ) is not None
+    def exists_checksum(self, checksum: str, organization_id: int | None = None) -> bool:
+        query = "SELECT 1 FROM documents WHERE checksum = ?"
+        params: list[object] = [checksum]
+        if organization_id is not None:
+            query += " AND organization_id = ?"
+            params.append(organization_id)
+        query += " LIMIT 1"
+        return self._fetch_one(query, params) is not None
 
     def find_by_path(self, path: str) -> Optional[DocumentEntity]:
         row = self._fetch_one("SELECT * FROM documents WHERE path = ?", (path,))
         return self._row_to_entity(row) if row else None
 
-    def toggle_favorite(self, document_id: int) -> Optional[DocumentEntity]:
+    def toggle_favorite(self, document_id: int, organization_id: int | None = None) -> Optional[DocumentEntity]:
         now = self._now()
         self._write(
             """
             UPDATE documents
             SET favorite = CASE favorite WHEN 1 THEN 0 ELSE 1 END, updated_at = ?
-            WHERE id = ?
+            WHERE id = ? AND (? IS NULL OR organization_id = ?)
             """,
-            (now, document_id),
+            (now, document_id, organization_id, organization_id),
         )
-        return self.find_by_id(document_id)
+        return self.find_by_id(document_id, organization_id)
 
-    def soft_delete(self, document_id: int) -> bool:
+    def soft_delete(self, document_id: int, organization_id: int | None = None) -> bool:
         return self._write(
-            "UPDATE documents SET status = 'TRASHED', updated_at = ? WHERE id = ?",
-            (self._now(), document_id),
+            "UPDATE documents SET status = 'TRASHED', updated_at = ? WHERE id = ? AND (? IS NULL OR organization_id = ?)",
+            (self._now(), document_id, organization_id, organization_id),
         ).rowcount > 0
 
-    def restore(self, document_id: int) -> bool:
+    def restore(self, document_id: int, organization_id: int | None = None) -> bool:
         return self._write(
-            "UPDATE documents SET status = 'ACTIVE', updated_at = ? WHERE id = ?",
-            (self._now(), document_id),
+            "UPDATE documents SET status = 'ACTIVE', updated_at = ? WHERE id = ? AND (? IS NULL OR organization_id = ?)",
+            (self._now(), document_id, organization_id, organization_id),
         ).rowcount > 0
+
+    def move_to_folder(self, document_id: int, organization_id: int, folder_id: int | None) -> bool:
+        return self._write(
+            "UPDATE documents SET folder_id = ?, updated_at = ? WHERE id = ? AND organization_id = ?",
+            (folder_id, self._now(), document_id, organization_id),
+        ).rowcount > 0
+
+    def clear_deleted_folders(self, organization_id: int) -> None:
+        self._write(
+            """
+            UPDATE documents SET folder_id = NULL, updated_at = ?
+            WHERE organization_id = ? AND folder_id IN (
+                SELECT id FROM folders WHERE organization_id = ? AND status = 'DELETED'
+            )
+            """,
+            (self._now(), organization_id, organization_id),
+        )
 
     def _entities(self, query: str, params=()) -> list[DocumentEntity]:
         return [self._row_to_entity(row) for row in self._fetch_all(query, params)]
@@ -145,7 +211,7 @@ class DocumentRepository(BaseRepository):
     @staticmethod
     def _values(entity: DocumentEntity) -> tuple[object, ...]:
         return (
-            entity.name, entity.original_name, entity.path, entity.source_path,
+            entity.organization_id, entity.folder_id, entity.name, entity.original_name, entity.path, entity.source_path,
             entity.storage_path, entity.internal_name, int(entity.managed), entity.extension,
             entity.file_type, entity.size, entity.checksum, entity.category,
             entity.description, int(entity.favorite), entity.status,
@@ -155,7 +221,8 @@ class DocumentRepository(BaseRepository):
     @staticmethod
     def _row_to_entity(row) -> DocumentEntity:
         return DocumentEntity(
-            id=row["id"], name=row["name"], original_name=row["original_name"],
+            id=row["id"], organization_id=int(row["organization_id"] or 0), folder_id=row["folder_id"],
+            name=row["name"], original_name=row["original_name"],
             path=row["path"], source_path=row["source_path"],
             storage_path=row["storage_path"], internal_name=row["internal_name"],
             managed=bool(row["managed"]), extension=row["extension"], file_type=row["file_type"],

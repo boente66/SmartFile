@@ -7,7 +7,7 @@ from pathlib import Path
 from app.errors.persistence_exceptions import DatabaseError
 
 logger = logging.getLogger(__name__)
-CURRENT_SCHEMA_VERSION = 4
+CURRENT_SCHEMA_VERSION = 5
 
 
 def _has_user_tables(connection: sqlite3.Connection) -> bool:
@@ -47,6 +47,8 @@ def _upgrade_documents(connection: sqlite3.Connection) -> None:
         "storage_path": "TEXT",
         "internal_name": "TEXT",
         "managed": "INTEGER NOT NULL DEFAULT 0",
+        "organization_id": "INTEGER",
+        "folder_id": "INTEGER",
     }
     for name, declaration in additions.items():
         if name not in columns:
@@ -60,8 +62,76 @@ def _upgrade_documents(connection: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status);
         CREATE INDEX IF NOT EXISTS idx_documents_created_at ON documents(created_at);
         CREATE INDEX IF NOT EXISTS idx_documents_storage_path ON documents(storage_path);
+        CREATE INDEX IF NOT EXISTS idx_documents_organization ON documents(organization_id);
+        CREATE INDEX IF NOT EXISTS idx_documents_folder ON documents(folder_id);
+        CREATE INDEX IF NOT EXISTS idx_documents_org_checksum ON documents(organization_id, checksum);
         CREATE INDEX IF NOT EXISTS idx_history_document ON history(document_id);
         """
+    )
+
+
+def _upgrade_organizations(connection: sqlite3.Connection) -> None:
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS organizations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            description TEXT,
+            slug TEXT NOT NULL UNIQUE,
+            icon TEXT,
+            color TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
+            status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'DELETED'))
+        );
+        CREATE TABLE IF NOT EXISTS folders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL,
+            parent_id INTEGER,
+            name TEXT NOT NULL,
+            description TEXT,
+            icon TEXT,
+            color TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'DELETED')),
+            FOREIGN KEY (organization_id) REFERENCES organizations(id),
+            FOREIGN KEY (parent_id) REFERENCES folders(id),
+            UNIQUE (organization_id, parent_id, name)
+        );
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_organizations_status ON organizations(status);
+        CREATE INDEX IF NOT EXISTS idx_folders_organization ON folders(organization_id);
+        CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(parent_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_folders_sibling_name
+            ON folders(organization_id, COALESCE(parent_id, 0), lower(name))
+            WHERE status = 'ACTIVE';
+        """
+    )
+    now = connection.execute("SELECT datetime('now')").fetchone()[0]
+    connection.execute(
+        """
+        INSERT INTO organizations (
+            name, description, slug, icon, color, created_at, updated_at, is_default, status
+        ) SELECT ?, ?, ?, ?, ?, ?, ?, 1, 'ACTIVE'
+        WHERE NOT EXISTS (SELECT 1 FROM organizations)
+        """,
+        ("Minha Organização", "Organização padrão do SmartFile", "minha-organizacao", "organization", "#2563eb", now, now),
+    )
+    default_id = connection.execute(
+        "SELECT id FROM organizations WHERE status = 'ACTIVE' ORDER BY is_default DESC, id LIMIT 1"
+    ).fetchone()[0]
+    connection.execute(
+        "UPDATE documents SET organization_id = ? WHERE organization_id IS NULL",
+        (default_id,),
+    )
+    connection.execute(
+        "INSERT OR IGNORE INTO app_settings (key, value) VALUES ('active_organization_id', ?)",
+        (str(default_id),),
     )
 
 
@@ -84,6 +154,7 @@ def migrate(connection: sqlite3.Connection, schema_path: Path) -> int:
             current = 1
         if current < CURRENT_SCHEMA_VERSION:
             _upgrade_documents(connection)
+            _upgrade_organizations(connection)
             connection.execute(
                 "UPDATE documents SET source_path = path WHERE source_path IS NULL"
             )
