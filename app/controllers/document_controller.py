@@ -10,18 +10,20 @@ from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from app.controllers.convert_controller import ConvertController
 from app.controllers.pdf_controller import PDFController
+from app.controllers.pdf_viewer_controller import PDFViewerController
 from app.services.document_service import DocumentService
 from app.views.document_view import DocumentView
 
 
 class DocumentController:
-    def __init__(self, workspace, main_view, convert_controller: Optional[ConvertController] = None, pdf_controller: Optional[PDFController] = None):
+    def __init__(self, workspace, main_view, convert_controller: Optional[ConvertController] = None, pdf_controller: Optional[PDFController] = None, pdf_viewer_controller: Optional[PDFViewerController] = None):
         self.workspace = workspace
         self.main_view = main_view
         self.view = DocumentView()
         self.service = DocumentService()
         self.convert_controller = convert_controller
         self.pdf_controller = pdf_controller
+        self.pdf_viewer_controller = pdf_viewer_controller
         self._current_search = ""
         self._current_type = "Todos"
 
@@ -78,7 +80,10 @@ class DocumentController:
     def on_open_document(self, document_id: int):
         try:
             document = self.service.open_document(document_id)
-            self._open_file(document.path)
+            if document.path.lower().endswith(".pdf") and self.pdf_viewer_controller:
+                self.pdf_viewer_controller.open_document(document.path)
+            else:
+                self._open_file(document.path)
             self.view.set_status(f"Documento aberto: {document.name}")
         except FileNotFoundError as exc:
             QMessageBox.warning(self.view, "Mini GED", str(exc))

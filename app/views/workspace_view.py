@@ -9,6 +9,7 @@ class WorkspaceView(QWidget):
     - Documentos
     - Converter
     - PDF Tools
+    - Visualizador de PDF
     - Scanner
     """
 

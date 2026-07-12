@@ -189,3 +189,58 @@ QListWidget::item:selected {
     border: 1px solid #22c55e;
     color: #166534;
 }
+
+QWidget#pdfViewer {
+    background: #171c22;
+    color: #e5e7eb;
+}
+
+QWidget#pdfViewerToolbar,
+QWidget#pdfViewerStatus {
+    background: #11161c;
+    border-bottom: 1px solid #303841;
+}
+
+QWidget#pdfViewerToolbar QPushButton {
+    background: transparent;
+    color: #e5e7eb;
+    border: 1px solid transparent;
+    padding: 6px 8px;
+}
+
+QWidget#pdfViewerToolbar QPushButton:hover {
+    background: #29313a;
+    border-color: #3b4652;
+}
+
+QWidget#pdfViewerToolbar QLabel,
+QWidget#pdfViewerStatus QLabel {
+    color: #d1d5db;
+}
+
+QWidget#pdfViewerPreview QScrollArea {
+    background: #252b31;
+    border: none;
+}
+
+QWidget#pdfThumbnailPanel,
+QTabWidget#pdfViewerTabs {
+    background: #161b21;
+    color: #e5e7eb;
+}
+
+QWidget#pdfThumbnailPanel QListWidget {
+    background: #161b21;
+    color: #e5e7eb;
+    border: none;
+}
+
+QWidget#pdfThumbnailPanel QListWidget::item:selected {
+    background: #173b63;
+    border: 1px solid #3b82f6;
+    color: #ffffff;
+}
+
+QTabWidget#pdfViewerTabs QLabel {
+    color: #d1d5db;
+}
