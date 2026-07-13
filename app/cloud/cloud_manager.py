@@ -7,6 +7,7 @@ from app.cloud.cloud_factory import CloudFactory
 from app.cloud.cloud_models import CloudAccount, CloudAuthResult, CloudSettings
 from app.cloud.cloud_provider import CloudProvider, Transport
 from app.cloud.token_cipher import TokenCipher
+from app.cloud.cloud_oauth_config_service import CloudOAuthConfigService
 from app.database.database import Database
 
 
@@ -73,6 +74,16 @@ class CloudManager:
         self.configure(organization_id, provider, account.id)
         return account
 
+    def save_authentication_result(
+        self, organization_id: int, provider: str, result: CloudAuthResult,
+    ) -> CloudAccount:
+        """Persiste resultado produzido por MSAL ou google-auth-oauthlib."""
+        if not result.access_token:
+            raise ValueError("O provedor não retornou um token de acesso.")
+        account = self._save_account(provider, result)
+        self.configure(organization_id, provider, account.id)
+        return account
+
     def configure(self, organization_id: int, sync_mode: str, account_id: int | None = None) -> None:
         if sync_mode == "LOCAL":
             account_id = None
@@ -111,18 +122,26 @@ class CloudManager:
         if settings.sync_mode == "LOCAL" or settings.cloud_account_id is None or settings.paused:
             return None
         account = self.account(settings.cloud_account_id)
-        if self._expired(account) and account.refresh_token:
-            provider = CloudFactory.create(account.provider, transport=self.transport)
-            refreshed = provider.refresh_token(account.refresh_token, self.oauth_credentials(account.provider))
+        if self._expired(account):
+            if account.refresh_token:
+                provider = CloudFactory.create(account.provider, transport=self.transport)
+                refreshed = provider.refresh_token(account.refresh_token, self.oauth_credentials(account.provider))
+            else:
+                from app.cloud.cloud_python_auth_service import CloudPythonAuthService
+                refreshed = CloudPythonAuthService(self.database).authenticate(account.provider)
             account = self._update_tokens(account, refreshed)
         return CloudFactory.create(account.provider, account.access_token, self.transport)
 
-    @staticmethod
-    def oauth_credentials(provider: str) -> dict[str, str]:
+    def oauth_credentials(self, provider: str) -> dict[str, str]:
         prefix = "ONEDRIVE" if provider == "ONEDRIVE" else "GOOGLE_DRIVE"
+        configured=CloudOAuthConfigService(self.database).provider_config(provider)
+        if provider=="ONEDRIVE":
+            client_id=configured.get("client_id",""); client_secret=""
+        else:
+            installed=(configured.get("client_config") or {}).get("installed",{}); client_id=installed.get("client_id",""); client_secret=installed.get("client_secret","")
         return {
-            "client_id": os.getenv(f"SMARTFILE_{prefix}_CLIENT_ID", ""),
-            "client_secret": os.getenv(f"SMARTFILE_{prefix}_CLIENT_SECRET", ""),
+            "client_id": client_id or os.getenv(f"SMARTFILE_{prefix}_CLIENT_ID", ""),
+            "client_secret": client_secret or os.getenv(f"SMARTFILE_{prefix}_CLIENT_SECRET", ""),
             "redirect_uri": os.getenv(f"SMARTFILE_{prefix}_REDIRECT_URI", "http://localhost:8765/callback"),
         }
 

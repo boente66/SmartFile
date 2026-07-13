@@ -6,9 +6,8 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import QTimer, QUrl
-from PyQt6.QtGui import QDesktopServices
-from PyQt6.QtWidgets import QFileDialog, QInputDialog, QMessageBox
+from PyQt6.QtCore import QTimer
+from PyQt6.QtWidgets import QDialog, QFileDialog, QInputDialog, QMessageBox
 
 from app.controllers.convert_controller import ConvertController
 from app.controllers.pdf_controller import PDFController
@@ -16,6 +15,10 @@ from app.controllers.pdf_viewer_controller import PDFViewerController
 from app.services.document_service import DocumentService
 from app.views.document_view import DocumentView
 from app.workers.cloud_sync_worker import CloudSyncWorker
+from app.cloud.cloud_oauth_config_service import CloudOAuthConfigService
+from app.cloud.cloud_python_auth_service import CloudPythonAuthService
+from app.views.cloud_api_settings_dialog import CloudApiSettingsDialog
+from app.workers.cloud_auth_worker import CloudAuthWorker
 from app.entities.organization_member_entity import OrganizationMemberEntity
 from app.repositories.organization_member_repository import OrganizationMemberRepository
 from app.services.folder_template_service import FolderTemplateService
@@ -36,6 +39,7 @@ class DocumentController:
         self._current_folder_id: int | None = None
         self._current_scope = "documents"
         self._cloud_worker = None
+        self._cloud_auth_worker = None
         self._copied_document_id = None
         self._cloud_timer = QTimer(self.view)
         self._cloud_timer.setInterval(60_000)
@@ -330,25 +334,32 @@ class DocumentController:
                 self.view, "Adicionar conta", "Selecione OneDrive ou Google Drive."
             )
             return
+        if self._cloud_auth_worker is not None:
+            QMessageBox.information(self.view,"Adicionar conta","Já existe uma autenticação em andamento.")
+            return
         try:
-            begin = self.service.cloud_manager.begin_authentication(provider)
-            if not begin.authorization_url or not begin.code_verifier:
-                raise ValueError("O provedor não retornou uma URL de autenticação.")
-            QDesktopServices.openUrl(QUrl(begin.authorization_url))
-            code, accepted = QInputDialog.getText(
-                self.view,
-                "Concluir autenticação",
-                "Após autorizar no navegador, cole o código retornado:",
-            )
-            if not accepted or not code.strip():
-                return
-            self.service.cloud_manager.complete_authentication(
-                self.service.active_organization_id, provider, code.strip(), begin.code_verifier
-            )
-            self._refresh_cloud()
-            self.view.set_status("Conta de nuvem adicionada com segurança")
-        except Exception as exc:
-            QMessageBox.warning(self.view, "Adicionar conta", str(exc))
+            config=CloudOAuthConfigService(self.service.database)
+            if not config.is_configured(provider):
+                dialog=CloudApiSettingsDialog(config,self.view,provider)
+                if dialog.exec()!=QDialog.DialogCode.Accepted:return
+            service=CloudPythonAuthService(self.service.database); worker=CloudAuthWorker(service,provider); self._cloud_auth_worker=worker
+            worker.progress.connect(lambda _value,message:self.view.set_status(message))
+            worker.succeeded.connect(lambda result,p=provider,w=worker:self._on_cloud_auth_succeeded(p,result,w))
+            worker.failed.connect(lambda message,w=worker:self._on_cloud_auth_failed(message,w))
+            worker.finished.connect(lambda w=worker:self._cleanup_cloud_auth_worker(w)); worker.start()
+        except Exception as exc: QMessageBox.warning(self.view,"Adicionar conta",str(exc))
+
+    def _on_cloud_auth_succeeded(self,provider,result,worker):
+        if worker is not self._cloud_auth_worker:return
+        try:
+            self.service.cloud_manager.save_authentication_result(self.service.active_organization_id,provider,result); self._refresh_cloud(); self.view.set_status("Conta de nuvem autenticada e sincronização ativada")
+        except Exception as exc:QMessageBox.warning(self.view,"Adicionar conta",str(exc))
+
+    def _on_cloud_auth_failed(self,message,worker):
+        if worker is self._cloud_auth_worker:QMessageBox.warning(self.view,"Autenticação da nuvem",message); self.view.set_status("Autenticação da nuvem não concluída")
+
+    def _cleanup_cloud_auth_worker(self,worker):
+        if self._cloud_auth_worker is worker:self._cloud_auth_worker=None; worker.deleteLater()
 
     def on_sync_now(self):
         if self._cloud_worker is not None:
