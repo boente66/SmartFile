@@ -76,11 +76,22 @@ QWidget#documentsView QComboBox {
     border: 1px solid #2d3a45;
 }
 
+QWidget#documentsView QPushButton#cloudAccountButton {
+    background: #17212a;
+    color: #e5e7eb;
+    border: 1px solid #2d3a45;
+}
+
+QWidget#documentsView QLabel#cloudStatusLabel {
+    color: #7dd3fc;
+}
+
 QWidget#documentsView QPushButton#documentToolbarButton {
     background: #17212a;
     border: 1px solid #27343f;
     border-radius: 7px;
     padding: 6px;
+    color: #e5e7eb;
 }
 
 QWidget#documentsView QPushButton#documentToolbarButton:hover {
@@ -130,6 +141,11 @@ QWidget#documentsView QHeaderView::section {
     background: #17212a;
     color: #cbd5e1;
     border-color: #27343f;
+}
+
+QWidget#documentsView QTableCornerButton::section {
+    background: #17212a;
+    border: 1px solid #27343f;
 }
 
 QWidget#documentsView QTableWidget::item:selected {
@@ -433,3 +449,123 @@ QWidget#pdfThumbnailPanel QListWidget::item:selected {
 QTabWidget#pdfViewerTabs QLabel {
     color: #d1d5db;
 }
+
+/* PDF Tools */
+QWidget#pdfTools {
+    background: #171c22;
+    color: #e5e7eb;
+}
+
+QWidget#pdfTools QLabel {
+    color: #e5e7eb;
+}
+
+QWidget#pdfToolsToolbar,
+QWidget#pdfToolsStatus {
+    background: #11161c;
+    border-bottom: 1px solid #303841;
+}
+
+QPushButton#pdfToolsToolbarButton {
+    background: transparent;
+    color: #e5e7eb;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 8px 10px;
+    min-height: 34px;
+}
+
+QPushButton#pdfToolsToolbarButton:hover,
+QPushButton#pdfToolsToolbarButton:checked {
+    background: #20354a;
+    border-color: #2563eb;
+    color: #7dd3fc;
+}
+
+QFrame#pdfToolsPanel,
+QFrame#pdfToolsActions {
+    background: #161b21;
+    border: 1px solid #303841;
+}
+
+QFrame#pdfToolsPreviewPanel {
+    background: #20262d;
+    border: 1px solid #303841;
+}
+
+QWidget#pdfTools QListWidget {
+    background: #161b21;
+    color: #e5e7eb;
+    border: none;
+}
+
+QWidget#pdfTools QListWidget::item {
+    background: #1c232a;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 5px;
+}
+
+QWidget#pdfTools QListWidget::item:selected {
+    background: #173b63;
+    border: 1px solid #3b82f6;
+    color: #ffffff;
+}
+
+QWidget#pdfToolsPreview QScrollArea {
+    background: #2b3138;
+    border: none;
+}
+
+QPushButton#pdfToolsActionButton {
+    background: #1c232a;
+    color: #e5e7eb;
+    border: none;
+    border-bottom: 1px solid #303841;
+    border-radius: 3px;
+    text-align: left;
+    padding: 8px 10px;
+    min-height: 45px;
+}
+
+QPushButton#pdfToolsActionButton:hover {
+    background: #26313a;
+}
+
+QLabel#pdfToolsSectionTitle {
+    font-weight: 700;
+    color: #f8fafc;
+    padding: 7px 0px;
+}
+
+QPushButton#pdfToolsSave {
+    background: #2563eb;
+    color: #ffffff;
+    border: none;
+    min-height: 38px;
+    font-weight: 600;
+}
+
+/* Autenticação local */
+QWidget#authWindow { background: #f5f7fa; }
+QWidget#authBrandPanel { background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #071827,stop:0.7 #0b2930,stop:1 #075b36); }
+QWidget#authBrandPanel QLabel { color: #ffffff; }
+QLabel#authBrandLogo { font-size: 34px; font-weight: 800; color: #34c56b; }
+QLabel#authBrandSubtitle { font-size: 19px; color: #d7e2ea; padding-top: 18px; }
+QLabel#authFeature { font-size: 14px; color: #dce7ed; padding: 10px 0px; }
+QWidget#authFormBackground { background: #f5f7fa; }
+QWidget#authCard { background: #ffffff; border: 1px solid #dde3ea; border-radius: 14px; }
+QWidget#authCard QLabel { color: #172033; }
+QLabel#authTitle { font-size: 27px; font-weight: 800; color: #111827; }
+QLabel#authCaption { font-size: 16px; color: #64748b; }
+QWidget#authCard QLineEdit { background: #ffffff; color: #111827; border: 1px solid #cbd5e1; border-radius: 7px; min-height: 42px; padding: 5px 12px; }
+QWidget#authCard QLineEdit:focus { border: 2px solid #22a653; }
+QPushButton#authPrimary { background: #1f9d4d; color: #ffffff; border: none; min-height: 44px; font-size: 16px; font-weight: 700; }
+QPushButton#authPrimary:hover { background: #16833e; }
+QPushButton#authLinkButton { background: transparent; border: none; color: #2563eb; padding: 4px 2px; font-weight: 600; }
+QPushButton#authLinkButton:hover { color: #1d4ed8; text-decoration: underline; }
+QLabel#authError { color: #dc2626; font-weight: 600; }
+QLabel#authHint { background: #eaf8ef; color: #16763a; border-radius: 7px; padding: 9px; }
+QRadioButton#templateCard { background: #ffffff; color: #1f2937; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; spacing: 8px; }
+QRadioButton#templateCard:checked { background: #eefbf2; border: 2px solid #22a653; color: #14532d; }
+QToolButton#accountButton { background: #17212a; color: #e5e7eb; border: 1px solid #334155; border-radius: 6px; padding: 5px 10px; }

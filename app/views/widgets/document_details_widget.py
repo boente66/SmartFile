@@ -71,6 +71,11 @@ class DocumentDetailsWidget(QFrame):
             ("checksum", "Checksum (SHA-256)"),
             ("path", "Localização"),
             ("favorite", "Favorito"),
+            ("cloud_status", "Status da nuvem"),
+            ("cloud_provider", "Provedor"),
+            ("last_synced_at", "Última sincronização"),
+            ("remote_id", "ID remoto"),
+            ("remote_version", "Versão remota"),
         )
         for key, caption in fields:
             value = QLabel("—")
@@ -147,6 +152,11 @@ class DocumentDetailsWidget(QFrame):
             "checksum": document.checksum,
             "path": document.path,
             "favorite": "Sim" if document.favorite else "Não",
+            "cloud_status": document.cloud_status,
+            "cloud_provider": document.cloud_provider,
+            "last_synced_at": document.last_synced_at,
+            "remote_id": document.remote_id,
+            "remote_version": document.remote_version,
         }
         for key, value in values.items():
             self._value_labels[key].setText(str(value) if value else "—")

@@ -14,7 +14,8 @@ class PDFPreviewService:
     def generate_thumbnails(
         pdf_path: Path,
         pages: list[int] | None = None,
-        scale: float = 0.3
+        scale: float = 0.3,
+        rotations: dict[int, int] | None = None,
     ) -> list[QImage]:
 
         images = []
@@ -35,8 +36,9 @@ class PDFPreviewService:
 
                 page = doc[index]
 
+                rotation = (rotations or {}).get(index, 0)
                 pix = page.get_pixmap(
-                    matrix=fitz.Matrix(scale, scale)
+                    matrix=fitz.Matrix(scale, scale).prerotate(rotation)
                 )
 
                 img = QImage(

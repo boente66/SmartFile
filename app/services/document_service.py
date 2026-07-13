@@ -19,6 +19,8 @@ from app.services.history_service import HistoryService
 from app.services.document_storage_service import DocumentStorageService
 from app.services.folder_service import FolderService
 from app.services.organization_service import OrganizationService
+from app.cloud.cloud_manager import CloudManager
+from app.cloud.cloud_sync_service import CloudSyncService
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +38,8 @@ class DocumentService:
         self.document_repository = DocumentRepository(database=self.database)
         self.organization_service = OrganizationService(self.database)
         self.folder_service = FolderService(self.database)
+        self.cloud_manager = CloudManager(self.database)
+        self.cloud_sync_service = CloudSyncService(self.database, self.cloud_manager)
         self.storage_service = storage_service or DocumentStorageService(self.database.paths)
         # Histórico básico preexistente é preservado, sem ampliar seu domínio.
         self.history_service = HistoryService(database=self.database)
@@ -88,7 +92,9 @@ class DocumentService:
                 created = self.document_repository.create(entity)
                 self._record_history(created.id, "IMPORT", f"Documento importado: {path.name}")
             logger.info("Documento importado id=%s", created.id)
-            return DocumentModel.from_entity(created)
+            self.cloud_sync_service.enqueue_upload(created.id, organization_id)
+            refreshed = self.document_repository.find_by_id(created.id, organization_id)
+            return DocumentModel.from_entity(refreshed or created)
         except Exception:
             try:
                 self.storage_service.remove(stored.storage_path)

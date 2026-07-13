@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from PyQt6.QtCore import QTimer, QUrl
+from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import QFileDialog, QInputDialog, QMessageBox
 
 from app.controllers.convert_controller import ConvertController
@@ -13,21 +15,31 @@ from app.controllers.pdf_controller import PDFController
 from app.controllers.pdf_viewer_controller import PDFViewerController
 from app.services.document_service import DocumentService
 from app.views.document_view import DocumentView
+from app.workers.cloud_sync_worker import CloudSyncWorker
+from app.entities.organization_member_entity import OrganizationMemberEntity
+from app.repositories.organization_member_repository import OrganizationMemberRepository
+from app.services.folder_template_service import FolderTemplateService
 
 
 class DocumentController:
-    def __init__(self, workspace, main_view, convert_controller: Optional[ConvertController] = None, pdf_controller: Optional[PDFController] = None, pdf_viewer_controller: Optional[PDFViewerController] = None):
+    def __init__(self, workspace, main_view, convert_controller: Optional[ConvertController] = None, pdf_controller: Optional[PDFController] = None, pdf_viewer_controller: Optional[PDFViewerController] = None, session_context=None, document_service=None):
         self.workspace = workspace
         self.main_view = main_view
         self.view = DocumentView()
-        self.service = DocumentService()
+        self.service = document_service or DocumentService()
         self.convert_controller = convert_controller
         self.pdf_controller = pdf_controller
         self.pdf_viewer_controller = pdf_viewer_controller
+        self.session_context = session_context
         self._current_search = ""
         self._current_type = "Todos"
         self._current_folder_id: int | None = None
         self._current_scope = "documents"
+        self._cloud_worker = None
+        self._cloud_timer = QTimer(self.view)
+        self._cloud_timer.setInterval(60_000)
+        self._cloud_timer.timeout.connect(self._auto_sync)
+        self._cloud_timer.start()
 
         self._connect_signals()
         self._register_view()
@@ -55,14 +67,23 @@ class DocumentController:
         self.view.visualize_requested.connect(self.on_open_document)
         self.view.sign_requested.connect(self.on_sign_document)
         self.view.scope_changed.connect(self.on_scope_changed)
+        self.view.cloud_provider_changed.connect(self.on_cloud_provider_changed)
+        self.view.add_cloud_account_requested.connect(self.on_add_cloud_account)
+        self.view.sync_now_requested.connect(self.on_sync_now)
+        self.view.pause_sync_requested.connect(lambda: self.on_pause_sync(True))
+        self.view.resume_sync_requested.connect(lambda: self.on_pause_sync(False))
+        self.view.disconnect_cloud_requested.connect(self.on_disconnect_cloud)
+        self.view.cloud_history_requested.connect(self.on_cloud_history)
 
     def _register_view(self):
         self.workspace.register_view("documents", self.view)
 
     def activate(self):
+        self.main_view.sidebar.hide()
         self.workspace.show_view("documents")
         self._refresh_organizations()
         self._refresh_folders()
+        self._refresh_cloud()
         self.on_refresh_documents()
 
     def on_import_document(self):
@@ -79,6 +100,7 @@ class DocumentController:
             self.service.import_document(path, self._current_folder_id)
             self.view.set_status("Documento importado com sucesso")
             self.on_refresh_documents()
+            self._auto_sync()
         except Exception as exc:
             QMessageBox.warning(self.view, "Mini GED", str(exc))
 
@@ -113,8 +135,11 @@ class DocumentController:
     def on_organization_changed(self, organization_id: int):
         try:
             organization = self.service.set_active_organization(organization_id)
+            if self.session_context:
+                self.session_context.set_active_organization(organization)
             self._current_folder_id = None
             self._refresh_folders()
+            self._refresh_cloud()
             self._refresh_documents()
             self.view.set_status(f"Organização ativa: {organization.name}")
         except Exception as exc:
@@ -124,12 +149,39 @@ class DocumentController:
         name, accepted = QInputDialog.getText(self.view, "Nova organização", "Nome:")
         if not accepted:
             return
+        template_name, template_accepted = QInputDialog.getItem(
+            self.view, "Modelo inicial", "Estrutura de pastas:",
+            ["Pessoal", "Estudante", "Empresarial", "Começar vazio"], 3, False,
+        )
+        if not template_accepted:
+            return
+        template_code = {
+            "Pessoal": "PERSONAL", "Estudante": "STUDENT",
+            "Empresarial": "BUSINESS", "Começar vazio": "EMPTY",
+        }[template_name]
         try:
-            organization = self.service.organization_service.create(name)
+            with self.service.database.transaction():
+                organization = self.service.organization_service.create(name)
+                FolderTemplateService(self.service.folder_service).create_template_folders(
+                    organization.id, template_code
+                )
+                if self.session_context and self.session_context.current_user:
+                    now = self.service._now()
+                    membership = OrganizationMemberRepository(database=self.service.database).create(
+                        OrganizationMemberEntity(
+                            organization_id=organization.id,
+                            user_id=self.session_context.current_user.id,
+                            role="OWNER", created_at=now, updated_at=now,
+                        )
+                    )
+                    self.session_context.memberships.append(membership)
             self.service.set_active_organization(organization.id)
+            if self.session_context:
+                self.session_context.set_active_organization(organization)
             self._current_folder_id = None
             self._refresh_organizations()
             self._refresh_folders()
+            self._refresh_cloud()
             self._refresh_documents()
         except Exception as exc:
             QMessageBox.warning(self.view, "Organizações", str(exc))
@@ -241,6 +293,123 @@ class DocumentController:
             return
         self.pdf_viewer_controller.open_document(document.path)
 
+    def on_cloud_provider_changed(self, provider: str):
+        try:
+            if provider == "LOCAL":
+                self.service.cloud_manager.configure(self.service.active_organization_id, "LOCAL")
+            else:
+                account = self.service.cloud_manager.active_account_for(provider)
+                if account is None:
+                    QMessageBox.information(
+                        self.view, "Camada de Nuvem",
+                        "Adicione uma conta antes de ativar este provedor."
+                    )
+                else:
+                    self.service.cloud_manager.configure(
+                        self.service.active_organization_id, provider, account.id
+                    )
+            self._refresh_cloud()
+            self._refresh_documents()
+        except Exception as exc:
+            QMessageBox.warning(self.view, "Camada de Nuvem", str(exc))
+            self._refresh_cloud()
+
+    def on_add_cloud_account(self):
+        provider = str(self.view.cloud_combo.currentData())
+        if provider == "LOCAL":
+            QMessageBox.information(
+                self.view, "Adicionar conta", "Selecione OneDrive ou Google Drive."
+            )
+            return
+        try:
+            begin = self.service.cloud_manager.begin_authentication(provider)
+            if not begin.authorization_url or not begin.code_verifier:
+                raise ValueError("O provedor não retornou uma URL de autenticação.")
+            QDesktopServices.openUrl(QUrl(begin.authorization_url))
+            code, accepted = QInputDialog.getText(
+                self.view,
+                "Concluir autenticação",
+                "Após autorizar no navegador, cole o código retornado:",
+            )
+            if not accepted or not code.strip():
+                return
+            self.service.cloud_manager.complete_authentication(
+                self.service.active_organization_id, provider, code.strip(), begin.code_verifier
+            )
+            self._refresh_cloud()
+            self.view.set_status("Conta de nuvem adicionada com segurança")
+        except Exception as exc:
+            QMessageBox.warning(self.view, "Adicionar conta", str(exc))
+
+    def on_sync_now(self):
+        if self._cloud_worker is not None:
+            QMessageBox.information(self.view, "Sincronização", "Já existe uma sincronização em andamento.")
+            return
+        settings = self.service.cloud_manager.settings(self.service.active_organization_id)
+        if settings.sync_mode == "LOCAL":
+            QMessageBox.information(self.view, "Sincronização", "Esta organização utiliza somente armazenamento local.")
+            return
+        worker = CloudSyncWorker(self.service.cloud_sync_service, self.service.active_organization_id)
+        self._cloud_worker = worker
+        worker.progress.connect(lambda value, message: self.main_view.progress.update(value, message))
+        worker.succeeded.connect(self._on_cloud_sync_succeeded)
+        worker.failed.connect(self._on_cloud_sync_failed)
+        worker.finished.connect(lambda worker=worker: self._cleanup_cloud_worker(worker))
+        worker.finished.connect(worker.deleteLater)
+        self.main_view.progress.start("Sincronizando documentos")
+        worker.start()
+
+    def on_pause_sync(self, paused: bool):
+        self.service.cloud_manager.set_paused(self.service.active_organization_id, paused)
+        self._refresh_cloud()
+        self.view.set_status("Sincronização pausada" if paused else "Sincronização retomada")
+
+    def on_disconnect_cloud(self):
+        answer = QMessageBox.question(
+            self.view, "Desconectar nuvem",
+            "Desconectar a conta desta organização? Os documentos locais serão preservados."
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self.service.cloud_manager.disconnect(self.service.active_organization_id)
+            self._refresh_cloud()
+
+    def on_cloud_history(self):
+        rows = self.service.database.fetch_all(
+            """
+            SELECT sync_jobs.* FROM sync_jobs JOIN documents ON documents.id = sync_jobs.document_id
+            WHERE documents.organization_id = ? ORDER BY sync_jobs.id DESC LIMIT 20
+            """,
+            (self.service.active_organization_id,),
+        )
+        message = "\n".join(
+            f"#{row['id']} {row['operation']} — {row['status']}"
+            for row in rows
+        ) or "Nenhuma operação de nuvem registrada."
+        QMessageBox.information(self.view, "Histórico da nuvem", message)
+
+    def _on_cloud_sync_succeeded(self, result):
+        self.main_view.progress.finish("Sincronização concluída")
+        self._refresh_cloud(); self._refresh_documents()
+        self.view.set_status(f"Sincronização concluída: {result['jobs']} job(s)")
+
+    def _on_cloud_sync_failed(self, message: str):
+        self.main_view.progress.finish("Falha na sincronização")
+        QMessageBox.warning(self.view, "Sincronização", message)
+
+    def _cleanup_cloud_worker(self, worker):
+        if self._cloud_worker is worker:
+            self._cloud_worker = None
+
+    def _auto_sync(self):
+        settings = self.service.cloud_manager.settings(self.service.active_organization_id)
+        if (
+            settings.sync_mode != "LOCAL"
+            and not settings.paused
+            and self.service.cloud_sync_service.queue.pending_count() > 0
+            and self._cloud_worker is None
+        ):
+            self.on_sync_now()
+
     def on_convert_document(self, document_id: int):
         document = self.service.get_document(document_id)
         if document is None:
@@ -318,12 +487,25 @@ class DocumentController:
 
     def _refresh_organizations(self):
         organizations = self.service.organization_service.list_organizations()
+        if self.session_context and self.session_context.is_authenticated():
+            allowed = {membership.organization_id for membership in self.session_context.memberships}
+            organizations = [organization for organization in organizations if organization.id in allowed]
         self.view.set_organizations(organizations, self.service.active_organization_id)
 
     def _refresh_folders(self):
         organization = self.service.organization_service.active()
         folders = self.service.folder_service.list_folders(organization.id)
         self.view.set_folders(organization.name, folders)
+
+    def _refresh_cloud(self):
+        settings = self.service.cloud_manager.settings(self.service.active_organization_id)
+        account = None
+        if settings.cloud_account_id:
+            try:
+                account = self.service.cloud_manager.account(settings.cloud_account_id)
+            except Exception:
+                account = None
+        self.view.set_cloud_settings(settings, account)
 
     def _open_file(self, path: str):
         document_path = Path(path)

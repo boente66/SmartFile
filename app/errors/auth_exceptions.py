@@ -1,0 +1,10 @@
+class AuthenticationError(RuntimeError): pass
+class InvalidCredentialsError(AuthenticationError): pass
+class UserAlreadyExistsError(AuthenticationError): pass
+class EmailAlreadyExistsError(AuthenticationError): pass
+class UserInactiveError(AuthenticationError): pass
+class UserLockedError(AuthenticationError): pass
+class PasswordPolicyError(AuthenticationError): pass
+class SessionExpiredError(AuthenticationError): pass
+class RegistrationError(AuthenticationError): pass
+class TemplateCreationError(AuthenticationError): pass

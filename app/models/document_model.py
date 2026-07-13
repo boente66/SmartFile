@@ -30,6 +30,11 @@ class DocumentModel:
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
     last_accessed_at: Optional[str] = None
+    cloud_status: str = "LOCAL_ONLY"
+    cloud_provider: Optional[str] = None
+    remote_id: Optional[str] = None
+    remote_version: Optional[str] = None
+    last_synced_at: Optional[str] = None
 
     @classmethod
     def from_entity(cls, entity: DocumentEntity) -> "DocumentModel":
@@ -56,6 +61,11 @@ class DocumentModel:
             created_at=entity.created_at,
             updated_at=entity.updated_at,
             last_accessed_at=entity.last_accessed_at,
+            cloud_status=entity.cloud_status,
+            cloud_provider=entity.cloud_provider,
+            remote_id=entity.remote_id,
+            remote_version=entity.remote_version,
+            last_synced_at=entity.last_synced_at,
         )
 
     def to_entity(self) -> DocumentEntity:
@@ -81,4 +91,9 @@ class DocumentModel:
             created_at=self.created_at or "",
             updated_at=self.updated_at or "",
             last_accessed_at=self.last_accessed_at,
+            cloud_status=self.cloud_status,
+            cloud_provider=self.cloud_provider,
+            remote_id=self.remote_id,
+            remote_version=self.remote_version,
+            last_synced_at=self.last_synced_at,
         )

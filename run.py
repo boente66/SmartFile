@@ -1,8 +1,8 @@
 from PyQt6.QtWidgets import QApplication
 import sys
 
-from app.views.main_view import MainView
-from app.controllers.app_controller import AppController
+from app.controllers.auth_controller import AuthController
+from app.database.database import Database
 from pathlib import Path
 
 
@@ -17,13 +17,9 @@ def main():
     app = QApplication(sys.argv)
     _load_stylesheet(app)
 
-    main_view = MainView()
-
-    # 🔴 MANTER REFERÊNCIA DO CONTROLLER
-    controller = AppController(main_view)
+    database = Database()
+    controller = AuthController(app, database)
     controller.start()
-
-    main_view.show()
     sys.exit(app.exec())
 
 

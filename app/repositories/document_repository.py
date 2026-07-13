@@ -26,8 +26,9 @@ class DocumentRepository(BaseRepository):
                 organization_id, folder_id, name, original_name, path, source_path, storage_path, internal_name,
                 managed, extension, file_type, size, checksum,
                 category, description, favorite, status, created_at, updated_at,
-                last_accessed_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                last_accessed_at, cloud_status, cloud_provider, remote_id,
+                remote_version, last_synced_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             self._values(entity),
         )
@@ -42,7 +43,8 @@ class DocumentRepository(BaseRepository):
                 storage_path = ?, internal_name = ?, managed = ?, extension = ?,
                 file_type = ?, size = ?, checksum = ?, category = ?,
                 description = ?, favorite = ?, status = ?, created_at = ?,
-                updated_at = ?, last_accessed_at = ?
+                updated_at = ?, last_accessed_at = ?, cloud_status = ?,
+                cloud_provider = ?, remote_id = ?, remote_version = ?, last_synced_at = ?
             WHERE id = ?
             """,
             (*self._values(entity), entity.id),
@@ -205,6 +207,23 @@ class DocumentRepository(BaseRepository):
             (self._now(), organization_id, organization_id),
         )
 
+    def update_cloud_state(
+        self,
+        document_id: int,
+        status: str,
+        provider: str | None = None,
+        remote_id: str | None = None,
+        remote_version: str | None = None,
+        last_synced_at: str | None = None,
+    ) -> bool:
+        return self._write(
+            """
+            UPDATE documents SET cloud_status = ?, cloud_provider = ?, remote_id = ?,
+                remote_version = ?, last_synced_at = ?, updated_at = ? WHERE id = ?
+            """,
+            (status, provider, remote_id, remote_version, last_synced_at, self._now(), document_id),
+        ).rowcount > 0
+
     def _entities(self, query: str, params=()) -> list[DocumentEntity]:
         return [self._row_to_entity(row) for row in self._fetch_all(query, params)]
 
@@ -216,6 +235,8 @@ class DocumentRepository(BaseRepository):
             entity.file_type, entity.size, entity.checksum, entity.category,
             entity.description, int(entity.favorite), entity.status,
             entity.created_at, entity.updated_at, entity.last_accessed_at,
+            entity.cloud_status, entity.cloud_provider, entity.remote_id,
+            entity.remote_version, entity.last_synced_at,
         )
 
     @staticmethod
@@ -231,6 +252,9 @@ class DocumentRepository(BaseRepository):
             favorite=bool(row["favorite"]), status=row["status"] or "ACTIVE",
             created_at=row["created_at"], updated_at=row["updated_at"],
             last_accessed_at=row["last_accessed_at"],
+            cloud_status=row["cloud_status"] or "LOCAL_ONLY",
+            cloud_provider=row["cloud_provider"], remote_id=row["remote_id"],
+            remote_version=row["remote_version"], last_synced_at=row["last_synced_at"],
         )
 
     @staticmethod

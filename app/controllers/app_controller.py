@@ -5,6 +5,7 @@ from app.controllers.pdf_viewer_controller import PDFViewerController
 from app.controllers.pdf_signature_controller import PDFSignatureController
 from app.controllers.handwritten_signature_controller import HandwrittenSignatureController
 from app.controllers.scan_controller import ScanController
+from app.services.document_service import DocumentService
 
 
 class AppController:
@@ -12,8 +13,10 @@ class AppController:
     Controller principal da aplicação.
     """
 
-    def __init__(self, main_view):
+    def __init__(self, main_view, session_context=None, database=None):
         self.main_view = main_view
+        self.session_context = session_context
+        self.database = database
         self.workspace = main_view.workspace
 
         # Controllers ainda NÃO ativos
@@ -47,6 +50,8 @@ class AppController:
             convert_controller=self.convert_controller,
             pdf_controller=self.pdf_controller,
             pdf_viewer_controller=self.pdf_viewer_controller,
+            session_context=self.session_context,
+            document_service=DocumentService(db_path=self.database.db_name) if self.database else None,
         )
         self.pdf_signature_controller.set_document_service(
             self.document_controller.service
@@ -63,6 +68,8 @@ class AppController:
         self.main_view.sidebar.set_active_tool("documents")
 
     def on_tool_selected(self, tool_name: str):
+        if tool_name != "documents":
+            self.main_view.sidebar.show()
         if tool_name == "converter":
             self.convert_controller.activate()
         elif tool_name == "pdf":

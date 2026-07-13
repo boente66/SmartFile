@@ -10,6 +10,7 @@ import pytest
 from PyQt6.QtWidgets import QApplication
 
 from app.database.database import Database
+from app.database.migrations import CURRENT_SCHEMA_VERSION
 from app.services.document_service import DocumentService
 from app.views.document_view import DocumentView
 
@@ -112,7 +113,7 @@ def test_legacy_documents_are_migrated_to_default_organization(tmp_path: Path):
 
     assert row["name"] == "Minha Organização"
     assert row["organization_id"] is not None
-    assert database.connect().execute("PRAGMA user_version").fetchone()[0] == 5
+    assert database.connect().execute("PRAGMA user_version").fetchone()[0] == CURRENT_SCHEMA_VERSION
 
 
 def test_document_view_updates_organization_and_folder_tree():

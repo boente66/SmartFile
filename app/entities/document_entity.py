@@ -27,3 +27,8 @@ class DocumentEntity:
     created_at: str = ""
     updated_at: str = ""
     last_accessed_at: Optional[str] = None
+    cloud_status: str = "LOCAL_ONLY"
+    cloud_provider: Optional[str] = None
+    remote_id: Optional[str] = None
+    remote_version: Optional[str] = None
+    last_synced_at: Optional[str] = None

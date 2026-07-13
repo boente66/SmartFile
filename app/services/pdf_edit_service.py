@@ -3,6 +3,8 @@
 from pathlib import Path
 from pypdf import PdfReader, PdfWriter
 
+from app.utils.file_naming import safe_output_path
+
 
 class PDFEditService:
     """
@@ -110,6 +112,54 @@ class PDFEditService:
 
         with open(output_file, "wb") as f:
             writer.write(f)
+
+    @staticmethod
+    def compose_pages(
+        input_file: Path,
+        output_file: Path,
+        page_order: list[int],
+        rotations: dict[int, int] | None = None,
+    ):
+        """Materializa ordem e rotações da sessão em um novo PDF."""
+        if input_file.resolve() == output_file.resolve():
+            raise ValueError("Entrada e saída não podem ser o mesmo arquivo")
+        reader = PdfReader(input_file)
+        writer = PdfWriter()
+        total_pages = len(reader.pages)
+        for index in page_order:
+            if index < 0 or index >= total_pages:
+                raise ValueError(f"Página inválida: {index}")
+            page = reader.pages[index]
+            rotation = (rotations or {}).get(index, 0) % 360
+            if rotation:
+                page.rotate(rotation)
+            writer.add_page(page)
+        with output_file.open("wb") as handle:
+            writer.write(handle)
+
+    @staticmethod
+    def split_pdf(
+        input_file: Path,
+        output_dir: Path,
+        page_order: list[int] | None = None,
+        rotations: dict[int, int] | None = None,
+    ) -> list[Path]:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        reader = PdfReader(input_file)
+        order = page_order if page_order is not None else list(range(len(reader.pages)))
+        outputs = []
+        for position, page_index in enumerate(order, start=1):
+            output = safe_output_path(output_dir / f"{input_file.stem}_pagina_{position}.pdf")
+            writer = PdfWriter()
+            page = reader.pages[page_index]
+            rotation = (rotations or {}).get(page_index, 0) % 360
+            if rotation:
+                page.rotate(rotation)
+            writer.add_page(page)
+            with output.open("wb") as handle:
+                writer.write(handle)
+            outputs.append(output)
+        return outputs
 
     # -------------------------
     # Rotacionar páginas

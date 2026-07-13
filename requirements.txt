@@ -2,6 +2,7 @@
 # Interface gráfica
 # =========================
 PyQt6>=6.6.0
+argon2-cffi>=23.1.0,<26
 
 # =========================
 # Imagens / preview

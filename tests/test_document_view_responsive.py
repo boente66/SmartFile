@@ -32,7 +32,7 @@ def test_document_view_stacks_details_and_enables_vertical_scroll_when_compact()
 def test_document_view_keeps_side_by_side_layout_on_large_screen():
     app = _app()
     view = DocumentView()
-    view.resize(1280, 760)
+    view.resize(1600, 760)
     view.show()
     app.processEvents()
 

@@ -3,6 +3,7 @@ from PyQt6.QtWidgets import (
     QWidget,
     QHBoxLayout,
     QStatusBar
+    ,QToolButton
 )
 
 from app.views.sidebar_view import SidebarView
@@ -62,3 +63,11 @@ class MainView(QMainWindow):
 
         # Progress manager
         self.progress = ProgressManager(self.status)
+        self.account_button = QToolButton()
+        self.account_button.setObjectName("accountButton")
+        self.account_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.status.addPermanentWidget(self.account_button)
+
+    def set_account(self, display_name: str, menu) -> None:
+        self.account_button.setText(display_name)
+        self.account_button.setMenu(menu)

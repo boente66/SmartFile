@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QMenu,
     QScrollArea,
     QSizePolicy,
     QSplitter,
@@ -49,6 +50,13 @@ class DocumentView(QWidget):
     scanner_requested = pyqtSignal()
     visualize_requested = pyqtSignal(int)
     sign_requested = pyqtSignal(int)
+    cloud_provider_changed = pyqtSignal(str)
+    add_cloud_account_requested = pyqtSignal()
+    sync_now_requested = pyqtSignal()
+    pause_sync_requested = pyqtSignal()
+    resume_sync_requested = pyqtSignal()
+    disconnect_cloud_requested = pyqtSignal()
+    cloud_history_requested = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -84,22 +92,13 @@ class DocumentView(QWidget):
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(10)
 
-        title = QLabel("Documentos")
-        title.setObjectName("title")
-        left_layout.addWidget(title)
-
-        intro = QLabel(
-            "Central de documentos do SmartFile"
-        )
-        intro.setWordWrap(True)
-        left_layout.addWidget(intro)
-
         organization_row = QHBoxLayout()
         organization_row.addWidget(QLabel("Organização"))
         self.organization_combo = QComboBox()
         self.organization_combo.setObjectName("organizationSelector")
+        self.organization_combo.setFixedWidth(360)
         self.organization_combo.currentIndexChanged.connect(self._emit_organization)
-        organization_row.addWidget(self.organization_combo, 1)
+        organization_row.addWidget(self.organization_combo)
         self.btn_new_organization = self._icon_button("Nova organização", "organization_add")
         self.btn_edit_organization = self._icon_button("Editar organização", "edit")
         self.btn_delete_organization = self._icon_button("Excluir organização", "action_trash")
@@ -109,7 +108,27 @@ class DocumentView(QWidget):
         organization_row.addWidget(self.btn_new_organization)
         organization_row.addWidget(self.btn_edit_organization)
         organization_row.addWidget(self.btn_delete_organization)
+        organization_row.addStretch(1)
         left_layout.addLayout(organization_row)
+
+        cloud_row = QHBoxLayout()
+        cloud_row.addWidget(QLabel("Camada de Nuvem"))
+        self.cloud_combo = QComboBox()
+        self.cloud_combo.addItem("Local", "LOCAL")
+        self.cloud_combo.addItem("OneDrive", "ONEDRIVE")
+        self.cloud_combo.addItem("Google Drive", "GOOGLE_DRIVE")
+        self.cloud_combo.currentIndexChanged.connect(self._emit_cloud_provider)
+        cloud_row.addWidget(self.cloud_combo)
+        self.btn_add_cloud = QPushButton("Adicionar Conta")
+        self.btn_add_cloud.setObjectName("cloudAccountButton")
+        IconProvider.apply(self.btn_add_cloud, "cloud_add")
+        self.btn_add_cloud.clicked.connect(self.add_cloud_account_requested.emit)
+        cloud_row.addWidget(self.btn_add_cloud)
+        self.cloud_status_label = QLabel("Armazenamento local")
+        self.cloud_status_label.setObjectName("cloudStatusLabel")
+        cloud_row.addWidget(self.cloud_status_label)
+        cloud_row.addStretch(1)
+        left_layout.addLayout(cloud_row)
 
         actions = QHBoxLayout()
         actions.setSpacing(4)
@@ -126,12 +145,31 @@ class DocumentView(QWidget):
             ("Favorito", "action_star", lambda: self._emit_for_selected(self.favorite_requested)),
             ("Excluir", "action_trash", lambda: self._emit_for_selected(self.delete_requested)),
             ("Mais", "more", lambda: None),
+            ("Sincronizar", "cloud_sync", lambda: None),
         )
         for text, icon, callback in action_specs:
             widget = self._icon_button(text, icon)
+            widget.setProperty("actionText", text)
+            widget.setText(text)
+            widget.setMinimumSize(72, 52)
+            widget.setMaximumSize(16777215, 52)
+            widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
             widget.clicked.connect(callback)
             actions.addWidget(widget)
             self.document_toolbar_buttons.append(widget)
+            if text == "Importar":
+                self.btn_import = widget
+            if text == "Sincronizar":
+                self.btn_sync = widget
+        sync_menu = QMenu(self.btn_sync)
+        sync_menu.addAction("Sincronizar Agora", self.sync_now_requested.emit)
+        sync_menu.addAction("Pausar", self.pause_sync_requested.emit)
+        sync_menu.addAction("Retomar", self.resume_sync_requested.emit)
+        sync_menu.addSeparator()
+        sync_menu.addAction("Configurar Conta", self.add_cloud_account_requested.emit)
+        sync_menu.addAction("Desconectar", self.disconnect_cloud_requested.emit)
+        sync_menu.addAction("Histórico", self.cloud_history_requested.emit)
+        self.btn_sync.setMenu(sync_menu)
         actions.addStretch(1)
         left_layout.addLayout(actions)
 
@@ -141,28 +179,20 @@ class DocumentView(QWidget):
         self.search_edit.textChanged.connect(self._emit_search)
         search_row.addWidget(QLabel("Buscar"))
         search_row.addWidget(self.search_edit, 1)
-        left_layout.addLayout(search_row)
-
-        filter_row = QHBoxLayout()
+        search_row.addWidget(QLabel("Tipo"))
         self.type_combo = QComboBox()
         self.type_combo.addItems(["Todos", "PDF", "DOCX", "SPREADSHEET", "IMAGE", "TEXT", "OTHER"])
         self.type_combo.currentTextChanged.connect(self._emit_filter)
-        filter_row.addWidget(QLabel("Tipo"))
-        filter_row.addWidget(self.type_combo)
-        filter_row.addStretch(1)
-        self.btn_import = QPushButton("Adicionar documento")
-        self.btn_import.setObjectName("primary")
-        IconProvider.apply(self.btn_import, "import")
-        self.btn_import.clicked.connect(self.import_requested.emit)
-        filter_row.addWidget(self.btn_import)
-        left_layout.addLayout(filter_row)
+        self.type_combo.setFixedWidth(140)
+        search_row.addWidget(self.type_combo)
+        left_layout.addLayout(search_row)
 
         self.status_label = QLabel("Nenhum documento importado")
         self.status_label.setObjectName("documentCount")
         left_layout.addWidget(self.status_label)
 
-        self.documents_table = QTableWidget(0, 5)
-        self.documents_table.setHorizontalHeaderLabels(["Nome", "Tipo", "Categoria", "Tamanho", "Favorito"])
+        self.documents_table = QTableWidget(0, 6)
+        self.documents_table.setHorizontalHeaderLabels(["Nome", "Tipo", "Categoria", "Tamanho", "Favorito", "Nuvem"])
         self.documents_table.setAlternatingRowColors(True)
         self.documents_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.documents_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
@@ -170,6 +200,7 @@ class DocumentView(QWidget):
         self.documents_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.documents_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.documents_table.setMinimumHeight(280)
+        self.documents_table.verticalHeader().setVisible(False)
         header = self.documents_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         for column in range(1, self.documents_table.columnCount()):
@@ -242,7 +273,7 @@ class DocumentView(QWidget):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        self._apply_compact_layout(event.size().width() < 980)
+        self._apply_compact_layout(event.size().width() < 1500)
 
     def _apply_compact_layout(self, compact: bool) -> None:
         if compact == self._compact:
@@ -259,6 +290,14 @@ class DocumentView(QWidget):
             self.details.setMinimumHeight(0)
             self.main_layout.setStretch(0, 3)
             self.main_layout.setStretch(1, 1)
+        for button in self.document_toolbar_buttons:
+            if compact:
+                button.setText("")
+                button.setFixedSize(38, 38)
+            else:
+                button.setText(str(button.property("actionText")))
+                button.setMinimumSize(72, 52)
+                button.setMaximumSize(16777215, 52)
         self.scroll_content.updateGeometry()
 
     def set_documents(self, documents: list[DocumentModel]):
@@ -269,6 +308,7 @@ class DocumentView(QWidget):
             self.documents_table.setItem(row_index, 2, QTableWidgetItem(document.category or ""))
             self.documents_table.setItem(row_index, 3, QTableWidgetItem(self._format_size(document.size)))
             self.documents_table.setItem(row_index, 4, QTableWidgetItem("★" if document.favorite else ""))
+            self.documents_table.setItem(row_index, 5, QTableWidgetItem(self._cloud_label(document)))
 
             for column in range(self.documents_table.columnCount()):
                 self.documents_table.item(row_index, column).setData(Qt.ItemDataRole.UserRole, document.id)
@@ -307,6 +347,21 @@ class DocumentView(QWidget):
         self.folder_tree.expandAll()
         self.folder_tree.blockSignals(False)
         self.folder_selected.emit(None)
+
+    def set_cloud_settings(self, settings, account=None) -> None:
+        self.cloud_combo.blockSignals(True)
+        index = self.cloud_combo.findData(settings.sync_mode)
+        self.cloud_combo.setCurrentIndex(max(0, index))
+        self.cloud_combo.blockSignals(False)
+        if settings.sync_mode == "LOCAL":
+            text = "Armazenamento local"
+        elif settings.paused:
+            text = f"{settings.sync_mode} — pausado"
+        elif account:
+            text = account.display_name or account.email or settings.sync_mode
+        else:
+            text = f"{settings.sync_mode} — conta necessária"
+        self.cloud_status_label.setText(text)
 
     def selected_folder_id(self) -> int | None:
         item = self.folder_tree.currentItem()
@@ -359,6 +414,11 @@ class DocumentView(QWidget):
         organization_id = self.organization_combo.itemData(index)
         if organization_id is not None:
             self.organization_changed.emit(int(organization_id))
+
+    def _emit_cloud_provider(self, index: int) -> None:
+        provider = self.cloud_combo.itemData(index)
+        if provider:
+            self.cloud_provider_changed.emit(str(provider))
 
     def _emit_folder(self, current, _previous) -> None:
         self.folder_selected.emit(
@@ -415,3 +475,14 @@ class DocumentView(QWidget):
                 return f"{value:.0f} {unit}"
             value /= 1024
         return f"{value:.0f} GB"
+
+    @staticmethod
+    def _cloud_label(document: DocumentModel) -> str:
+        labels = {
+            "LOCAL_ONLY": "🖥 Local", "PENDING_UPLOAD": "⟳ Pendente",
+            "UPLOADING": "⟳ Sincronizando", "SYNCED": f"☁ {document.cloud_provider or 'Nuvem'}",
+            "PENDING_DOWNLOAD": "⟳ Baixando", "CONFLICT": "⚠ Conflito",
+            "ERROR": "⚠ Erro", "REMOTE_DELETED": "⚠ Removido na nuvem",
+            "LOCAL_DELETED": "🗑 Removido localmente",
+        }
+        return labels.get(document.cloud_status, document.cloud_status)
