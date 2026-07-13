@@ -36,6 +36,7 @@ class DocumentController:
         self._current_folder_id: int | None = None
         self._current_scope = "documents"
         self._cloud_worker = None
+        self._copied_document_id = None
         self._cloud_timer = QTimer(self.view)
         self._cloud_timer.setInterval(60_000)
         self._cloud_timer.timeout.connect(self._auto_sync)
@@ -74,6 +75,12 @@ class DocumentController:
         self.view.resume_sync_requested.connect(lambda: self.on_pause_sync(False))
         self.view.disconnect_cloud_requested.connect(self.on_disconnect_cloud)
         self.view.cloud_history_requested.connect(self.on_cloud_history)
+        self.view.cloud_login_requested.connect(self.on_add_cloud_account)
+        self.view.copy_requested.connect(self.on_copy_document)
+        self.view.paste_requested.connect(self.on_paste_document)
+        self.view.restore_requested.connect(self.on_restore_document)
+        self.view.permanent_delete_requested.connect(self.on_permanent_delete_document)
+        self.view.empty_trash_requested.connect(self.on_empty_trash)
 
     def _register_view(self):
         self.workspace.register_view("documents", self.view)
@@ -314,8 +321,10 @@ class DocumentController:
             QMessageBox.warning(self.view, "Camada de Nuvem", str(exc))
             self._refresh_cloud()
 
-    def on_add_cloud_account(self):
-        provider = str(self.view.cloud_combo.currentData())
+    def on_add_cloud_account(self,provider=None):
+        provider = str(provider or self.view.cloud_combo.currentData())
+        index=self.view.cloud_combo.findData(provider)
+        if index>=0:self.view.cloud_combo.setCurrentIndex(index)
         if provider == "LOCAL":
             QMessageBox.information(
                 self.view, "Adicionar conta", "Selecione OneDrive ou Google Drive."
@@ -400,6 +409,23 @@ class DocumentController:
         if self._cloud_worker is worker:
             self._cloud_worker = None
 
+    def on_copy_document(self,document_id): self._copied_document_id=document_id; self.view.set_status("Documento copiado. Escolha a pasta e use Colar.")
+    def on_paste_document(self):
+        if self._copied_document_id is None: QMessageBox.information(self.view,"Colar","Nenhum documento foi copiado."); return
+        try:self.service.copy_document(self._copied_document_id,self._current_folder_id); self._refresh_documents(); self.view.set_status("Cópia criada com sucesso")
+        except Exception as exc:QMessageBox.warning(self.view,"Colar",str(exc))
+    def on_restore_document(self,document_id):
+        try:self.service.restore_document(document_id); self._refresh_documents(); self.view.set_status("Documento restaurado")
+        except Exception as exc:QMessageBox.warning(self.view,"Lixeira",str(exc))
+    def on_permanent_delete_document(self,document_id):
+        if QMessageBox.question(self.view,"Excluir definitivamente","Esta ação não pode ser desfeita. Continuar?")!=QMessageBox.StandardButton.Yes:return
+        try:self.service.permanently_delete_document(document_id); self._refresh_documents()
+        except Exception as exc:QMessageBox.warning(self.view,"Lixeira",str(exc))
+    def on_empty_trash(self):
+        if QMessageBox.question(self.view,"Esvaziar lixeira","Excluir definitivamente todos os documentos da lixeira?")!=QMessageBox.StandardButton.Yes:return
+        try:count=self.service.empty_trash(); self._refresh_documents(); self.view.set_status(f"Lixeira esvaziada: {count} documento(s)")
+        except Exception as exc:QMessageBox.warning(self.view,"Lixeira",str(exc))
+
     def _auto_sync(self):
         settings = self.service.cloud_manager.settings(self.service.active_organization_id)
         if (
@@ -438,10 +464,13 @@ class DocumentController:
         self.view.set_status(f"Arquivo enviado para PDF Tools: {document.name}")
 
     def on_delete_document(self, document_id: int):
+        if self._current_scope == "trash":
+            self.on_permanent_delete_document(document_id)
+            return
         confirm = QMessageBox.question(
             self.view,
-            "Excluir registro",
-            "Deseja remover este registro do Mini GED?",
+            "Mover para lixeira",
+            "Deseja mover este documento para a lixeira?",
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
@@ -449,7 +478,7 @@ class DocumentController:
         try:
             deleted = self.service.delete_document(document_id)
             if deleted:
-                self.view.set_status("Registro removido com sucesso")
+                self.view.set_status("Documento movido para a lixeira")
                 self.on_refresh_documents()
             else:
                 QMessageBox.warning(self.view, "Mini GED", "Registro não encontrado.")

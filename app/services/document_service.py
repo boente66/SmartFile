@@ -4,6 +4,7 @@ import hashlib
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
+from dataclasses import replace
 from typing import Optional
 
 from app.database.database import Database
@@ -165,6 +166,33 @@ class DocumentService:
             raise InvalidDocumentError("Documento não encontrado.")
         self._record_history(document_id, "RESTORE", f"Documento restaurado: {restored.name}")
         return DocumentModel.from_entity(restored)
+
+    def copy_document(self, document_id: int, folder_id: int | None = None) -> DocumentModel:
+        source=self.document_repository.find_by_id(document_id,self.active_organization_id)
+        if source is None: raise InvalidDocumentError("Documento não encontrado.")
+        path=Path(source.storage_path or source.path).expanduser().resolve()
+        if not path.is_file(): raise InvalidDocumentError("Arquivo do documento não encontrado.")
+        stored=self.storage_service.store(path,source.checksum)
+        now=self._now(); entity=replace(source,id=None,folder_id=folder_id,name=f"Cópia de {source.name}",path=stored.storage_path,storage_path=stored.storage_path,internal_name=stored.internal_name,status="ACTIVE",favorite=False,created_at=now,updated_at=now,last_accessed_at=None,cloud_status="LOCAL_ONLY",cloud_provider=None,remote_id=None,remote_version=None,last_synced_at=None)
+        try:
+            created=self.document_repository.create(entity); self._record_history(created.id,"COPY",f"Cópia criada de {source.name}"); self.cloud_sync_service.enqueue_upload(created.id,self.active_organization_id); return DocumentModel.from_entity(created)
+        except Exception:
+            self.storage_service.remove(stored.storage_path); raise
+
+    def permanently_delete_document(self,document_id:int)->bool:
+        entity=self.document_repository.find_by_id(document_id,self.active_organization_id)
+        if not entity or entity.status!="TRASHED": return False
+        changed=self.document_repository.permanently_delete(document_id,self.active_organization_id)
+        if changed and entity.managed and entity.storage_path:self.storage_service.remove(entity.storage_path)
+        return changed
+
+    def empty_trash(self)->int:
+        entities=self.document_repository.find_trashed(self.active_organization_id); count=self.document_repository.empty_trash(self.active_organization_id)
+        for entity in entities:
+            if entity.managed and entity.storage_path:
+                try:self.storage_service.remove(entity.storage_path)
+                except Exception: logger.exception("Arquivo órfão após esvaziar lixeira: %s",entity.storage_path)
+        return count
 
     def open_document(self, document_id: int) -> DocumentModel:
         entity = self.document_repository.find_by_id(document_id, self.active_organization_id)

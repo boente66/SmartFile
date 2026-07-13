@@ -190,6 +190,18 @@ class DocumentRepository(BaseRepository):
             (self._now(), document_id, organization_id, organization_id),
         ).rowcount > 0
 
+    def permanently_delete(self, document_id: int, organization_id: int) -> bool:
+        with self.database.transaction():
+            self._write("DELETE FROM history WHERE document_id=?",(document_id,))
+            return self._write("DELETE FROM documents WHERE id=? AND organization_id=? AND status='TRASHED'",(document_id,organization_id)).rowcount>0
+
+    def empty_trash(self, organization_id: int) -> int:
+        rows=self._fetch_all("SELECT id FROM documents WHERE organization_id=? AND status='TRASHED'",(organization_id,))
+        with self.database.transaction():
+            for row in rows: self._write("DELETE FROM history WHERE document_id=?",(row["id"],))
+            self._write("DELETE FROM documents WHERE organization_id=? AND status='TRASHED'",(organization_id,))
+        return len(rows)
+
     def move_to_folder(self, document_id: int, organization_id: int, folder_id: int | None) -> bool:
         return self._write(
             "UPDATE documents SET folder_id = ?, updated_at = ? WHERE id = ? AND organization_id = ?",

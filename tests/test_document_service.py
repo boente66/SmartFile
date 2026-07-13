@@ -111,3 +111,20 @@ def test_duplicate_content_is_rejected_by_sha256(tmp_path: Path):
 
     with pytest.raises(DuplicateDocumentError):
         service.import_document(str(second))
+
+
+def test_copy_paste_and_permanent_trash_operations(tmp_path: Path):
+    service=DocumentService(db_path=str(tmp_path/"smartfile.db")); source=tmp_path/"documento.pdf"; source.write_bytes(b"conteudo")
+    original=service.import_document(str(source)); copied=service.copy_document(original.id)
+    assert copied.id!=original.id and copied.name=="Cópia de documento.pdf" and Path(copied.storage_path).is_file()
+    service.delete_document(copied.id); copied_path=Path(copied.storage_path)
+    assert service.permanently_delete_document(copied.id) is True and not copied_path.exists()
+    assert service.get_document(copied.id) is None
+
+
+def test_empty_trash_removes_only_trashed_documents(tmp_path: Path):
+    service=DocumentService(db_path=str(tmp_path/"smartfile.db"))
+    first=tmp_path/"a.txt"; second=tmp_path/"b.txt"; first.write_text("a"); second.write_text("b")
+    a=service.import_document(str(first)); b=service.import_document(str(second)); service.delete_document(a.id)
+    assert service.empty_trash()==1
+    assert service.get_document(a.id) is None and service.get_document(b.id) is not None

@@ -6,15 +6,17 @@ class UserRepository(BaseRepository):
     def create(self, entity: UserEntity) -> UserEntity:
         cursor = self._write(
             """INSERT INTO users (username,email,display_name,phone,password_hash,is_active,is_superuser,
-            failed_login_attempts,locked_until,last_login_at,created_at,updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""", self._values(entity)
+            failed_login_attempts,locked_until,last_login_at,created_at,updated_at,avatar_path,
+            avatar_initials,avatar_color,must_change_password)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", self._values(entity)
         )
         entity.id = cursor.lastrowid; return entity
 
     def update(self, entity: UserEntity) -> UserEntity:
         self._write(
             """UPDATE users SET username=?,email=?,display_name=?,phone=?,password_hash=?,is_active=?,
-            is_superuser=?,failed_login_attempts=?,locked_until=?,last_login_at=?,created_at=?,updated_at=? WHERE id=?""",
+            is_superuser=?,failed_login_attempts=?,locked_until=?,last_login_at=?,created_at=?,updated_at=?,
+            avatar_path=?,avatar_initials=?,avatar_color=?,must_change_password=? WHERE id=?""",
             (*self._values(entity), entity.id),
         ); return entity
 
@@ -34,10 +36,17 @@ class UserRepository(BaseRepository):
     def count(self) -> int:
         return int(self._fetch_one("SELECT COUNT(*) total FROM users")["total"])
 
+    def search(self, query: str):
+        value=f"%{query.strip()}%"
+        return [self._entity(r) for r in self._fetch_all(
+            "SELECT * FROM users WHERE username LIKE ? OR email LIKE ? OR display_name LIKE ? ORDER BY display_name",
+            (value,value,value),
+        )]
+
     @staticmethod
     def _values(e):
-        return (e.username,e.email,e.display_name,e.phone,e.password_hash,int(e.is_active),int(e.is_superuser),e.failed_login_attempts,e.locked_until,e.last_login_at,e.created_at,e.updated_at)
+        return (e.username,e.email,e.display_name,e.phone,e.password_hash,int(e.is_active),int(e.is_superuser),e.failed_login_attempts,e.locked_until,e.last_login_at,e.created_at,e.updated_at,e.avatar_path,e.avatar_initials,e.avatar_color,int(e.must_change_password))
 
     @staticmethod
     def _entity(r):
-        return UserEntity(id=r["id"],username=r["username"],email=r["email"],display_name=r["display_name"],phone=r["phone"],password_hash=r["password_hash"],is_active=bool(r["is_active"]),is_superuser=bool(r["is_superuser"]),failed_login_attempts=r["failed_login_attempts"],locked_until=r["locked_until"],last_login_at=r["last_login_at"],created_at=r["created_at"],updated_at=r["updated_at"])
+        return UserEntity(id=r["id"],username=r["username"],email=r["email"],display_name=r["display_name"],phone=r["phone"],password_hash=r["password_hash"],is_active=bool(r["is_active"]),is_superuser=bool(r["is_superuser"]),failed_login_attempts=r["failed_login_attempts"],locked_until=r["locked_until"],last_login_at=r["last_login_at"],created_at=r["created_at"],updated_at=r["updated_at"],avatar_path=r["avatar_path"],avatar_initials=r["avatar_initials"],avatar_color=r["avatar_color"],must_change_password=bool(r["must_change_password"]))

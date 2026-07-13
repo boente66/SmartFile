@@ -94,7 +94,7 @@ class OrganizationService:
 
     @staticmethod
     def _name(name: str) -> str:
-        clean = " ".join(name.split())
+        clean = name.strip()
         if not clean:
             raise ValueError("Informe o nome da organização.")
         if len(clean) > 100:

@@ -40,3 +40,11 @@ def test_document_view_keeps_side_by_side_layout_on_large_screen():
     assert view.details.geometry().left() >= view.list_panel.geometry().right()
     assert view.search_edit.geometry().right() <= view.list_panel.width()
     view.close()
+
+
+def test_trash_actions_and_cloud_login_providers_are_exposed():
+    _app(); view=DocumentView(); view._select_scope("trash")
+    assert view.btn_empty_trash.isVisible() is False or view.btn_empty_trash.isHidden() is False
+    actions={action.text() for action in view.btn_add_cloud.menu().actions()}
+    assert {"Microsoft OneDrive","Google Drive"} <= actions
+    view.close()

@@ -8,3 +8,7 @@ class PasswordPolicyError(AuthenticationError): pass
 class SessionExpiredError(AuthenticationError): pass
 class RegistrationError(AuthenticationError): pass
 class TemplateCreationError(AuthenticationError): pass
+class AdministrationError(AuthenticationError): pass
+class LastOwnerError(AdministrationError): pass
+class MembershipError(AdministrationError): pass
+class AvatarError(AdministrationError): pass

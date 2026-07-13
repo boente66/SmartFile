@@ -11,5 +11,6 @@ class OrganizationEntity:
     color: str | None = "#2563eb"
     created_at: str = ""
     updated_at: str = ""
+    archived_at: str | None = None
     is_default: bool = False
     status: str = "ACTIVE"

@@ -22,6 +22,8 @@ from app.repositories.user_repository import UserRepository
 from app.services.folder_service import FolderService
 from app.services.folder_template_service import FolderTemplateService
 from app.services.organization_service import OrganizationService
+from app.services.avatar_service import AvatarService
+from app.services.audit_service import AuditService
 
 logger = logging.getLogger(__name__)
 USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -36,6 +38,8 @@ class AuthService:
         self.passwords = PasswordService()
         self.organizations = OrganizationService(database)
         self.templates = FolderTemplateService(FolderService(database))
+        self.avatars = AvatarService(database)
+        self.audit = AuditService(database)
 
     def has_users(self) -> bool:
         return self.users.count() > 0
@@ -63,12 +67,16 @@ class AuthService:
     ) -> UserModel:
         username, email, display_name = self._validate_registration(request)
         now = self._now()
+        stored_avatar = None
         try:
             with self.database.transaction():
+                stored_avatar = self.avatars.store(request.avatar_path)
                 user = self.users.create(UserEntity(
                     username=username, email=email, display_name=display_name,
                     phone=request.phone.strip() if request.phone else None,
                     password_hash=self.passwords.hash_password(request.password),
+                    avatar_path=stored_avatar,
+                    avatar_initials=self.avatars.initials(display_name), avatar_color="#2563eb",
                     created_at=now, updated_at=now,
                 ))
                 organization = (
@@ -77,16 +85,21 @@ class AuthService:
                     else None
                 )
                 if organization is None:
-                    organization = self.organizations.create("Minha Organização")
+                    organization = self.organizations.create(request.organization_name,request.organization_description)
                     if use_existing_default:
                         organization.is_default = True
                         self.organizations.repository.update(organization)
+                else:
+                    organization=self.organizations.update(organization.id,request.organization_name,request.organization_description)
+                organization.icon=request.organization_icon; organization.color=request.organization_color
+                self.organizations.repository.update(organization)
                 membership = self.members.create(OrganizationMemberEntity(
                     organization_id=organization.id, user_id=user.id, role="OWNER",
-                    created_at=now, updated_at=now,
+                    created_at=now, updated_at=now, joined_at=now,
                 ))
                 self.templates.create_template_folders(organization.id, request.template_code)
                 session = self.sessions.create(user.id)
+                self.audit.record("INITIAL_REGISTRATION" if use_existing_default else "LOCAL_REGISTRATION",user_id=user.id,organization_id=organization.id,target_type="organization",target_id=organization.id,description=f"Cadastro concluído com template {request.template_code}")
             model = UserModel.from_entity(user)
             self.session_context.login(model, session.id, organization, [membership])
             self.organizations.set_active(organization.id)
@@ -101,6 +114,9 @@ class AuthService:
         except (UserAlreadyExistsError, EmailAlreadyExistsError, PasswordPolicyError):
             raise
         except Exception as exc:
+            if stored_avatar:
+                from pathlib import Path
+                Path(stored_avatar).unlink(missing_ok=True)
             raise RegistrationError("Não foi possível concluir o cadastro inicial.") from exc
 
     def login(self, login: str, password: str, remember: bool = False) -> UserModel:
@@ -139,6 +155,7 @@ class AuthService:
 
     def logout(self) -> None:
         if self.session_context.session_id:
+            self.audit.record("SESSION_REVOKED",user_id=self.session_context.current_user.id,organization_id=getattr(self.session_context.active_organization,"id",None),target_type="session",target_id=self.session_context.session_id,description="Logout realizado")
             self.sessions.revoke(self.session_context.session_id)
             logger.info("Logout user_id=%s", getattr(self.session_context.current_user, "id", None))
         self.session_context.logout()
@@ -161,6 +178,8 @@ class AuthService:
         if email and self.users.find_by_email(email): raise EmailAlreadyExistsError("E-mail já cadastrado.")
         self._validate_password(username,request.password,request.password_confirmation)
         if request.template_code.upper() not in self.templates.TEMPLATES: raise RegistrationError("Selecione um perfil inicial.")
+        if not request.organization_name.strip(): raise RegistrationError("Informe o nome da organização.")
+        if len(request.organization_name.strip()) > 100: raise RegistrationError("O nome da organização deve possuir até 100 caracteres.")
         return username,email,display_name
 
     @staticmethod

@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS organizations (
     color TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
+    archived_at TEXT,
     is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
     status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'DELETED'))
 );
@@ -58,6 +59,10 @@ CREATE TABLE IF NOT EXISTS users (
     last_login_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
+    ,avatar_path TEXT
+    ,avatar_initials TEXT
+    ,avatar_color TEXT
+    ,must_change_password INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -80,9 +85,25 @@ CREATE TABLE IF NOT EXISTS organization_members (
     status TEXT NOT NULL DEFAULT 'ACTIVE',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
+    invited_by_user_id INTEGER,
+    joined_at TEXT,
+    deactivated_at TEXT,
     FOREIGN KEY (organization_id) REFERENCES organizations(id),
     FOREIGN KEY (user_id) REFERENCES users(id),
     UNIQUE (organization_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    organization_id INTEGER,
+    action TEXT NOT NULL,
+    target_type TEXT,
+    target_id INTEGER,
+    description TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (organization_id) REFERENCES organizations(id)
 );
 
 CREATE TABLE IF NOT EXISTS cloud_settings (
@@ -185,3 +206,5 @@ CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id, revoked_at);
 CREATE INDEX IF NOT EXISTS idx_members_user ON organization_members(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_members_organization ON organization_members(organization_id, status);
+CREATE INDEX IF NOT EXISTS idx_audit_organization ON audit_log(organization_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id, created_at DESC);

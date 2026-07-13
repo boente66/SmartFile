@@ -30,7 +30,7 @@ class AuthController:
         self._replace_auth_view(view)
 
     def _show_setup(self):
-        view=FirstUserSetupView(first_user=True); view.registration_requested.connect(self._register_first_user); self._replace_auth_view(view)
+        view=FirstUserSetupView(first_user=True); view.registration_requested.connect(self._register_first_user); view.enter_requested.connect(self._open_application); self._replace_auth_view(view)
 
     def _show_registration(self):
         if not self.allow_local_registration:
@@ -38,6 +38,7 @@ class AuthController:
         view=FirstUserSetupView(first_user=False)
         view.registration_requested.connect(self._register_user)
         view.back_requested.connect(self._show_login)
+        view.enter_requested.connect(self._open_application)
         self._replace_auth_view(view)
 
     def _replace_auth_view(self,view):
@@ -57,7 +58,7 @@ class AuthController:
 
     def _register_first_user(self,request):
         try:
-            self.service.register_first_user(request); self._open_application()
+            self.service.register_first_user(request); self.auth_view.show_completion()
         except AuthenticationError as exc:
             self.auth_view.show_error(str(exc))
         except Exception:
@@ -69,7 +70,7 @@ class AuthController:
 
     def _register_user(self,request):
         try:
-            self.service.register_user(request); self._open_application()
+            self.service.register_user(request); self.auth_view.show_completion()
         except AuthenticationError as exc:
             self.auth_view.show_error(str(exc))
         except Exception:

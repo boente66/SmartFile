@@ -35,12 +35,14 @@ abre a tela de login. A janela principal não é disponibilizada sem autenticaç
 
 ## 3. Primeiro acesso
 
-1. Informe nome completo e nome de usuário.
-2. Informe e-mail e telefone, se desejar.
-3. Crie uma senha com pelo menos oito caracteres.
-4. Confirme a senha.
-5. Escolha um modelo inicial de pastas.
-6. Selecione **Continuar**.
+O cadastro utiliza um wizard de quatro etapas:
+
+1. Em **Dados pessoais**, informe nome, username, contatos, senha e avatar opcional.
+2. Em **Organização**, escolha nome, descrição, ícone, cor e modelo de pastas.
+3. Em **Resumo**, confira os dados, as pastas previstas e o papel `OWNER`.
+4. Selecione **Finalizar** e, após a conclusão, **Entrar no SmartFile**.
+
+É possível voltar às etapas anteriores sem persistir dados parciais.
 
 O primeiro usuário recebe o papel de proprietário (`OWNER`) da organização padrão.
 Os modelos Pessoal, Estudante e Empresarial servem somente para criar as pastas
@@ -88,6 +90,24 @@ No módulo Documentos, o usuário pode:
 - selecionar uma pasta para filtrar os documentos;
 - mover itens para a lixeira.
 
+### Gerenciar organizações
+
+No menu da conta, selecione **Gerenciar organizações** para consultar quantidades
+de documentos, pastas e membros, provedor de nuvem, status e atividade. Conforme
+as permissões, é possível criar, editar, abrir, duplicar a estrutura ou arquivar.
+
+Arquivar é uma operação lógica: documentos e arquivos físicos são preservados. A
+confirmação exige digitar exatamente o nome da organização. A única organização
+ativa do usuário e organizações com sincronização em andamento não podem ser
+arquivadas.
+
+### Usuários e permissões
+
+Usuários autorizados podem adicionar contas locais existentes, criar uma conta
+temporária, alterar papéis, desativar vínculos, remover membros e transferir a
+propriedade. A organização deve manter pelo menos um `OWNER`. A transferência é
+uma ação separada e exige a senha atual do proprietário.
+
 Ao criar uma organização, pode-se escolher novamente um modelo de pastas. Essa
 escolha não altera as permissões do usuário.
 
@@ -120,6 +140,12 @@ pasta e passa a ser exibido também na seção de favoritos.
 A exclusão normal move o documento para a lixeira. Ela não deve ser confundida com
 remoção permanente. Confirme sempre a organização e o documento selecionados antes
 de excluir.
+
+Clique com o botão direito sobre um documento para abrir o menu contextual. Na lista
+normal estão disponíveis **Copiar**, **Colar** e **Mover para lixeira**. Na Lixeira,
+o menu oferece **Copiar**, **Colar**, **Restaurar**, **Excluir definitivamente** e
+**Esvaziar lixeira**. Exclusões definitivas removem também o arquivo gerenciado e
+não podem ser desfeitas.
 
 ## 7. Visualizador de PDF
 
@@ -227,6 +253,11 @@ Quando não há internet, os documentos locais continuam disponíveis e as opera
 podem permanecer na fila. A sincronização é retomada quando houver conexão e uma
 conta corretamente configurada.
 
+Para adicionar uma conta, selecione **Adicionar Conta → Microsoft OneDrive** ou
+**Adicionar Conta → Google Drive**. O SmartFile abre a página oficial de autorização
+no navegador. O provedor só é ativado depois que a autenticação for concluída e o
+código retornado for confirmado no aplicativo.
+
 Nunca informe tokens manualmente em telas que não sejam destinadas à configuração
 da conta. Tokens não são exibidos pela interface.
 
@@ -244,14 +275,16 @@ da conta. Tokens não são exibidos pela interface.
 
 1. O SmartFile identifica que o banco não possui usuários.
 2. O sistema apresenta o cadastro inicial.
-3. O usuário informa seus dados e escolhe um modelo de pastas.
-4. O sistema valida username, e-mail, senha e confirmação.
-5. O sistema cria o usuário e protege a senha com Argon2id.
-6. O sistema obtém a organização padrão.
-7. O sistema vincula o usuário como `OWNER`.
-8. O sistema cria as pastas lógicas do modelo selecionado.
-9. O sistema cria uma sessão autenticada.
-10. A janela principal é aberta.
+3. O usuário informa seus dados pessoais.
+4. O usuário personaliza a organização e escolhe um modelo de pastas.
+5. O sistema apresenta o resumo antes da confirmação.
+6. O sistema valida username, e-mail, senha, avatar e organização.
+7. O sistema cria o usuário e protege a senha com Argon2id.
+8. O sistema cria ou atualiza a organização padrão.
+9. O sistema vincula o usuário como `OWNER`.
+10. O sistema cria as pastas lógicas do modelo selecionado.
+11. O sistema cria uma sessão autenticada.
+12. A conclusão é apresentada e a janela principal é liberada.
 
 **Fluxos alternativos:**
 
@@ -474,7 +507,9 @@ Nesta versão não estão incluídos:
 - OCR automático no visualizador;
 - colaboração simultânea;
 - resolução automática de conflitos de nuvem;
-- perfis PAdES-LT ou PAdES-LTA.
+- perfis PAdES-LT ou PAdES-LTA;
+- alteração obrigatória automática da senha temporária no primeiro login; o estado
+  já é registrado, mas o bloqueio guiado será concluído em fase futura.
 
 ## 16. Encerramento
 

@@ -135,7 +135,7 @@ def test_auth_migration_is_idempotent(tmp_path: Path):
     database = Database(str(tmp_path / "smartfile.db")); Database(str(tmp_path / "smartfile.db"))
     tables = {row["name"] for row in database.fetch_all("SELECT name FROM sqlite_master WHERE type='table'")}
     assert {"users", "sessions", "organization_members"} <= tables
-    assert database.connect().execute("PRAGMA user_version").fetchone()[0] == 7
+    assert database.connect().execute("PRAGMA user_version").fetchone()[0] == 8
 
 
 def test_repeated_failures_lock_account_without_revealing_credentials(tmp_path: Path):

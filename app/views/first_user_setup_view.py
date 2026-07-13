@@ -1,71 +1,82 @@
+from pathlib import Path
+
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtWidgets import (
-    QButtonGroup, QFormLayout, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QRadioButton, QVBoxLayout, QWidget,
-)
+from PyQt6.QtWidgets import (QButtonGroup,QComboBox,QFileDialog,QFormLayout,QGridLayout,QHBoxLayout,QLabel,QLineEdit,QPushButton,QRadioButton,QScrollArea,QStackedWidget,QTextEdit,QVBoxLayout,QWidget)
 
 from app.models.registration_request import RegistrationRequest
+from app.services.folder_template_service import FolderTemplateService
 from app.ui.icon_provider import IconProvider
 
 
 class FirstUserSetupView(QWidget):
-    registration_requested = pyqtSignal(object)
-    back_requested = pyqtSignal()
+    registration_requested=pyqtSignal(object); back_requested=pyqtSignal(); enter_requested=pyqtSignal()
+    def __init__(self,first_user=True):
+        super().__init__(); self.first_user=first_user; self.avatar_path=None; self.setObjectName("authWindow"); self.setWindowTitle("SmartFile — Criar conta"); self.resize(1100,720); self.setMinimumSize(820,580); self.setWindowIcon(IconProvider.icon("app"))
+        outer=QVBoxLayout(self); outer.setContentsMargins(24,18,24,18)
+        title=QLabel("Criar conta e organização"); title.setObjectName("authTitle"); title.setAlignment(Qt.AlignmentFlag.AlignCenter); outer.addWidget(title)
+        self.steps_label=QLabel(); self.steps_label.setAlignment(Qt.AlignmentFlag.AlignCenter); outer.addWidget(self.steps_label)
+        scroll=QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QScrollArea.Shape.NoFrame); container=QWidget(); layout=QVBoxLayout(container)
+        self.stack=QStackedWidget(); self.stack.addWidget(self._personal_page()); self.stack.addWidget(self._organization_page()); self.stack.addWidget(self._summary_page()); self.stack.addWidget(self._completion_page()); layout.addWidget(self.stack); scroll.setWidget(container); outer.addWidget(scroll,1)
+        self.error_label=QLabel(); self.error_label.setObjectName("authError"); self.error_label.setWordWrap(True); outer.addWidget(self.error_label)
+        actions=QHBoxLayout(); self.cancel_button=QPushButton("Cancelar" if first_user else "Voltar ao login"); self.cancel_button.clicked.connect(self.back_requested); self.back_button=QPushButton("Voltar"); self.back_button.clicked.connect(self.previous_step); self.next_button=QPushButton("Continuar"); self.next_button.setObjectName("authPrimary"); self.next_button.clicked.connect(self.next_step); actions.addWidget(self.cancel_button); actions.addStretch(); actions.addWidget(self.back_button); actions.addWidget(self.next_button); outer.addLayout(actions); self._update_navigation()
 
-    def __init__(self, first_user: bool = True):
-        super().__init__(); self.first_user = first_user; self.setObjectName("authWindow"); self.setWindowTitle("SmartFile — Criar conta")
-        self.resize(1200,760); self.setMinimumSize(900,620); self.setWindowIcon(IconProvider.icon("app"))
-        root=QHBoxLayout(self); root.setContentsMargins(0,0,0,0); root.setSpacing(0)
-        root.addWidget(self._brand_panel(),3); root.addWidget(self._setup_panel(),7)
+    def _personal_page(self):
+        page=QWidget(); form=QGridLayout(page); form.setSpacing(12)
+        self.display_name=self._field(form,0,0,"Nome completo","Digite seu nome completo"); self.username=self._field(form,0,1,"Nome de usuário","Escolha um nome de usuário")
+        self.email=self._field(form,2,0,"E-mail (opcional)","seu@email.com"); self.phone=self._field(form,2,1,"Telefone (opcional)","(11) 99999-9999")
+        self.password=self._field(form,4,0,"Senha","Mínimo de 8 caracteres",True); self.confirmation=self._field(form,4,1,"Confirmar senha","Repita a senha",True)
+        self.avatar_label=QLabel("Nenhum avatar selecionado"); choose=QPushButton("Selecionar avatar"); choose.clicked.connect(self._select_avatar); remove=QPushButton("Remover"); remove.clicked.connect(self._remove_avatar); row=QHBoxLayout(); row.addWidget(self.avatar_label,1); row.addWidget(choose); row.addWidget(remove); form.addWidget(QLabel("Avatar (opcional)"),6,0); form.addLayout(row,7,0,1,2)
+        return page
 
-    def _brand_panel(self):
-        panel=QWidget(); panel.setObjectName("authBrandPanel"); layout=QVBoxLayout(panel); layout.setContentsMargins(48,65,48,55)
-        logo=QLabel("☁  SmartFile"); logo.setObjectName("authBrandLogo"); layout.addWidget(logo)
-        text=QLabel("Seu gerenciamento de documentos\ninteligente e seguro."); text.setObjectName("authBrandSubtitle"); layout.addWidget(text); layout.addStretch()
-        for title in ("Seguro","Sincronizado","Produtivo"):
-            feature=QLabel(f"✓  {title}\n    Configuração local, organizada e protegida."); feature.setObjectName("authFeature"); feature.setWordWrap(True); layout.addWidget(feature)
-        layout.addStretch(); return panel
-
-    def _setup_panel(self):
-        outer=QWidget(); outer.setObjectName("authFormBackground"); layout=QVBoxLayout(outer); layout.setContentsMargins(32,25,32,25)
-        card=QWidget(); card.setObjectName("authCard"); root=QVBoxLayout(card); root.setContentsMargins(32,25,32,25); root.setSpacing(10)
-        title=QLabel("Criar conta"); title.setObjectName("authTitle"); title.setAlignment(Qt.AlignmentFlag.AlignCenter); root.addWidget(title)
-        caption_text = ("Configure o primeiro usuário local do SmartFile." if self.first_user else "Crie sua conta local e sua organização independente.")
-        caption=QLabel(caption_text); caption.setObjectName("authCaption"); caption.setAlignment(Qt.AlignmentFlag.AlignCenter); root.addWidget(caption)
-        fields=QGridLayout(); fields.setHorizontalSpacing(18); fields.setVerticalSpacing(9)
-        self.display_name=self._field(fields,0,0,"Nome completo","Digite seu nome completo")
-        self.username=self._field(fields,0,1,"Nome de usuário","Escolha um nome de usuário")
-        self.email=self._field(fields,2,0,"E-mail (opcional)","seu@email.com")
-        self.phone=self._field(fields,2,1,"Telefone (opcional)","(11) 99999-9999")
-        self.password=self._field(fields,4,0,"Senha","Crie uma senha",True)
-        self.confirmation=self._field(fields,4,1,"Confirmar senha","Confirme sua senha",True)
-        root.addLayout(fields)
-        hint=QLabel("A senha deve possuir pelo menos 8 caracteres e não pode ser igual ao username."); hint.setObjectName("authHint"); hint.setWordWrap(True); root.addWidget(hint)
-        root.addWidget(QLabel("Qual será o uso inicial do SmartFile?"))
+    def _organization_page(self):
+        page=QWidget(); root=QVBoxLayout(page); form=QFormLayout(); self.organization_name=QLineEdit("Minha Organização"); self.organization_description=QTextEdit(); self.organization_description.setMaximumHeight(80); self.organization_icon=QComboBox(); self.organization_icon.addItems(["organization","business","school","folder","home"]); self.organization_color=QComboBox(); self.organization_color.addItems(["#2563eb","#16a34a","#7c3aed","#ea580c","#dc2626"]); form.addRow("Nome da organização:",self.organization_name); form.addRow("Descrição:",self.organization_description); form.addRow("Ícone:",self.organization_icon); form.addRow("Cor:",self.organization_color); root.addLayout(form); root.addWidget(QLabel("Modelo inicial de pastas"))
         cards=QHBoxLayout(); self.templates=QButtonGroup(self); self.templates.setExclusive(True)
-        specs=(("PERSONAL","Pessoal","Uso pessoal"),("STUDENT","Estudante","Estudos"),("BUSINESS","Empresarial","Empresas"),("EMPTY","Começar vazio","Sem pastas"))
-        for index,(code,name,description) in enumerate(specs):
-            radio=QRadioButton(f"{name}\n{description}"); radio.setObjectName("templateCard"); radio.setProperty("templateCode",code); radio.setMinimumHeight(100); self.templates.addButton(radio); cards.addWidget(radio)
+        for index,(code,name) in enumerate((("PERSONAL","Pessoal"),("STUDENT","Estudante"),("BUSINESS","Empresarial"),("EMPTY","Começar vazio"))):
+            radio=QRadioButton(name); radio.setObjectName("templateCard"); radio.setProperty("templateCode",code); radio.setMinimumHeight(70); self.templates.addButton(radio); cards.addWidget(radio)
             if index==0: radio.setChecked(True)
-        root.addLayout(cards)
-        for field in (self.password,self.confirmation):
-            toggle=field.addAction(IconProvider.icon("visualize"),QLineEdit.ActionPosition.TrailingPosition); toggle.setToolTip("Mostrar ou ocultar senha"); toggle.triggered.connect(lambda _checked=False,target=field: target.setEchoMode(QLineEdit.EchoMode.Normal if target.echoMode()==QLineEdit.EchoMode.Password else QLineEdit.EchoMode.Password))
-        self.error_label=QLabel(""); self.error_label.setObjectName("authError"); root.addWidget(self.error_label)
-        actions=QHBoxLayout()
-        if not self.first_user:
-            back=QPushButton("Voltar ao login"); back.setObjectName("authLinkButton"); back.setFlat(True); back.clicked.connect(self.back_requested); actions.addWidget(back)
-        actions.addStretch(); submit=QPushButton("Continuar"); submit.setObjectName("authPrimary"); IconProvider.apply(submit,"login"); submit.clicked.connect(self._submit); actions.addWidget(submit); root.addLayout(actions)
-        layout.addWidget(card); return outer
+        root.addLayout(cards); return page
+
+    def _summary_page(self):
+        page=QWidget(); root=QVBoxLayout(page); self.summary=QLabel(); self.summary.setWordWrap(True); self.summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse); root.addWidget(self.summary); root.addStretch(); return page
+
+    def _completion_page(self):
+        page=QWidget(); root=QVBoxLayout(page); label=QLabel("✓ Cadastro concluído"); label.setObjectName("authTitle"); label.setAlignment(Qt.AlignmentFlag.AlignCenter); self.completion=QLabel(); self.completion.setAlignment(Qt.AlignmentFlag.AlignCenter); self.completion.setWordWrap(True); root.addStretch(); root.addWidget(label); root.addWidget(self.completion); root.addStretch(); return page
 
     @staticmethod
     def _field(layout,row,column,label,placeholder,password=False):
-        layout.addWidget(QLabel(label),row,column); field=QLineEdit(); field.setPlaceholderText(placeholder)
-        if password: field.setEchoMode(QLineEdit.EchoMode.Password)
-        layout.addWidget(field,row+1,column); return field
+        layout.addWidget(QLabel(label),row,column); field=QLineEdit(); field.setPlaceholderText(placeholder); field.setEchoMode(QLineEdit.EchoMode.Password if password else QLineEdit.EchoMode.Normal); layout.addWidget(field,row+1,column); return field
 
-    def _submit(self):
-        selected=self.templates.checkedButton(); code=selected.property("templateCode") if selected else ""
-        self.registration_requested.emit(RegistrationRequest(display_name=self.display_name.text(),username=self.username.text(),email=self.email.text() or None,phone=self.phone.text() or None,password=self.password.text(),password_confirmation=self.confirmation.text(),template_code=str(code)))
+    def next_step(self):
+        index=self.stack.currentIndex(); self.error_label.clear()
+        if index==0 and not self._validate_personal(): return
+        if index==1:
+            if not self.organization_name.text().strip(): self.show_error("Informe o nome da organização."); return
+            self._refresh_summary()
+        if index==2: self.registration_requested.emit(self.request()); return
+        if index==3: self.enter_requested.emit(); return
+        self.stack.setCurrentIndex(index+1); self._update_navigation()
 
-    def show_error(self,message):
-        self.error_label.setText(message); self.password.clear(); self.confirmation.clear()
+    def previous_step(self):
+        if self.stack.currentIndex()>0: self.stack.setCurrentIndex(self.stack.currentIndex()-1); self._update_navigation()
+
+    def request(self):
+        selected=self.templates.checkedButton(); code=str(selected.property("templateCode")) if selected else ""
+        return RegistrationRequest(display_name=self.display_name.text(),username=self.username.text(),email=self.email.text() or None,phone=self.phone.text() or None,password=self.password.text(),password_confirmation=self.confirmation.text(),template_code=code,organization_name=self.organization_name.text(),organization_description=self.organization_description.toPlainText() or None,organization_icon=self.organization_icon.currentText(),organization_color=self.organization_color.currentText(),avatar_path=self.avatar_path)
+
+    def _submit(self): self.registration_requested.emit(self.request())
+    def show_completion(self):
+        count=len(FolderTemplateService.TEMPLATES[self.request().template_code]); self.completion.setText(f"Organização {self.organization_name.text().strip()} criada com {count} pasta(s).\nPapel inicial: OWNER"); self.stack.setCurrentIndex(3); self._update_navigation()
+    def show_error(self,message): self.error_label.setText(message)
+    def _validate_personal(self):
+        if not self.display_name.text().strip() or not self.username.text().strip(): self.show_error("Informe nome completo e username."); return False
+        if len(self.password.text())<8: self.show_error("A senha deve possuir pelo menos 8 caracteres."); return False
+        if self.password.text()!=self.confirmation.text(): self.show_error("As senhas não coincidem."); return False
+        return True
+    def _refresh_summary(self):
+        request=self.request(); folders=FolderTemplateService.TEMPLATES.get(request.template_code,()); self.summary.setText(f"<h2>Revise antes de finalizar</h2><b>Usuário:</b> {request.display_name}<br><b>Username:</b> {request.username}<br><b>Organização:</b> {request.organization_name}<br><b>Template:</b> {request.template_code}<br><b>Papel:</b> OWNER<br><b>Pastas:</b> {', '.join(folders) if folders else 'Nenhuma pasta automática'}")
+    def _update_navigation(self):
+        index=self.stack.currentIndex(); self.steps_label.setText(f"Etapa {index+1} de 4 — "+("Dados pessoais","Organização","Resumo","Conclusão")[index]); self.back_button.setVisible(index in (1,2)); self.cancel_button.setVisible(index<3); self.next_button.setText(("Continuar","Continuar","Finalizar","Entrar no SmartFile")[index])
+    def _select_avatar(self):
+        path,_=QFileDialog.getOpenFileName(self,"Selecionar avatar","","Imagens (*.png *.jpg *.jpeg *.webp)")
+        if path: self.avatar_path=path; self.avatar_label.setText(Path(path).name)
+    def _remove_avatar(self): self.avatar_path=None; self.avatar_label.setText("Nenhum avatar selecionado")

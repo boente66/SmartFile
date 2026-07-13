@@ -16,3 +16,7 @@ class UserEntity:
     last_login_at: str | None = None
     created_at: str = ""
     updated_at: str = ""
+    avatar_path: str | None = None
+    avatar_initials: str | None = None
+    avatar_color: str | None = None
+    must_change_password: bool = False

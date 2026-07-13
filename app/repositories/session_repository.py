@@ -10,6 +10,10 @@ class SessionRepository(BaseRepository):
         return self._write("UPDATE sessions SET revoked_at=? WHERE id=? AND revoked_at IS NULL",(revoked_at,session_id)).rowcount>0
     def find_by_id(self, session_id: int):
         r=self._fetch_one("SELECT * FROM sessions WHERE id=?",(session_id,)); return self._entity(r) if r else None
+    def find_active_by_user(self,user_id:int):
+        return self._fetch_all("SELECT id,created_at,expires_at,last_activity_at,device_name FROM sessions WHERE user_id=? AND revoked_at IS NULL ORDER BY created_at DESC",(user_id,))
+    def revoke_others(self,user_id:int,current_session_id:int,revoked_at:str):
+        return self._write("UPDATE sessions SET revoked_at=? WHERE user_id=? AND id!=? AND revoked_at IS NULL",(revoked_at,user_id,current_session_id)).rowcount
     @staticmethod
     def _entity(r):
         return SessionEntity(id=r["id"],user_id=r["user_id"],token_hash=r["token_hash"],created_at=r["created_at"],expires_at=r["expires_at"],last_activity_at=r["last_activity_at"],revoked_at=r["revoked_at"],device_name=r["device_name"])

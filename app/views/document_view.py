@@ -57,6 +57,12 @@ class DocumentView(QWidget):
     resume_sync_requested = pyqtSignal()
     disconnect_cloud_requested = pyqtSignal()
     cloud_history_requested = pyqtSignal()
+    cloud_login_requested = pyqtSignal(str)
+    copy_requested = pyqtSignal(int)
+    paste_requested = pyqtSignal()
+    restore_requested = pyqtSignal(int)
+    permanent_delete_requested = pyqtSignal(int)
+    empty_trash_requested = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -123,6 +129,7 @@ class DocumentView(QWidget):
         self.btn_add_cloud.setObjectName("cloudAccountButton")
         IconProvider.apply(self.btn_add_cloud, "cloud_add")
         self.btn_add_cloud.clicked.connect(self.add_cloud_account_requested.emit)
+        cloud_account_menu=QMenu(self.btn_add_cloud); cloud_account_menu.addAction("Microsoft OneDrive",lambda:self.cloud_login_requested.emit("ONEDRIVE")); cloud_account_menu.addAction("Google Drive",lambda:self.cloud_login_requested.emit("GOOGLE_DRIVE")); self.btn_add_cloud.setMenu(cloud_account_menu)
         cloud_row.addWidget(self.btn_add_cloud)
         self.cloud_status_label = QLabel("Armazenamento local")
         self.cloud_status_label.setObjectName("cloudStatusLabel")
@@ -206,6 +213,8 @@ class DocumentView(QWidget):
         for column in range(1, self.documents_table.columnCount()):
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
         self.documents_table.itemSelectionChanged.connect(self._on_selection_changed)
+        self.documents_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.documents_table.customContextMenuRequested.connect(self._show_document_context_menu)
         browser = QSplitter(Qt.Orientation.Horizontal)
         browser.setObjectName("documentBrowserSplitter")
         folders_panel = QFrame()
@@ -229,6 +238,7 @@ class DocumentView(QWidget):
             folders_layout.addWidget(nav_button)
             self.scope_buttons[scope] = nav_button
         self.scope_buttons["documents"].setChecked(True)
+        self.btn_empty_trash=QPushButton("Esvaziar lixeira"); IconProvider.apply(self.btn_empty_trash,"action_trash"); self.btn_empty_trash.clicked.connect(self.empty_trash_requested.emit); self.btn_empty_trash.hide(); folders_layout.addWidget(self.btn_empty_trash)
         folders_header = QHBoxLayout()
         folders_header.addWidget(QLabel("Pastas"))
         folders_header.addStretch()
@@ -368,9 +378,11 @@ class DocumentView(QWidget):
         return item.data(0, Qt.ItemDataRole.UserRole) if item else None
 
     def _select_scope(self, scope: str) -> None:
+        self._current_scope=scope
         for name, button in self.scope_buttons.items():
             button.setChecked(name == scope)
         self.folder_tree.setVisible(scope in {"documents", "folders"})
+        self.btn_empty_trash.setVisible(scope=="trash")
         self.scope_changed.emit(scope)
 
     def show_document_details(self, document: DocumentModel | None):
@@ -429,6 +441,17 @@ class DocumentView(QWidget):
         document_id = self.selected_document_id()
         if document_id is not None:
             signal.emit(document_id)
+
+    def _show_document_context_menu(self,position):
+        menu=QMenu(self); document_id=self.selected_document_id(); trash=getattr(self,"_current_scope","documents")=="trash"
+        if document_id is not None:
+            menu.addAction("Copiar",lambda:self.copy_requested.emit(document_id))
+            if trash:
+                menu.addAction("Restaurar",lambda:self.restore_requested.emit(document_id)); menu.addAction("Excluir definitivamente",lambda:self.permanent_delete_requested.emit(document_id))
+            else: menu.addAction("Mover para lixeira",lambda:self.delete_requested.emit(document_id))
+        menu.addAction("Colar",self.paste_requested.emit)
+        if trash: menu.addSeparator(); menu.addAction("Esvaziar lixeira",self.empty_trash_requested.emit)
+        menu.exec(self.documents_table.viewport().mapToGlobal(position))
 
     @staticmethod
     def _icon_button(text: str, icon: str) -> QPushButton:

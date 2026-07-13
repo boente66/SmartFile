@@ -12,6 +12,7 @@ from app.models.registration_request import RegistrationRequest
 from app.views.first_user_setup_view import FirstUserSetupView
 from app.views.login_view import LoginView
 from app.views.main_view import MainView
+from app.views.account_menu import AccountMenu
 
 _APPLICATION = None
 
@@ -87,6 +88,8 @@ def test_successful_first_setup_reaches_protected_application_callback(tmp_path:
     opened = []
     controller._open_application = lambda: opened.append(controller.session_context.is_authenticated())
     controller.start(); controller._register(_request())
+    assert controller.auth_view.stack.currentIndex() == 3
+    controller.auth_view.enter_requested.emit()
     assert opened == [True]
     controller.auth_view.close()
 
@@ -97,3 +100,20 @@ def test_authenticated_app_keeps_existing_modules_registered(tmp_path: Path):
     main = MainView(); controller = AppController(main, auth.session_context, database); controller.start()
     assert {"documents", "converter", "pdf", "pdf_viewer", "scanner"} <= set(main.workspace.list_views())
     main.close()
+
+
+def test_wizard_navigates_validates_and_builds_summary():
+    app=_app(); wizard=FirstUserSetupView()
+    wizard.next_step(); assert wizard.stack.currentIndex()==0 and wizard.error_label.text()
+    wizard.display_name.setText("Pessoa Teste"); wizard.username.setText("pessoa"); wizard.password.setText("senha-segura"); wizard.confirmation.setText("senha-segura")
+    wizard.next_step(); assert wizard.stack.currentIndex()==1
+    wizard.organization_name.setText("Empresa ABC"); wizard.templates.buttons()[2].setChecked(True)
+    wizard.next_step(); assert wizard.stack.currentIndex()==2 and "Empresa ABC" in wizard.summary.text() and "OWNER" in wizard.summary.text()
+    wizard.previous_step(); assert wizard.stack.currentIndex()==1
+    wizard.close(); app.processEvents()
+
+
+def test_account_menu_hides_member_management_without_permission():
+    _app(); menu=AccountMenu(); from app.auth.session_context import SessionContext
+    context=SessionContext(); context.permissions={"organization.view","profile.view","session.view"}; menu.apply_permissions(context)
+    assert menu.manage_organizations_action.isVisible(); assert menu.members_action.isVisible() is False

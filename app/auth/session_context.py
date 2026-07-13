@@ -11,9 +11,9 @@ from app.models.user_model import UserModel
 
 ROLE_PERMISSIONS = {
     "OWNER": {"*"},
-    "ADMIN": {"document.*", "folder.*", "member.manage", "organization.update"},
-    "EDITOR": {"document.create", "document.import", "document.update", "document.open", "folder.*", "tools.use"},
-    "VIEWER": {"document.view", "document.open", "document.search"},
+    "ADMIN": {"document.*", "folder.*", "tools.use", "organization.view", "organization.create", "organization.update", "member.view", "member.add", "member.create_user", "member.change_role", "member.deactivate", "member.remove", "profile.view", "profile.update", "session.view", "session.revoke"},
+    "EDITOR": {"document.create", "document.import", "document.update", "document.open", "document.view", "document.search", "folder.*", "tools.use", "organization.view", "organization.create", "profile.view", "profile.update", "session.view", "session.revoke"},
+    "VIEWER": {"document.view", "document.open", "document.search", "organization.view", "profile.view", "profile.update", "session.view", "session.revoke"},
 }
 
 
