@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from dataclasses import replace
 from typing import Optional
+from uuid import uuid4
 
 from app.database.database import Database
 from app.entities.document_entity import DocumentEntity
@@ -20,6 +21,7 @@ from app.services.history_service import HistoryService
 from app.services.document_storage_service import DocumentStorageService
 from app.services.folder_service import FolderService
 from app.services.organization_service import OrganizationService
+from app.services.storage_quota_service import StorageQuotaService
 from app.cloud.cloud_manager import CloudManager
 from app.cloud.cloud_sync_service import CloudSyncService
 
@@ -42,6 +44,9 @@ class DocumentService:
         self.cloud_manager = CloudManager(self.database)
         self.cloud_sync_service = CloudSyncService(self.database, self.cloud_manager)
         self.storage_service = storage_service or DocumentStorageService(self.database.paths)
+        self.storage_quota_service = StorageQuotaService(
+            self.database, self.storage_service.paths.storage
+        )
         # Histórico básico preexistente é preservado, sem ampliar seu domínio.
         self.history_service = HistoryService(database=self.database)
 
@@ -52,11 +57,32 @@ class DocumentService:
     def set_active_organization(self, organization_id: int):
         return self.organization_service.set_active(organization_id)
 
-    def import_document(self, file_path: str, folder_id: int | None = None) -> DocumentModel:
+    def import_document(
+        self,
+        file_path: str,
+        folder_id: int | None = None,
+        *,
+        organization_id: int | None = None,
+        title: str | None = None,
+        category: str | None = None,
+        description: str | None = None,
+        tags: str | None = None,
+        document_date: str | None = None,
+        notes: str | None = None,
+        source_type: str = "IMPORT",
+        sync_cloud: bool = True,
+    ) -> DocumentModel:
         path = self._validated_path(file_path)
         extension = path.suffix.lower()
         checksum = self._calculate_checksum(path)
-        organization_id = self.active_organization_id
+        organization_id = organization_id or self.active_organization_id
+        source_type = source_type.strip().upper()
+        allowed_sources = {
+            "IMPORT", "SCANNER", "CONVERTER", "PDF_TOOLS", "DIGITAL_SIGNATURE",
+            "HANDWRITTEN_SIGNATURE", "CLOUD_DOWNLOAD",
+        }
+        if source_type not in allowed_sources:
+            raise InvalidDocumentError("Origem documental inválida.")
         if folder_id is not None:
             folder = self.folder_service.repository.find_by_id(folder_id, organization_id)
             if folder is None or folder.status != "ACTIVE":
@@ -64,14 +90,22 @@ class DocumentService:
         if self.document_repository.exists_checksum(checksum, organization_id):
             raise DuplicateDocumentError("Este documento já foi importado.")
 
-        stored = self.storage_service.store(path, checksum)
+        operation_id = self.storage_quota_service.reserve(
+            organization_id, path.stat().st_size, str(uuid4())
+        )
+        stored = None
+        committed = False
         now = self._now()
         try:
+            stored = self.storage_service.store(path, checksum)
             with self.database.transaction():
+                document_name = (title or path.name).strip() or path.name
+                if not Path(document_name).suffix:
+                    document_name += extension
                 entity = DocumentEntity(
                     organization_id=organization_id,
                     folder_id=folder_id,
-                    name=path.name,
+                    name=document_name,
                     original_name=path.name,
                     path=stored.storage_path,
                     source_path=str(path),
@@ -82,23 +116,37 @@ class DocumentService:
                     file_type=self._classify_file_type(extension),
                     size=stored.size,
                     checksum=checksum,
-                    category=self._classify_category(extension),
-                    description=None,
+                    category=category or self._classify_category(extension),
+                    description=description or None,
                     favorite=False,
                     status="ACTIVE",
                     created_at=now,
                     updated_at=now,
                     last_accessed_at=None,
+                    source_type=source_type,
+                    tags=tags or None,
+                    document_date=document_date or None,
+                    notes=notes or None,
                 )
                 created = self.document_repository.create(entity)
-                self._record_history(created.id, "IMPORT", f"Documento importado: {path.name}")
+                action = "SCAN" if source_type == "SCANNER" else "IMPORT"
+                self._record_history(created.id, action, f"Documento adicionado: {document_name}")
+                self.storage_quota_service.commit_reservation(operation_id)
+            committed = True
             logger.info("Documento importado id=%s", created.id)
-            self.cloud_sync_service.enqueue_upload(created.id, organization_id)
+            if sync_cloud:
+                try:
+                    self.cloud_sync_service.enqueue_upload(created.id, organization_id)
+                except Exception:
+                    logger.exception("Documento salvo localmente, mas a sincronização não foi enfileirada")
             refreshed = self.document_repository.find_by_id(created.id, organization_id)
             return DocumentModel.from_entity(refreshed or created)
         except Exception:
+            if not committed:
+                self.storage_quota_service.release_reservation(operation_id)
             try:
-                self.storage_service.remove(stored.storage_path)
+                if stored is not None and not committed:
+                    self.storage_service.remove(stored.storage_path)
             except StorageError:
                 logger.exception("Falha ao remover arquivo após rollback da importação")
             raise
@@ -172,27 +220,25 @@ class DocumentService:
         if source is None: raise InvalidDocumentError("Documento não encontrado.")
         path=Path(source.storage_path or source.path).expanduser().resolve()
         if not path.is_file(): raise InvalidDocumentError("Arquivo do documento não encontrado.")
-        stored=self.storage_service.store(path,source.checksum)
-        now=self._now(); entity=replace(source,id=None,folder_id=folder_id,name=f"Cópia de {source.name}",path=stored.storage_path,storage_path=stored.storage_path,internal_name=stored.internal_name,status="ACTIVE",favorite=False,created_at=now,updated_at=now,last_accessed_at=None,cloud_status="LOCAL_ONLY",cloud_provider=None,remote_id=None,remote_version=None,last_synced_at=None)
+        operation_id=self.storage_quota_service.reserve(self.active_organization_id,source.size,str(uuid4()))
+        stored=None
+        committed=False
+        now=self._now()
         try:
-            created=self.document_repository.create(entity); self._record_history(created.id,"COPY",f"Cópia criada de {source.name}"); self.cloud_sync_service.enqueue_upload(created.id,self.active_organization_id); return DocumentModel.from_entity(created)
+            stored=self.storage_service.store(path,source.checksum)
+            entity=replace(source,id=None,folder_id=folder_id,name=f"Cópia de {source.name}",path=stored.storage_path,storage_path=stored.storage_path,internal_name=stored.internal_name,status="ACTIVE",favorite=False,created_at=now,updated_at=now,last_accessed_at=None,cloud_status="LOCAL_ONLY",cloud_provider=None,remote_id=None,remote_version=None,last_synced_at=None)
+            with self.database.transaction():
+                created=self.document_repository.create(entity)
+                self._record_history(created.id,"COPY",f"Cópia criada de {source.name}")
+                self.storage_quota_service.commit_reservation(operation_id)
+            committed=True
+            try:self.cloud_sync_service.enqueue_upload(created.id,self.active_organization_id)
+            except Exception:logger.exception("Cópia local criada, mas a sincronização não foi enfileirada")
+            return DocumentModel.from_entity(created)
         except Exception:
-            self.storage_service.remove(stored.storage_path); raise
-
-    def permanently_delete_document(self,document_id:int)->bool:
-        entity=self.document_repository.find_by_id(document_id,self.active_organization_id)
-        if not entity or entity.status!="TRASHED": return False
-        changed=self.document_repository.permanently_delete(document_id,self.active_organization_id)
-        if changed and entity.managed and entity.storage_path:self.storage_service.remove(entity.storage_path)
-        return changed
-
-    def empty_trash(self)->int:
-        entities=self.document_repository.find_trashed(self.active_organization_id); count=self.document_repository.empty_trash(self.active_organization_id)
-        for entity in entities:
-            if entity.managed and entity.storage_path:
-                try:self.storage_service.remove(entity.storage_path)
-                except Exception: logger.exception("Arquivo órfão após esvaziar lixeira: %s",entity.storage_path)
-        return count
+            if not committed:self.storage_quota_service.release_reservation(operation_id)
+            if stored is not None and not committed:self.storage_service.remove(stored.storage_path)
+            raise
 
     def open_document(self, document_id: int) -> DocumentModel:
         entity = self.document_repository.find_by_id(document_id, self.active_organization_id)
@@ -217,7 +263,7 @@ class DocumentService:
     def permanently_delete_document(self, document_id: int) -> bool:
         """Remove registro e arquivo gerenciado; ainda não exposto pela interface."""
         entity = self.document_repository.find_by_id(document_id, self.active_organization_id)
-        if entity is None:
+        if entity is None or entity.status != "TRASHED":
             return False
         quarantine: Path | None = None
         original_storage: Path | None = None
@@ -236,6 +282,8 @@ class DocumentService:
                     f"Documento excluído permanentemente: {entity.name}",
                 )
                 deleted = self.document_repository.hard_delete(document_id, self.active_organization_id)
+                if deleted and entity.managed:
+                    self.storage_quota_service.release_used(entity.organization_id, entity.size)
             if quarantine and quarantine.exists():
                 quarantine.unlink()
             return deleted
@@ -244,6 +292,25 @@ class DocumentService:
                 original_storage.parent.mkdir(parents=True, exist_ok=True)
                 quarantine.replace(original_storage)
             raise
+
+    def empty_trash(self) -> int:
+        documents = self.document_repository.find_trashed(self.active_organization_id)
+        count = 0
+        for document in documents:
+            if self.permanently_delete_document(document.id):
+                count += 1
+        return count
+
+    def get_storage_usage(self):
+        return self.storage_quota_service.get_usage_summary(self.active_organization_id)
+
+    def recalculate_storage_usage(self):
+        return self.storage_quota_service.recalculate_usage(self.active_organization_id)
+
+    def get_largest_documents(self, limit: int = 10) -> list[DocumentModel]:
+        return self._models(
+            self.document_repository.find_largest(self.active_organization_id, limit)
+        )
 
     def move_document(self, document_id: int, folder_id: int | None) -> DocumentModel:
         if folder_id is not None:

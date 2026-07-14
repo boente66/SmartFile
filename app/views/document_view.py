@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QProgressBar,
     QPushButton,
     QMenu,
     QScrollArea,
@@ -63,6 +64,9 @@ class DocumentView(QWidget):
     restore_requested = pyqtSignal(int)
     permanent_delete_requested = pyqtSignal(int)
     empty_trash_requested = pyqtSignal()
+    recalculate_storage_requested = pyqtSignal()
+    largest_files_requested = pyqtSignal()
+    change_storage_plan_requested = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -136,6 +140,30 @@ class DocumentView(QWidget):
         cloud_row.addWidget(self.cloud_status_label)
         cloud_row.addStretch(1)
         left_layout.addLayout(cloud_row)
+
+        storage_row = QHBoxLayout()
+        self.storage_label = QLabel("Armazenamento: carregando…")
+        self.storage_label.setObjectName("storageUsageLabel")
+        self.storage_label.setWordWrap(True)
+        self.storage_progress = QProgressBar()
+        self.storage_progress.setRange(0, 100)
+        self.storage_progress.setTextVisible(True)
+        self.storage_progress.setMaximumWidth(260)
+        self.btn_manage_storage = QPushButton("Gerenciar armazenamento")
+        IconProvider.apply(self.btn_manage_storage, "folder")
+        storage_menu = QMenu(self.btn_manage_storage)
+        storage_menu.addAction("Abrir lixeira", lambda: self._select_scope("trash"))
+        storage_menu.addAction("Recalcular uso", self.recalculate_storage_requested.emit)
+        storage_menu.addAction("Ver arquivos maiores", self.largest_files_requested.emit)
+        storage_menu.addAction("Alterar plano", self.change_storage_plan_requested.emit)
+        storage_menu.addAction("Sincronizar agora", self.sync_now_requested.emit)
+        storage_menu.addAction("Ver erros da nuvem", self.cloud_history_requested.emit)
+        self.btn_manage_storage.setMenu(storage_menu)
+        storage_row.addWidget(self.storage_label)
+        storage_row.addWidget(self.storage_progress)
+        storage_row.addWidget(self.btn_manage_storage)
+        storage_row.addStretch(1)
+        left_layout.addLayout(storage_row)
 
         actions = QHBoxLayout()
         actions.setSpacing(4)
@@ -371,7 +399,25 @@ class DocumentView(QWidget):
             text = account.display_name or account.email or settings.sync_mode
         else:
             text = f"{settings.sync_mode} — conta necessária"
+        if settings.last_sync:
+            text += f" · última sincronização {settings.last_sync}"
         self.cloud_status_label.setText(text)
+
+    def set_storage_usage(self, summary) -> None:
+        used = self._format_gb(summary.used_bytes)
+        quota = self._format_gb(summary.quota_bytes)
+        reserved = self._format_gb(summary.reserved_bytes)
+        available = self._format_gb(summary.available_bytes)
+        local_free = self._format_gb(summary.local_free_bytes)
+        self.storage_label.setText(
+            f"{summary.plan_name}: {used} de {quota} · reservado {reserved} · disponível {available} "
+            f"· disco livre {local_free} · {summary.level}"
+        )
+        self.storage_progress.setValue(round(summary.percent))
+        self.storage_progress.setFormat(f"{summary.percent:.1f}% — {summary.level}")
+        self.storage_progress.setAccessibleName(
+            f"Uso do armazenamento {summary.percent:.1f} por cento, estado {summary.level}"
+        )
 
     def selected_folder_id(self) -> int | None:
         item = self.folder_tree.currentItem()
@@ -500,12 +546,17 @@ class DocumentView(QWidget):
         return f"{value:.0f} GB"
 
     @staticmethod
+    def _format_gb(size: int) -> str:
+        value = max(0, int(size)) / (1024 ** 3)
+        return f"{value:.2f}".rstrip("0").rstrip(".").replace(".", ",") + " GB"
+
+    @staticmethod
     def _cloud_label(document: DocumentModel) -> str:
         labels = {
             "LOCAL_ONLY": "🖥 Local", "PENDING_UPLOAD": "⟳ Pendente",
             "UPLOADING": "⟳ Sincronizando", "SYNCED": f"☁ {document.cloud_provider or 'Nuvem'}",
             "PENDING_DOWNLOAD": "⟳ Baixando", "CONFLICT": "⚠ Conflito",
-            "ERROR": "⚠ Erro", "REMOTE_DELETED": "⚠ Removido na nuvem",
+            "ERROR": "⚠ Erro", "SYNC_ERROR": "⚠ Erro", "REMOTE_DELETED": "⚠ Removido na nuvem",
             "LOCAL_DELETED": "🗑 Removido localmente",
         }
         return labels.get(document.cloud_status, document.cloud_status)

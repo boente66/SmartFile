@@ -8,6 +8,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from app.cloud.cloud_models import CloudAuthResult, CloudUploadRequest, RemoteMetadata
+from app.errors.storage_exceptions import CloudStorageLimitError
 
 
 class CloudError(RuntimeError):
@@ -38,6 +39,11 @@ def urllib_transport(method: str, url: str, headers: dict[str, str], data: bytes
         body = exc.read()
         if exc.code == 409:
             raise CloudConflictError("O provedor informou um conflito remoto.") from exc
+        quota_markers = (b"quota", b"storageLimit", b"storageQuota", b"insufficientStorage")
+        if exc.code in {413, 507} or (exc.code == 403 and any(marker.lower() in body.lower() for marker in quota_markers)):
+            raise CloudStorageLimitError(
+                "O armazenamento da nuvem está cheio. O documento local foi preservado."
+            ) from exc
         raise CloudError(f"Falha no provedor de nuvem (HTTP {exc.code}).") from exc
     except (URLError, TimeoutError, OSError) as exc:
         raise CloudOfflineError("Não foi possível acessar o provedor de nuvem.") from exc

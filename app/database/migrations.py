@@ -7,7 +7,8 @@ from pathlib import Path
 from app.errors.persistence_exceptions import DatabaseError
 
 logger = logging.getLogger(__name__)
-CURRENT_SCHEMA_VERSION = 8
+CURRENT_SCHEMA_VERSION = 9
+GIB = 1024 ** 3
 
 
 def _has_user_tables(connection: sqlite3.Connection) -> bool:
@@ -290,6 +291,100 @@ def _upgrade_administration(connection: sqlite3.Connection) -> None:
     )
 
 
+def _upgrade_storage_quotas(connection: sqlite3.Connection) -> None:
+    """Adiciona cotas lógicas em GB e migra o uso dos arquivos gerenciados."""
+    organization_columns = _columns(connection, "organizations")
+    for name, declaration in {
+        "template_code": "TEXT NOT NULL DEFAULT 'EMPTY'",
+        "storage_plan_code": "TEXT NOT NULL DEFAULT 'PERSONAL_10GB'",
+    }.items():
+        if name not in organization_columns:
+            connection.execute(f"ALTER TABLE organizations ADD COLUMN {name} {declaration}")
+
+    document_columns = _columns(connection, "documents")
+    for name, declaration in {
+        "source_type": "TEXT NOT NULL DEFAULT 'IMPORT'",
+        "tags": "TEXT",
+        "document_date": "TEXT",
+        "notes": "TEXT",
+    }.items():
+        if name not in document_columns:
+            connection.execute(f"ALTER TABLE documents ADD COLUMN {name} {declaration}")
+
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS storage_plans (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            quota_bytes INTEGER NOT NULL CHECK (quota_bytes >= 0),
+            description TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS organization_storage (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL UNIQUE,
+            storage_plan_id INTEGER NOT NULL,
+            quota_bytes INTEGER NOT NULL CHECK (quota_bytes >= 0),
+            used_bytes INTEGER NOT NULL DEFAULT 0 CHECK (used_bytes >= 0),
+            reserved_bytes INTEGER NOT NULL DEFAULT 0 CHECK (reserved_bytes >= 0),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (organization_id) REFERENCES organizations(id),
+            FOREIGN KEY (storage_plan_id) REFERENCES storage_plans(id)
+        );
+        CREATE TABLE IF NOT EXISTS storage_reservations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            operation_id TEXT NOT NULL UNIQUE,
+            organization_id INTEGER NOT NULL,
+            size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+            status TEXT NOT NULL CHECK (status IN ('RESERVED', 'COMMITTED', 'RELEASED', 'EXPIRED')),
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            committed_at TEXT,
+            released_at TEXT,
+            FOREIGN KEY (organization_id) REFERENCES organizations(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_storage_reservations_status
+            ON storage_reservations(status, expires_at);
+        CREATE INDEX IF NOT EXISTS idx_storage_reservations_organization
+            ON storage_reservations(organization_id, status);
+        CREATE INDEX IF NOT EXISTS idx_documents_source_type ON documents(source_type);
+        """
+    )
+    now = connection.execute("SELECT datetime('now')").fetchone()[0]
+    plans = (
+        ("PERSONAL_10GB", "Pessoal 10 GB", 10 * GIB, "Cota lógica pessoal de 10 GB"),
+        ("STUDENT_20GB", "Estudante 20 GB", 20 * GIB, "Cota lógica estudantil de 20 GB"),
+        ("BUSINESS_60GB", "Empresarial 60 GB", 60 * GIB, "Cota lógica empresarial de 60 GB"),
+    )
+    connection.executemany(
+        """
+        INSERT INTO storage_plans (code, name, quota_bytes, description, is_active, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 1, ?, ?)
+        ON CONFLICT(code) DO UPDATE SET name=excluded.name, quota_bytes=excluded.quota_bytes,
+            description=excluded.description, is_active=1, updated_at=excluded.updated_at
+        """,
+        ((*plan, now, now) for plan in plans),
+    )
+    connection.execute(
+        """
+        INSERT OR IGNORE INTO organization_storage (
+            organization_id, storage_plan_id, quota_bytes, used_bytes, reserved_bytes, created_at, updated_at
+        )
+        SELECT o.id, p.id, p.quota_bytes,
+            COALESCE((SELECT SUM(d.size) FROM documents d
+                      WHERE d.organization_id=o.id AND d.managed=1), 0),
+            0, ?, ?
+        FROM organizations o
+        JOIN storage_plans p ON p.code = COALESCE(NULLIF(o.storage_plan_code, ''), 'PERSONAL_10GB')
+        """,
+        (now, now),
+    )
+
+
 def migrate(connection: sqlite3.Connection, schema_path: Path) -> int:
     """Cria o schema mínimo ou atualiza bancos legados sem perder documentos."""
     try:
@@ -313,6 +408,7 @@ def migrate(connection: sqlite3.Connection, schema_path: Path) -> int:
             _upgrade_cloud(connection)
             _upgrade_auth(connection)
             _upgrade_administration(connection)
+            _upgrade_storage_quotas(connection)
             connection.execute(
                 "UPDATE documents SET source_path = path WHERE source_path IS NULL"
             )

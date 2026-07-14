@@ -27,12 +27,12 @@ class OrganizationAdminService:
         cloud=self.organizations.repository.cloud_summary(organization_id)
         return {"documents":self.organizations.repository.count_documents(organization_id),"folders":self.organizations.repository.count_folders(organization_id),"members":self.members.count_active(organization_id),"cloud":cloud["sync_mode"] if cloud else "LOCAL","last_activity":cloud["last_sync"] if cloud else None}
 
-    def create(self,name,description=None,icon="organization",color="#2563eb",template="EMPTY",activate=False):
+    def create(self,name,description=None,icon="organization",color="#2563eb",template="EMPTY",storage_plan_code=None,activate=False):
         self.context.require_permission("organization.create")
         if any(o.name.casefold()==name.strip().casefold() for o,_,_ in self.list_for_current_user()): raise AdministrationError("Você já possui uma organização com esse nome.")
         now=self._now()
         with self.database.transaction():
-            organization=self.organizations.create(name,description); organization.icon=icon; organization.color=color; self.organizations.repository.update(organization)
+            organization=self.organizations.create(name,description,template,storage_plan_code); organization.icon=icon; organization.color=color; self.organizations.repository.update(organization)
             membership=self.members.create(OrganizationMemberEntity(organization_id=organization.id,user_id=self.context.current_user.id,role="OWNER",created_at=now,updated_at=now,joined_at=now))
             self.templates.create_template_folders(organization.id,template)
             self.cloud.settings(organization.id)
@@ -54,7 +54,7 @@ class OrganizationAdminService:
         self._require_for(organization_id,"organization.create")
         source=self.organizations.repository.find_by_id(organization_id)
         with self.database.transaction():
-            target=self.organizations.create(new_name,source.description); target.icon=source.icon; target.color=source.color; self.organizations.repository.update(target)
+            target=self.organizations.create(new_name,source.description,source.template_code,source.storage_plan_code); target.icon=source.icon; target.color=source.color; self.organizations.repository.update(target)
             now=self._now(); membership=self.members.create(OrganizationMemberEntity(organization_id=target.id,user_id=self.context.current_user.id,role="OWNER",created_at=now,updated_at=now,joined_at=now))
             mapping={}
             remaining=list(self.folders.list_folders(organization_id))

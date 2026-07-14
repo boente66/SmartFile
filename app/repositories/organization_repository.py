@@ -9,8 +9,9 @@ class OrganizationRepository(BaseRepository):
         cursor = self._write(
             """
             INSERT INTO organizations (
-                name, description, slug, icon, color, created_at, updated_at, archived_at, is_default, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                name, description, slug, icon, color, created_at, updated_at, archived_at,
+                template_code, storage_plan_code, is_default, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             self._values(entity),
         )
@@ -21,7 +22,8 @@ class OrganizationRepository(BaseRepository):
         self._write(
             """
             UPDATE organizations SET name = ?, description = ?, slug = ?, icon = ?, color = ?,
-                created_at = ?, updated_at = ?, archived_at = ?, is_default = ?, status = ? WHERE id = ?
+                created_at = ?, updated_at = ?, archived_at = ?, template_code = ?,
+                storage_plan_code = ?, is_default = ?, status = ? WHERE id = ?
             """,
             (*self._values(entity), entity.id),
         )
@@ -114,11 +116,18 @@ class OrganizationRepository(BaseRepository):
             (str(organization_id),),
         )
 
+    def set_storage_profile(self, organization_id: int, template_code: str, plan_code: str, updated_at: str) -> None:
+        self._write(
+            "UPDATE organizations SET template_code=?, storage_plan_code=?, updated_at=? WHERE id=?",
+            (template_code.upper(), plan_code.upper(), updated_at, organization_id),
+        )
+
     @staticmethod
     def _values(entity: OrganizationEntity) -> tuple[object, ...]:
         return (
             entity.name, entity.description, entity.slug, entity.icon, entity.color,
-            entity.created_at, entity.updated_at, entity.archived_at, int(entity.is_default), entity.status,
+            entity.created_at, entity.updated_at, entity.archived_at, entity.template_code,
+            entity.storage_plan_code, int(entity.is_default), entity.status,
         )
 
     @staticmethod
@@ -128,5 +137,7 @@ class OrganizationRepository(BaseRepository):
             slug=row["slug"], icon=row["icon"], color=row["color"],
             created_at=row["created_at"], updated_at=row["updated_at"],
             archived_at=row["archived_at"] if "archived_at" in row.keys() else None,
+            template_code=row["template_code"] if "template_code" in row.keys() else "EMPTY",
+            storage_plan_code=row["storage_plan_code"] if "storage_plan_code" in row.keys() else "PERSONAL_10GB",
             is_default=bool(row["is_default"]), status=row["status"],
         )

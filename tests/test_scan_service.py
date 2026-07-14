@@ -6,6 +6,7 @@ from PIL import Image
 from app.models.scan_config_model import ScanConfigModel
 from app.services.scan_service import ScanService
 from app.system.system_identification import SystemIdentification
+from app.workers.scan_worker import ScanWorker
 
 
 class _FakeDevice:
@@ -72,3 +73,7 @@ def test_feeder_error_is_presented_in_portuguese():
     assert "sem folhas" in message
     assert "Mesa de vidro" in message
     assert "Document feeder" not in message
+
+
+def test_scan_worker_keeps_native_finished_signal():
+    assert "finished" not in ScanWorker.__dict__

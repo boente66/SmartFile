@@ -88,7 +88,9 @@ class HandwrittenSignatureController:
         )
         if answer == QMessageBox.StandardButton.Yes and self.document_service:
             try:
-                document = self.document_service.import_document(str(result.output_path))
+                document = self.document_service.import_document(
+                    str(result.output_path), source_type="HANDWRITTEN_SIGNATURE"
+                )
                 name = result.signer_name or "não informado"
                 self.document_service.history_service.record_action(
                     document.id,

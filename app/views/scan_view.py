@@ -27,6 +27,8 @@ class ScanView(QWidget):
     remove_requested = pyqtSignal(int)
     save_pdf_requested = pyqtSignal()
     clear_requested = pyqtSignal()
+    add_to_ged_requested = pyqtSignal()
+    reorder_requested = pyqtSignal(int, int)
     refresh_devices_requested = pyqtSignal()
     device_changed = pyqtSignal(str)
 
@@ -189,8 +191,18 @@ class ScanView(QWidget):
         self.btn_remove.setToolTip("Remover página selecionada")
         IconProvider.apply(self.btn_remove, "trash")
         self.btn_remove.clicked.connect(self._request_remove)
+        self.btn_up = QPushButton()
+        self.btn_up.setToolTip("Mover página para cima")
+        IconProvider.apply(self.btn_up, "up")
+        self.btn_up.clicked.connect(lambda: self._request_move(-1))
+        self.btn_down = QPushButton()
+        self.btn_down.setToolTip("Mover página para baixo")
+        IconProvider.apply(self.btn_down, "down")
+        self.btn_down.clicked.connect(lambda: self._request_move(1))
         header.addWidget(self.pages_title)
         header.addStretch()
+        header.addWidget(self.btn_up)
+        header.addWidget(self.btn_down)
         header.addWidget(self.btn_remove)
         layout.addLayout(header)
 
@@ -218,6 +230,11 @@ class ScanView(QWidget):
         IconProvider.apply(self.btn_save, "save")
         self.btn_save.clicked.connect(self.save_pdf_requested.emit)
         layout.addWidget(self.btn_save)
+        self.btn_add_to_ged = QPushButton("Adicionar ao GED")
+        self.btn_add_to_ged.setObjectName("primary")
+        IconProvider.apply(self.btn_add_to_ged, "import")
+        self.btn_add_to_ged.clicked.connect(self.add_to_ged_requested.emit)
+        layout.addWidget(self.btn_add_to_ged)
         self._update_state()
         return panel
 
@@ -300,10 +317,41 @@ class ScanView(QWidget):
             "source": self.source_combo.currentData(),
         }
 
+    def set_scan_busy(self, busy: bool) -> None:
+        self.btn_scan.setEnabled(not busy and self.device_combo.isEnabled())
+        self.btn_scan_more.setEnabled(not busy and self.device_combo.isEnabled())
+        self.btn_scan.setText("Digitalizando…" if busy else "Digitalizar")
+
+    def set_import_busy(self, busy: bool) -> None:
+        for button in (
+            self.btn_add_to_ged, self.btn_save, self.btn_remove, self.btn_up,
+            self.btn_down, self.btn_clear, self.btn_scan, self.btn_scan_more,
+        ):
+            button.setEnabled(not busy)
+        self.btn_add_to_ged.setText("Adicionando…" if busy else "Adicionar ao GED")
+        if not busy:
+            self._update_state()
+
     def _request_remove(self) -> None:
         row = self.page_list.currentRow()
         if row >= 0:
             self.remove_requested.emit(row)
+
+    def _request_move(self, delta: int) -> None:
+        source = self.page_list.currentRow()
+        target = source + delta
+        if source >= 0 and 0 <= target < len(self._pixmaps):
+            self.reorder_requested.emit(source, target)
+
+    def move_thumbnail(self, source: int, target: int) -> None:
+        if not (0 <= source < len(self._pixmaps) and 0 <= target < len(self._pixmaps)):
+            return
+        pixmap = self._pixmaps.pop(source)
+        self._pixmaps.insert(target, pixmap)
+        item = self.page_list.takeItem(source)
+        self.page_list.insertItem(target, item)
+        self._renumber_pages()
+        self.page_list.setCurrentRow(target)
 
     def _show_selected_page(self, index: int) -> None:
         if 0 <= index < len(self._pixmaps):
@@ -324,6 +372,9 @@ class ScanView(QWidget):
         self.pages_title.setText(f"Páginas digitalizadas ({count})")
         self.btn_remove.setEnabled(count > 0)
         self.btn_save.setEnabled(count > 0)
+        self.btn_add_to_ged.setEnabled(count > 0)
+        self.btn_up.setEnabled(count > 1)
+        self.btn_down.setEnabled(count > 1)
         self.btn_clear.setEnabled(count > 0)
         if not count:
             self.page_indicator.setText("Nenhuma página")

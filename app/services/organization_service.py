@@ -38,16 +38,27 @@ class OrganizationService:
     def list_organizations(self) -> list[OrganizationEntity]:
         return self.repository.find_all()
 
-    def create(self, name: str, description: str | None = None) -> OrganizationEntity:
+    def create(
+        self,
+        name: str,
+        description: str | None = None,
+        template_code: str = "EMPTY",
+        storage_plan_code: str | None = None,
+    ) -> OrganizationEntity:
         clean_name = self._name(name)
         slug = self._unique_slug(clean_name)
         now = self._now()
-        return self.repository.create(
+        template = template_code.upper()
+        from app.services.storage_quota_service import PLAN_BY_TEMPLATE, StorageQuotaService
+        plan = (storage_plan_code or PLAN_BY_TEMPLATE.get(template, "PERSONAL_10GB")).upper()
+        created = self.repository.create(
             OrganizationEntity(
                 name=clean_name, description=description or None, slug=slug,
-                created_at=now, updated_at=now,
+                created_at=now, updated_at=now, template_code=template, storage_plan_code=plan,
             )
         )
+        StorageQuotaService(self.database).assign_plan(created.id, plan, template)
+        return self.repository.find_by_id(created.id) or created
 
     def update(self, organization_id: int, name: str, description: str | None = None) -> OrganizationEntity:
         entity = self._active_entity(organization_id)

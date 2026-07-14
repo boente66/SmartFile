@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -11,6 +12,8 @@ from app.cloud.cloud_models import CloudOperation, CloudSyncState, CloudUploadRe
 from app.cloud.cloud_provider import CloudConflictError, CloudOfflineError
 from app.database.database import Database
 from app.repositories.document_repository import DocumentRepository
+from app.errors.storage_exceptions import CloudStorageLimitError
+from app.services.storage_quota_service import StorageQuotaService
 
 
 class CloudSyncService:
@@ -19,6 +22,7 @@ class CloudSyncService:
         self.manager = manager or CloudManager(database)
         self.queue = CloudJobQueue(database)
         self.documents = DocumentRepository(database=database)
+        self.quota = StorageQuotaService(database)
 
     def enqueue_upload(self, document_id: int, organization_id: int) -> SyncJob | None:
         settings = self.manager.settings(organization_id)
@@ -66,8 +70,17 @@ class CloudSyncService:
         except CloudOfflineError as exc:
             self.documents.update_cloud_state(document.id, CloudSyncState.PENDING_UPLOAD, job.provider, document.remote_id)
             self.queue.retry(job.id, str(exc))
+        except CloudStorageLimitError:
+            message = (
+                "O documento foi salvo no SmartFile, mas não pôde ser sincronizado "
+                "porque o armazenamento da nuvem está cheio."
+            )
+            self.documents.update_cloud_state(
+                document.id, CloudSyncState.SYNC_ERROR, job.provider, document.remote_id
+            )
+            self.queue.retry(job.id, message)
         except Exception as exc:
-            self.documents.update_cloud_state(document.id, CloudSyncState.ERROR, job.provider, document.remote_id)
+            self.documents.update_cloud_state(document.id, CloudSyncState.SYNC_ERROR, job.provider, document.remote_id)
             self.queue.retry(job.id, str(exc))
         return job
 
@@ -97,15 +110,49 @@ class CloudSyncService:
             raise ValueError("Documento sem identificador remoto.")
         destination = Path(document.storage_path or document.path).resolve()
         temporary = destination.with_name(f".{destination.name}.{uuid4().hex}.cloud.tmp")
+        backup = destination.with_name(f".{destination.name}.{uuid4().hex}.cloud.bak")
+        operation_id = None
         try:
             provider.download(document.remote_id, temporary)
+            new_size = temporary.stat().st_size
+            delta = new_size - int(document.size or 0)
+            if delta > 0:
+                operation_id = self.quota.reserve(document.organization_id, delta)
+            if destination.exists():
+                os.replace(destination, backup)
             os.replace(temporary, destination)
-            self.documents.update_cloud_state(
-                document.id, CloudSyncState.SYNCED, document.cloud_provider,
-                document.remote_id, document.remote_version, self._now(),
-            )
+            try:
+                with self.database.transaction():
+                    document.size = new_size
+                    document.checksum = self._checksum(destination)
+                    document.updated_at = self._now()
+                    document.cloud_status = CloudSyncState.SYNCED
+                    document.last_synced_at = self._now()
+                    self.documents.update(document)
+                    if operation_id:
+                        self.quota.commit_reservation(operation_id)
+                    elif delta < 0:
+                        self.quota.release_used(document.organization_id, -delta)
+                backup.unlink(missing_ok=True)
+            except Exception:
+                destination.unlink(missing_ok=True)
+                if backup.exists():
+                    os.replace(backup, destination)
+                raise
+        except Exception:
+            if operation_id:
+                self.quota.release_reservation(operation_id)
+            raise
         finally:
             temporary.unlink(missing_ok=True)
+
+    @staticmethod
+    def _checksum(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
 
     @staticmethod
     def _now() -> str:

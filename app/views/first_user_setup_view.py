@@ -30,11 +30,14 @@ class FirstUserSetupView(QWidget):
 
     def _organization_page(self):
         page=QWidget(); root=QVBoxLayout(page); form=QFormLayout(); self.organization_name=QLineEdit("Minha Organização"); self.organization_description=QTextEdit(); self.organization_description.setMaximumHeight(80); self.organization_icon=QComboBox(); self.organization_icon.addItems(["organization","business","school","folder","home"]); self.organization_color=QComboBox(); self.organization_color.addItems(["#2563eb","#16a34a","#7c3aed","#ea580c","#dc2626"]); form.addRow("Nome da organização:",self.organization_name); form.addRow("Descrição:",self.organization_description); form.addRow("Ícone:",self.organization_icon); form.addRow("Cor:",self.organization_color); root.addLayout(form); root.addWidget(QLabel("Modelo inicial de pastas"))
+        self.storage_plan=QComboBox(); self.storage_plan.addItem("Pessoal — 10 GB","PERSONAL_10GB"); self.storage_plan.addItem("Estudante — 20 GB","STUDENT_20GB"); self.storage_plan.addItem("Empresarial — 60 GB","BUSINESS_60GB")
         cards=QHBoxLayout(); self.templates=QButtonGroup(self); self.templates.setExclusive(True)
         for index,(code,name) in enumerate((("PERSONAL","Pessoal"),("STUDENT","Estudante"),("BUSINESS","Empresarial"),("EMPTY","Começar vazio"))):
             radio=QRadioButton(name); radio.setObjectName("templateCard"); radio.setProperty("templateCode",code); radio.setMinimumHeight(70); self.templates.addButton(radio); cards.addWidget(radio)
+            radio.toggled.connect(lambda checked, value=code: checked and self._suggest_plan(value))
             if index==0: radio.setChecked(True)
-        root.addLayout(cards); return page
+        root.addLayout(cards)
+        root.addWidget(QLabel("Plano de armazenamento lógico")); root.addWidget(self.storage_plan); return page
 
     def _summary_page(self):
         page=QWidget(); root=QVBoxLayout(page); self.summary=QLabel(); self.summary.setWordWrap(True); self.summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse); root.addWidget(self.summary); root.addStretch(); return page
@@ -61,7 +64,7 @@ class FirstUserSetupView(QWidget):
 
     def request(self):
         selected=self.templates.checkedButton(); code=str(selected.property("templateCode")) if selected else ""
-        return RegistrationRequest(display_name=self.display_name.text(),username=self.username.text(),email=self.email.text() or None,phone=self.phone.text() or None,password=self.password.text(),password_confirmation=self.confirmation.text(),template_code=code,organization_name=self.organization_name.text(),organization_description=self.organization_description.toPlainText() or None,organization_icon=self.organization_icon.currentText(),organization_color=self.organization_color.currentText(),avatar_path=self.avatar_path)
+        return RegistrationRequest(display_name=self.display_name.text(),username=self.username.text(),email=self.email.text() or None,phone=self.phone.text() or None,password=self.password.text(),password_confirmation=self.confirmation.text(),template_code=code,storage_plan_code=str(self.storage_plan.currentData()),organization_name=self.organization_name.text(),organization_description=self.organization_description.toPlainText() or None,organization_icon=self.organization_icon.currentText(),organization_color=self.organization_color.currentText(),avatar_path=self.avatar_path)
 
     def _submit(self): self.registration_requested.emit(self.request())
     def show_completion(self):
@@ -73,7 +76,11 @@ class FirstUserSetupView(QWidget):
         if self.password.text()!=self.confirmation.text(): self.show_error("As senhas não coincidem."); return False
         return True
     def _refresh_summary(self):
-        request=self.request(); folders=FolderTemplateService.TEMPLATES.get(request.template_code,()); self.summary.setText(f"<h2>Revise antes de finalizar</h2><b>Usuário:</b> {request.display_name}<br><b>Username:</b> {request.username}<br><b>Organização:</b> {request.organization_name}<br><b>Template:</b> {request.template_code}<br><b>Papel:</b> OWNER<br><b>Pastas:</b> {', '.join(folders) if folders else 'Nenhuma pasta automática'}")
+        request=self.request(); folders=FolderTemplateService.TEMPLATES.get(request.template_code,()); self.summary.setText(f"<h2>Revise antes de finalizar</h2><b>Usuário:</b> {request.display_name}<br><b>Username:</b> {request.username}<br><b>Organização:</b> {request.organization_name}<br><b>Template:</b> {request.template_code}<br><b>Plano:</b> {self.storage_plan.currentText()}<br><b>Papel:</b> OWNER<br><b>Pastas:</b> {', '.join(folders) if folders else 'Nenhuma pasta automática'}")
+
+    def _suggest_plan(self, template_code):
+        plan={"PERSONAL":"PERSONAL_10GB","STUDENT":"STUDENT_20GB","BUSINESS":"BUSINESS_60GB","EMPTY":"PERSONAL_10GB"}.get(template_code,"PERSONAL_10GB"); index=self.storage_plan.findData(plan)
+        if index>=0:self.storage_plan.setCurrentIndex(index)
     def _update_navigation(self):
         index=self.stack.currentIndex(); self.steps_label.setText(f"Etapa {index+1} de 4 — "+("Dados pessoais","Organização","Resumo","Conclusão")[index]); self.back_button.setVisible(index in (1,2)); self.cancel_button.setVisible(index<3); self.next_button.setText(("Continuar","Continuar","Finalizar","Entrar no SmartFile")[index])
     def _select_avatar(self):

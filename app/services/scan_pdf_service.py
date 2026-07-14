@@ -13,13 +13,12 @@ class ScanPDFService:
             raise ValueError("Nenhuma imagem para salvar")
 
         images_rgb = [img.convert("RGB") for img in images]
-        first, *rest = images_rgb
-
-        first.save(
-            output_file,
-            save_all=True,
-            append_images=rest
-        )
+        try:
+            first, *rest = images_rgb
+            first.save(output_file, save_all=True, append_images=rest)
+        finally:
+            for image in images_rgb:
+                image.close()
 
     @staticmethod
     def to_pdf_bytes(images: list[Image.Image]) -> bytes:

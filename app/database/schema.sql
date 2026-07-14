@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS organizations (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     archived_at TEXT,
+    template_code TEXT NOT NULL DEFAULT 'EMPTY',
+    storage_plan_code TEXT NOT NULL DEFAULT 'PERSONAL_10GB',
     is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
     status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'DELETED'))
 );
@@ -155,7 +157,60 @@ CREATE TABLE IF NOT EXISTS documents (
     ,remote_id TEXT
     ,remote_version TEXT
     ,last_synced_at TEXT
+    ,source_type TEXT NOT NULL DEFAULT 'IMPORT'
+    ,tags TEXT
+    ,document_date TEXT
+    ,notes TEXT
 );
+
+CREATE TABLE IF NOT EXISTS storage_plans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    quota_bytes INTEGER NOT NULL CHECK (quota_bytes >= 0),
+    description TEXT,
+    is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+INSERT OR IGNORE INTO storage_plans
+    (code, name, quota_bytes, description, is_active, created_at, updated_at)
+VALUES
+    ('PERSONAL_10GB', 'Pessoal 10 GB', 10737418240, 'Cota lógica pessoal de 10 GB', 1, datetime('now'), datetime('now')),
+    ('STUDENT_20GB', 'Estudante 20 GB', 21474836480, 'Cota lógica estudantil de 20 GB', 1, datetime('now'), datetime('now')),
+    ('BUSINESS_60GB', 'Empresarial 60 GB', 64424509440, 'Cota lógica empresarial de 60 GB', 1, datetime('now'), datetime('now'));
+
+CREATE TABLE IF NOT EXISTS organization_storage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    organization_id INTEGER NOT NULL UNIQUE,
+    storage_plan_id INTEGER NOT NULL,
+    quota_bytes INTEGER NOT NULL CHECK (quota_bytes >= 0),
+    used_bytes INTEGER NOT NULL DEFAULT 0 CHECK (used_bytes >= 0),
+    reserved_bytes INTEGER NOT NULL DEFAULT 0 CHECK (reserved_bytes >= 0),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (organization_id) REFERENCES organizations(id),
+    FOREIGN KEY (storage_plan_id) REFERENCES storage_plans(id)
+);
+
+CREATE TABLE IF NOT EXISTS storage_reservations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    operation_id TEXT NOT NULL UNIQUE,
+    organization_id INTEGER NOT NULL,
+    size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+    status TEXT NOT NULL CHECK (status IN ('RESERVED', 'COMMITTED', 'RELEASED', 'EXPIRED')),
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    committed_at TEXT,
+    released_at TEXT,
+    FOREIGN KEY (organization_id) REFERENCES organizations(id)
+);
+
+INSERT OR IGNORE INTO organization_storage
+    (organization_id, storage_plan_id, quota_bytes, used_bytes, reserved_bytes, created_at, updated_at)
+SELECT o.id, p.id, p.quota_bytes, 0, 0, datetime('now'), datetime('now')
+FROM organizations o JOIN storage_plans p ON p.code='PERSONAL_10GB';
 
 CREATE TABLE IF NOT EXISTS sync_jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -208,3 +263,6 @@ CREATE INDEX IF NOT EXISTS idx_members_user ON organization_members(user_id, sta
 CREATE INDEX IF NOT EXISTS idx_members_organization ON organization_members(organization_id, status);
 CREATE INDEX IF NOT EXISTS idx_audit_organization ON audit_log(organization_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_storage_reservations_status ON storage_reservations(status, expires_at);
+CREATE INDEX IF NOT EXISTS idx_storage_reservations_organization ON storage_reservations(organization_id, status);
+CREATE INDEX IF NOT EXISTS idx_documents_source_type ON documents(source_type);

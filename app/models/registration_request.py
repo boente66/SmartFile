@@ -8,6 +8,7 @@ class RegistrationRequest:
     password: str
     password_confirmation: str
     template_code: str
+    storage_plan_code: str | None = None
     email: str | None = None
     phone: str | None = None
     organization_name: str = "Minha Organização"

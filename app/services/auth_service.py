@@ -85,12 +85,21 @@ class AuthService:
                     else None
                 )
                 if organization is None:
-                    organization = self.organizations.create(request.organization_name,request.organization_description)
+                    organization = self.organizations.create(
+                        request.organization_name, request.organization_description,
+                        request.template_code, getattr(request, "storage_plan_code", None),
+                    )
                     if use_existing_default:
                         organization.is_default = True
                         self.organizations.repository.update(organization)
                 else:
                     organization=self.organizations.update(organization.id,request.organization_name,request.organization_description)
+                    from app.services.storage_quota_service import PLAN_BY_TEMPLATE, StorageQuotaService
+                    StorageQuotaService(self.database).assign_plan(
+                        organization.id,
+                        getattr(request, "storage_plan_code", None) or PLAN_BY_TEMPLATE[request.template_code.upper()],
+                        request.template_code,
+                    )
                 organization.icon=request.organization_icon; organization.color=request.organization_color
                 self.organizations.repository.update(organization)
                 membership = self.members.create(OrganizationMemberEntity(

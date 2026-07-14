@@ -85,6 +85,9 @@ class DocumentController:
         self.view.restore_requested.connect(self.on_restore_document)
         self.view.permanent_delete_requested.connect(self.on_permanent_delete_document)
         self.view.empty_trash_requested.connect(self.on_empty_trash)
+        self.view.recalculate_storage_requested.connect(self.on_recalculate_storage)
+        self.view.largest_files_requested.connect(self.on_largest_files)
+        self.view.change_storage_plan_requested.connect(self.on_change_storage_plan)
 
     def _register_view(self):
         self.workspace.register_view("documents", self.view)
@@ -170,9 +173,22 @@ class DocumentController:
             "Pessoal": "PERSONAL", "Estudante": "STUDENT",
             "Empresarial": "BUSINESS", "Começar vazio": "EMPTY",
         }[template_name]
+        plan_name, plan_accepted = QInputDialog.getItem(
+            self.view, "Plano de armazenamento", "Cota lógica:",
+            ["Pessoal — 10 GB", "Estudante — 20 GB", "Empresarial — 60 GB"],
+            {"PERSONAL": 0, "STUDENT": 1, "BUSINESS": 2, "EMPTY": 0}[template_code], False,
+        )
+        if not plan_accepted:
+            return
+        plan_code = {
+            "Pessoal — 10 GB": "PERSONAL_10GB", "Estudante — 20 GB": "STUDENT_20GB",
+            "Empresarial — 60 GB": "BUSINESS_60GB",
+        }[plan_name]
         try:
             with self.service.database.transaction():
-                organization = self.service.organization_service.create(name)
+                organization = self.service.organization_service.create(
+                    name, template_code=template_code, storage_plan_code=plan_code
+                )
                 FolderTemplateService(self.service.folder_service).create_template_folders(
                     organization.id, template_code
                 )
@@ -437,6 +453,43 @@ class DocumentController:
         try:count=self.service.empty_trash(); self._refresh_documents(); self.view.set_status(f"Lixeira esvaziada: {count} documento(s)")
         except Exception as exc:QMessageBox.warning(self.view,"Lixeira",str(exc))
 
+    def on_recalculate_storage(self):
+        try:
+            self.service.recalculate_storage_usage()
+            self._refresh_storage()
+            self.view.set_status("Uso do armazenamento recalculado")
+        except Exception as exc:
+            QMessageBox.warning(self.view, "Armazenamento", str(exc))
+
+    def on_largest_files(self):
+        documents = self.service.get_largest_documents()
+        message = "\n".join(
+            f"{index}. {item.name} — {self.view._format_size(item.size)}"
+            for index, item in enumerate(documents, 1)
+        ) or "Nenhum documento armazenado."
+        QMessageBox.information(self.view, "Arquivos maiores", message)
+
+    def on_change_storage_plan(self):
+        try:
+            if self.session_context:
+                self.session_context.require_permission("organization.update")
+            plans = self.service.storage_quota_service.plans.find_all()
+            labels = [plan.name for plan in plans]
+            selected, accepted = QInputDialog.getItem(
+                self.view, "Alterar plano", "Plano de armazenamento lógico:", labels, 0, False
+            )
+            if not accepted:
+                return
+            plan = plans[labels.index(selected)]
+            organization = self.service.organization_service.active()
+            self.service.storage_quota_service.assign_plan(
+                organization.id, plan.code, organization.template_code
+            )
+            self._refresh_storage()
+            self.view.set_status(f"Plano alterado para {plan.name}")
+        except Exception as exc:
+            QMessageBox.warning(self.view, "Armazenamento", str(exc))
+
     def _auto_sync(self):
         settings = self.service.cloud_manager.settings(self.service.active_organization_id)
         if (
@@ -519,6 +572,7 @@ class DocumentController:
             )
 
         self.view.set_documents(documents)
+        self._refresh_storage()
         self.view.show_document_details(None)
         if not documents:
             self.view.set_status("Nenhum documento encontrado")
@@ -546,6 +600,9 @@ class DocumentController:
             except Exception:
                 account = None
         self.view.set_cloud_settings(settings, account)
+
+    def _refresh_storage(self):
+        self.view.set_storage_usage(self.service.get_storage_usage())
 
     def _open_file(self, path: str):
         document_path = Path(path)

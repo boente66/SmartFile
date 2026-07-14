@@ -43,7 +43,7 @@ class AppController:
         self.handwritten_signature_controller = HandwrittenSignatureController(
             self.main_view, self.pdf_viewer_controller
         )
-        self.scan_controller = ScanController(self.workspace)
+        document_service = DocumentService(db_path=self.database.db_name) if self.database else DocumentService()
         self.document_controller = DocumentController(
             self.workspace,
             self.main_view,
@@ -51,7 +51,11 @@ class AppController:
             pdf_controller=self.pdf_controller,
             pdf_viewer_controller=self.pdf_viewer_controller,
             session_context=self.session_context,
-            document_service=DocumentService(db_path=self.database.db_name) if self.database else None,
+            document_service=document_service,
+        )
+        self.scan_controller = ScanController(
+            self.workspace, document_service, self.document_controller.on_refresh_documents,
+            self.session_context,
         )
         self.pdf_signature_controller.set_document_service(
             self.document_controller.service

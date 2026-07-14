@@ -27,8 +27,8 @@ class DocumentRepository(BaseRepository):
                 managed, extension, file_type, size, checksum,
                 category, description, favorite, status, created_at, updated_at,
                 last_accessed_at, cloud_status, cloud_provider, remote_id,
-                remote_version, last_synced_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                remote_version, last_synced_at, source_type, tags, document_date, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             self._values(entity),
         )
@@ -44,7 +44,8 @@ class DocumentRepository(BaseRepository):
                 file_type = ?, size = ?, checksum = ?, category = ?,
                 description = ?, favorite = ?, status = ?, created_at = ?,
                 updated_at = ?, last_accessed_at = ?, cloud_status = ?,
-                cloud_provider = ?, remote_id = ?, remote_version = ?, last_synced_at = ?
+                cloud_provider = ?, remote_id = ?, remote_version = ?, last_synced_at = ?,
+                source_type = ?, tags = ?, document_date = ?, notes = ?
             WHERE id = ?
             """,
             (*self._values(entity), entity.id),
@@ -92,9 +93,10 @@ class DocumentRepository(BaseRepository):
             SELECT * FROM documents
             WHERE status = 'ACTIVE'
               AND (lower(name) LIKE ? OR lower(original_name) LIKE ?
-                   OR lower(category) LIKE ? OR lower(description) LIKE ?)
+                   OR lower(category) LIKE ? OR lower(description) LIKE ?
+                   OR lower(tags) LIKE ?)
         """
-        params: list[object] = [pattern, pattern, pattern, pattern]
+        params: list[object] = [pattern, pattern, pattern, pattern, pattern]
         if organization_id is not None:
             query += " AND organization_id = ?"
             params.append(organization_id)
@@ -165,6 +167,25 @@ class DocumentRepository(BaseRepository):
     def find_by_path(self, path: str) -> Optional[DocumentEntity]:
         row = self._fetch_one("SELECT * FROM documents WHERE path = ?", (path,))
         return self._row_to_entity(row) if row else None
+
+    def sum_managed_size(self, organization_id: int) -> int:
+        row = self._fetch_one(
+            "SELECT COALESCE(SUM(size), 0) AS total FROM documents WHERE organization_id=? AND managed=1",
+            (organization_id,),
+        )
+        return int(row["total"] if row else 0)
+
+    def find_managed_for_usage(self, organization_id: int) -> list[DocumentEntity]:
+        return self._entities(
+            "SELECT * FROM documents WHERE organization_id=? AND managed=1",
+            (organization_id,),
+        )
+
+    def find_largest(self, organization_id: int, limit: int = 10) -> list[DocumentEntity]:
+        return self._entities(
+            "SELECT * FROM documents WHERE organization_id=? ORDER BY size DESC, id DESC LIMIT ?",
+            (organization_id, max(1, int(limit))),
+        )
 
     def toggle_favorite(self, document_id: int, organization_id: int | None = None) -> Optional[DocumentEntity]:
         now = self._now()
@@ -249,6 +270,7 @@ class DocumentRepository(BaseRepository):
             entity.created_at, entity.updated_at, entity.last_accessed_at,
             entity.cloud_status, entity.cloud_provider, entity.remote_id,
             entity.remote_version, entity.last_synced_at,
+            entity.source_type, entity.tags, entity.document_date, entity.notes,
         )
 
     @staticmethod
@@ -267,6 +289,10 @@ class DocumentRepository(BaseRepository):
             cloud_status=row["cloud_status"] or "LOCAL_ONLY",
             cloud_provider=row["cloud_provider"], remote_id=row["remote_id"],
             remote_version=row["remote_version"], last_synced_at=row["last_synced_at"],
+            source_type=row["source_type"] if "source_type" in row.keys() else "IMPORT",
+            tags=row["tags"] if "tags" in row.keys() else None,
+            document_date=row["document_date"] if "document_date" in row.keys() else None,
+            notes=row["notes"] if "notes" in row.keys() else None,
         )
 
     @staticmethod

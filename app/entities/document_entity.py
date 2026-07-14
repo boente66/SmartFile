@@ -32,3 +32,7 @@ class DocumentEntity:
     remote_id: Optional[str] = None
     remote_version: Optional[str] = None
     last_synced_at: Optional[str] = None
+    source_type: str = "IMPORT"
+    tags: Optional[str] = None
+    document_date: Optional[str] = None
+    notes: Optional[str] = None

@@ -1,6 +1,6 @@
 # SmartFile — Manual do Usuário
 
-**Versão do manual:** 1.2
+**Versão do manual:** 1.3
 
 **Aplicação:** SmartFile — Mini GED Local
 
@@ -38,7 +38,7 @@ abre a tela de login. A janela principal não é disponibilizada sem autenticaç
 O cadastro utiliza um wizard de quatro etapas:
 
 1. Em **Dados pessoais**, informe nome, username, contatos, senha e avatar opcional.
-2. Em **Organização**, escolha nome, descrição, ícone, cor e modelo de pastas.
+2. Em **Organização**, escolha nome, descrição, ícone, cor, modelo de pastas e plano de armazenamento.
 3. Em **Resumo**, confira os dados, as pastas previstas e o papel `OWNER`.
 4. Selecione **Finalizar** e, após a conclusão, **Entrar no SmartFile**.
 
@@ -47,6 +47,11 @@ O cadastro utiliza um wizard de quatro etapas:
 O primeiro usuário recebe o papel de proprietário (`OWNER`) da organização padrão.
 Os modelos Pessoal, Estudante e Empresarial servem somente para criar as pastas
 iniciais; eles não são níveis de acesso.
+
+O modelo de pastas e o plano de armazenamento são conceitos separados. O SmartFile
+oferece planos lógicos de **10 GB**, **20 GB** e **60 GB**. A sugestão inicial é
+Pessoal 10 GB, Estudante 20 GB e Empresarial 60 GB, mas o plano pode ser escolhido
+independentemente do modelo.
 
 ### Modelos disponíveis
 
@@ -147,6 +152,25 @@ o menu oferece **Copiar**, **Colar**, **Restaurar**, **Excluir definitivamente**
 **Esvaziar lixeira**. Exclusões definitivas removem também o arquivo gerenciado e
 não podem ser desfeitas.
 
+### Armazenamento da organização
+
+O painel **Armazenamento** mostra plano, uso, reserva, espaço disponível, percentual
+e estado. Os valores são exibidos em GB; internamente o SmartFile controla os
+valores em bytes.
+
+- até 79%: normal;
+- de 80% a 89%: atenção;
+- de 90% a 99%: crítico;
+- 100%: bloqueado.
+
+Antes de criar um arquivo gerenciado, o SmartFile reserva o espaço necessário. A
+reserva evita que duas importações simultâneas ultrapassem a cota. A lixeira continua
+consumindo armazenamento; o espaço só é liberado depois da exclusão permanente do
+arquivo. Use **Gerenciar armazenamento** para abrir a lixeira, recalcular o uso ou
+consultar os maiores arquivos, alterar o plano, iniciar a sincronização ou ver erros
+da nuvem. Um plano menor não pode ser aplicado quando o uso e as reservas atuais
+ultrapassarem o novo limite.
+
 ## 7. Visualizador de PDF
 
 A ação **Visualizar** abre o leitor interno. A ação **PDF Tools** abre o manipulador
@@ -205,7 +229,15 @@ salve o resultado como um novo arquivo para preservar o original.
 5. Selecione **Digitalizar**.
 6. Revise as páginas.
 7. Use **Digitalizar e adicionar mais** quando necessário.
-8. Selecione **Salvar documento**.
+8. Para exportar, selecione **Salvar documento**.
+9. Para cadastrar diretamente, selecione **Adicionar ao GED**.
+10. Escolha organização e pasta, preencha título, categoria, descrição, etiquetas,
+    data e observações, e confirme.
+
+As setas na lista permitem reordenar as páginas antes da geração do PDF. Ao adicionar
+ao GED, o SmartFile cria um PDF temporário, verifica e reserva a cota, copia o arquivo
+para o storage interno, persiste os metadados com origem `SCANNER`, registra o
+histórico e enfileira a nuvem vinculada. O temporário é removido ao final.
 
 As opções disponíveis dependem do driver SANE no Linux ou TWAIN no Windows e das
 capacidades do equipamento. A mensagem “alimentador sem documentos” indica que a
@@ -356,16 +388,19 @@ da conta. Tokens não são exibidos pela interface.
 2. Seleciona **Importar**.
 3. Escolhe um arquivo válido.
 4. O SmartFile valida o caminho e calcula o checksum.
-5. O arquivo é copiado para o storage interno com identificador seguro.
-6. Os metadados são persistidos no SQLite.
-7. A operação é registrada no histórico.
-8. Se houver nuvem configurada, um trabalho de upload é colocado na fila.
+5. O SmartFile valida a cota e reserva o tamanho necessário.
+6. O arquivo é copiado para o storage interno com identificador seguro.
+7. Os metadados são persistidos no SQLite e a reserva é convertida em uso.
+8. A operação é registrada no histórico.
+9. Se houver nuvem configurada, um trabalho de upload é colocado na fila.
 
 **Fluxos alternativos:**
 
 - Arquivo inválido ou inexistente: a importação é cancelada.
 - Checksum duplicado: o sistema impede ou informa a duplicidade.
 - Sem internet: o documento permanece local e o upload fica pendente.
+- Cota insuficiente: nenhuma cópia ou registro parcial é mantido.
+- Disco local insuficiente: a mensagem diferencia espaço físico de cota lógica.
 
 **Resultado:** documento disponível na organização e pasta selecionadas.
 
@@ -399,15 +434,16 @@ da conta. Tokens não são exibidos pela interface.
 
 1. O usuário seleciona dispositivo, fonte e resolução.
 2. Aciona **Digitalizar**.
-3. O Worker executa a captura sem bloquear a interface.
+3. O backend SANE ou TWAIN executa a captura.
 4. O sistema apresenta a página no preview.
 5. O usuário adiciona outras páginas ou conclui a sessão.
-6. O documento é salvo em PDF ou imagem.
+6. O usuário reordena ou remove páginas, se necessário.
+7. O documento é exportado ou adicionado diretamente ao GED.
 
 **Fluxo alternativo:** se o alimentador estiver vazio, o sistema orienta colocar
 papel ou selecionar a mesa do scanner.
 
-**Resultado:** arquivo digitalizado disponível para salvar ou importar no GED.
+**Resultado:** PDF digitalizado exportado ou cadastrado no GED sem uma segunda importação.
 
 ### UC-07 — Manipular um PDF
 
@@ -485,6 +521,27 @@ papel ou selecionar a mesa do scanner.
 
 **Resultado:** apenas os dados da nova organização ativa são apresentados.
 
+### UC-11 — Controlar a cota de armazenamento
+
+**Ator principal:** usuário da organização.
+
+**Fluxo principal:**
+
+1. O usuário inicia uma importação, cópia, digitalização ou incorporação de resultado.
+2. O sistema calcula o tamanho e verifica cota e espaço livre local.
+3. O sistema persiste uma reserva temporária.
+4. Após arquivo e registro serem validados, a reserva é convertida em uso.
+5. O painel atualiza o percentual e o estado textual.
+
+**Fluxos alternativos:**
+
+- Se a cota for insuficiente, o sistema informa uso, limite e tamanho solicitado.
+- Se a criação falhar, a reserva e arquivos parciais são removidos.
+- Mover para a lixeira não libera espaço; excluir definitivamente libera.
+- Se a nuvem estiver cheia, o documento local é preservado e a sincronização recebe erro.
+
+**Resultado:** uso coerente por organização sem ultrapassagem por operações simultâneas.
+
 ## 13. Boas práticas
 
 - Use uma senha exclusiva para o SmartFile.
@@ -506,6 +563,8 @@ papel ou selecionar a mesa do scanner.
 | PDF não abre | Confirme se o arquivo é PDF válido e se exige senha |
 | Pesquisa não encontra texto | O documento pode ser apenas imagem, sem camada de texto |
 | Documento não sincroniza | Verifique conexão, conta ativa e estado da fila |
+| Limite de armazenamento atingido | Esvazie a lixeira, altere o plano ou remova definitivamente arquivos desnecessários |
+| Disco local sem espaço | Libere espaço no disco; esta situação é diferente da cota da organização |
 | Certificado não carrega | Confirme o arquivo A1, a validade e a senha |
 
 ## 15. Limitações conhecidas

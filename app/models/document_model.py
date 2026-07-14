@@ -35,6 +35,9 @@ class DocumentModel:
     remote_id: Optional[str] = None
     remote_version: Optional[str] = None
     last_synced_at: Optional[str] = None
+    source_type: str = "IMPORT"
+    document_date: Optional[str] = None
+    notes: Optional[str] = None
 
     @classmethod
     def from_entity(cls, entity: DocumentEntity) -> "DocumentModel":
@@ -53,7 +56,7 @@ class DocumentModel:
             extension=entity.extension,
             size=entity.size,
             category=entity.category,
-            tags=None,
+            tags=entity.tags,
             description=entity.description,
             favorite=bool(entity.favorite),
             checksum=entity.checksum,
@@ -66,6 +69,9 @@ class DocumentModel:
             remote_id=entity.remote_id,
             remote_version=entity.remote_version,
             last_synced_at=entity.last_synced_at,
+            source_type=entity.source_type,
+            document_date=entity.document_date,
+            notes=entity.notes,
         )
 
     def to_entity(self) -> DocumentEntity:
@@ -96,4 +102,8 @@ class DocumentModel:
             remote_id=self.remote_id,
             remote_version=self.remote_version,
             last_synced_at=self.last_synced_at,
+            source_type=self.source_type,
+            tags=self.tags,
+            document_date=self.document_date,
+            notes=self.notes,
         )
