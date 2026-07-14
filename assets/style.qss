@@ -568,4 +568,39 @@ QLabel#authError { color: #dc2626; font-weight: 600; }
 QLabel#authHint { background: #eaf8ef; color: #16763a; border-radius: 7px; padding: 9px; }
 QRadioButton#templateCard { background: #ffffff; color: #1f2937; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; spacing: 8px; }
 QRadioButton#templateCard:checked { background: #eefbf2; border: 2px solid #22a653; color: #14532d; }
+
+/* Cadastro em quatro etapas */
+QWidget#registrationContent { background: #fbfcfd; }
+QLabel#registrationTitle { color: #101c2c; font-size: 30px; font-weight: 800; }
+QLabel#registrationStepCaption { color: #283548; font-size: 16px; }
+QPushButton#registrationBackLink { background: transparent; border: none; color: #159342; font-size: 15px; font-weight: 600; padding: 6px 4px; }
+QPushButton#registrationBackLink:hover { color: #0d7131; text-decoration: underline; }
+QScrollArea#registrationScroll, QStackedWidget#registrationStack, QWidget#registrationPage { background: transparent; border: none; }
+QWidget#registrationPage QLabel { color: #172033; }
+QLabel#registrationFieldLabel { color: #172033; font-size: 14px; font-weight: 600; }
+QLabel#registrationSectionTitle { color: #101c2c; font-size: 22px; font-weight: 750; }
+QLabel#registrationHint { color: #667387; font-size: 13px; }
+QLabel#registrationValidation { color: #667387; font-size: 12px; }
+QLabel#registrationValidation[valid="true"] { color: #13883d; font-weight: 600; }
+QWidget#registrationPage QLineEdit,
+QWidget#registrationPage QComboBox,
+QWidget#registrationPage QTextEdit { background: #ffffff; color: #172033; border: 1px solid #cdd5df; border-radius: 9px; padding: 7px 12px; selection-background-color: #b9ebc9; }
+QWidget#registrationPage QLineEdit:focus,
+QWidget#registrationPage QComboBox:focus,
+QWidget#registrationPage QTextEdit:focus { border: 2px solid #159b46; }
+QLabel#passwordRequirements { color: #415066; font-size: 12px; padding-top: 6px; }
+QLabel#passwordStrengthLabel { color: #167e3b; font-weight: 700; padding-left: 8px; }
+QFrame#avatarPanel { background: transparent; min-width: 230px; }
+QLabel#avatarPreview { background: #edf9f1; color: #159b46; border: 2px solid #169b45; border-radius: 85px; font-size: 38px; font-weight: 800; }
+QPushButton#avatarChooseButton { background: #ffffff; color: #138b3f; border: 1px solid #cdd5df; min-height: 42px; font-weight: 600; }
+QPushButton#avatarRemoveButton { background: #ffffff; color: #dc2626; border: 1px solid #cdd5df; min-height: 42px; font-weight: 600; }
+QRadioButton#templateCard { font-size: 14px; line-height: 1.4; padding: 16px; }
+QLabel#registrationSummary { background: #ffffff; color: #263448; border: 1px solid #dbe2ea; border-radius: 12px; padding: 22px; font-size: 15px; }
+QLabel#registrationCompletion { background: #eaf8ef; color: #126f34; border: 1px solid #9edbb2; border-radius: 12px; padding: 28px; font-size: 17px; }
+QFrame#registrationActions { background: #ffffff; border-top: 1px solid #dfe5ec; }
+QPushButton#registrationSecondary { background: #ffffff; color: #263448; border: 1px solid #cdd5df; min-height: 42px; padding: 0 20px; font-weight: 600; }
+QFrame#registrationActions QPushButton#authPrimary { min-width: 170px; padding: 0 22px; }
+QFrame#registrationFooter { background: #f0f8f3; border-top: 1px solid #d6e7dc; color: #4a586b; }
+QFrame#registrationFooter QLabel { color: #4a586b; }
+QLabel#registrationSecureText { color: #187c3c; }
 QToolButton#accountButton { background: #17212a; color: #e5e7eb; border: 1px solid #334155; border-radius: 6px; padding: 5px 10px; }

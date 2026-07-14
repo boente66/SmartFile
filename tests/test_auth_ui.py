@@ -107,10 +107,23 @@ def test_wizard_navigates_validates_and_builds_summary():
     wizard.next_step(); assert wizard.stack.currentIndex()==0 and wizard.error_label.text()
     wizard.display_name.setText("Pessoa Teste"); wizard.username.setText("pessoa"); wizard.password.setText("senha-segura"); wizard.confirmation.setText("senha-segura")
     wizard.next_step(); assert wizard.stack.currentIndex()==1
-    wizard.organization_name.setText("Empresa ABC"); wizard.templates.buttons()[2].setChecked(True)
-    wizard.next_step(); assert wizard.stack.currentIndex()==2 and "Empresa ABC" in wizard.summary.text() and "OWNER" in wizard.summary.text()
-    wizard.previous_step(); assert wizard.stack.currentIndex()==1
+    wizard.organization_name.setText("Empresa ABC")
+    wizard.next_step(); assert wizard.stack.currentIndex()==2
+    wizard.templates.buttons()[2].setChecked(True)
+    wizard.next_step(); assert wizard.stack.currentIndex()==3 and "Empresa ABC" in wizard.summary.text() and "OWNER" in wizard.summary.text()
+    wizard.previous_step(); assert wizard.stack.currentIndex()==2
     wizard.close(); app.processEvents()
+
+
+def test_registration_screen_follows_four_step_model():
+    app=_app(); wizard=FirstUserSetupView()
+    assert wizard.step_indicator.CAPTIONS == ("Dados pessoais","Organização","Template","Resumo")
+    assert wizard.avatar_preview.width() == wizard.avatar_preview.height() == 170
+    assert wizard.top_back_button.text().endswith("Voltar ao login")
+    assert wizard.next_button.text().startswith("Continuar")
+    wizard.resize(940,650); wizard.show(); app.processEvents()
+    assert wizard.scroll.verticalScrollBar().maximum() > 0
+    wizard.close()
 
 
 def test_account_menu_hides_member_management_without_permission():
