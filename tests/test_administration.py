@@ -24,7 +24,7 @@ def build_services(tmp_path):
 def test_custom_organization_and_administration_migration(tmp_path):
     database,context,_=build_services(tmp_path)
     assert context.active_organization.name=="Empresa ABC"
-    assert database.connect().execute("PRAGMA user_version").fetchone()[0]==9
+    assert database.connect().execute("PRAGMA user_version").fetchone()[0]==10
     assert {r["name"] for r in database.fetch_all("SELECT name FROM sqlite_master WHERE type='table'")} >= {"audit_log","organization_members"}
     assert len(database.fetch_all("SELECT * FROM folders WHERE organization_id=?",(context.active_organization.id,)))==8
 

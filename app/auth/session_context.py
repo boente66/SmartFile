@@ -11,9 +11,9 @@ from app.models.user_model import UserModel
 
 ROLE_PERMISSIONS = {
     "OWNER": {"*"},
-    "ADMIN": {"document.*", "folder.*", "tools.use", "organization.view", "organization.create", "organization.update", "member.view", "member.add", "member.create_user", "member.change_role", "member.deactivate", "member.remove", "profile.view", "profile.update", "session.view", "session.revoke"},
-    "EDITOR": {"document.create", "document.import", "document.update", "document.open", "document.view", "document.search", "folder.*", "tools.use", "organization.view", "organization.create", "profile.view", "profile.update", "session.view", "session.revoke"},
-    "VIEWER": {"document.view", "document.open", "document.search", "organization.view", "profile.view", "profile.update", "session.view", "session.revoke"},
+    "ADMIN": {"document.*", "folder.*", "tools.use", "organization.view", "organization.create", "organization.update", "member.view", "member.add", "member.create_user", "member.change_role", "member.deactivate", "member.remove", "profile.view", "profile.update", "session.view", "session.revoke", "cloud.view", "cloud.connect", "cloud.disconnect", "cloud.sync", "cloud.oauth.configure"},
+    "EDITOR": {"document.create", "document.import", "document.update", "document.open", "document.view", "document.search", "folder.*", "tools.use", "organization.view", "organization.create", "profile.view", "profile.update", "session.view", "session.revoke", "cloud.view", "cloud.sync"},
+    "VIEWER": {"document.view", "document.open", "document.search", "organization.view", "profile.view", "profile.update", "session.view", "session.revoke", "cloud.view"},
 }
 
 
@@ -58,3 +58,5 @@ class SessionContext:
     def _refresh_permissions(self) -> None:
         membership = next((m for m in self.memberships if m.organization_id == getattr(self.active_organization, "id", None)), None)
         self.permissions = set(ROLE_PERMISSIONS.get(membership.role, set())) if membership else set()
+        if getattr(self.current_user, "is_superuser", False):
+            self.permissions.add("*")

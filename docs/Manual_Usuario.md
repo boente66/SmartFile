@@ -287,20 +287,18 @@ conta corretamente configurada.
 
 Para adicionar uma conta, selecione **Adicionar Conta → Microsoft OneDrive** ou
 **Adicionar Conta → Google Drive**. O SmartFile abre a página oficial de autorização
-no navegador. O provedor só é ativado depois que a autenticação for concluída e o
-código retornado for confirmado no aplicativo.
+no navegador. O provedor só é ativado depois que a autorização for concluída. O
+usuário comum nunca precisa informar Client ID, Tenant, segredo ou arquivo JSON.
 
-Na primeira conexão, o SmartFile abre **Configurar APIs da Nuvem**:
-
-- para OneDrive, informe o *Application (client) ID* de um aplicativo público
-  Desktop/Mobile registrado no Microsoft Entra, com `http://localhost` permitido;
-- para Google Drive, habilite a Google Drive API, crie credenciais OAuth do tipo
-  **Aplicativo para computador** e selecione o JSON baixado do Google Cloud Console.
+Se a integração ainda não tiver sido preparada, a tela mostrará **Integração não
+configurada pelo administrador**. A configuração pública do aplicativo pertence ao
+administrador ou ao empacotamento do SmartFile e não deve ser confundida com a conta
+OneDrive/Google Drive escolhida pelo usuário.
 
 As configurações são criptografadas no diretório de dados. A autenticação é executada
 pelas APIs Python `msal` e `google-auth-oauthlib`, usando navegador do sistema e
-callback local. O cache Microsoft, tokens de acesso e refresh tokens não são exibidos
-na interface nem armazenados em texto puro.
+callback local. Tokens não são exibidos na interface; o SQLite contém somente uma
+referência ao cofre do sistema ou ao cofre local cifrado.
 
 Nunca informe tokens manualmente em telas que não sejam destinadas à configuração
 da conta. Tokens não são exibidos pela interface.

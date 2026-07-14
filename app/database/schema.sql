@@ -44,7 +44,8 @@ CREATE TABLE IF NOT EXISTS cloud_accounts (
     refresh_token TEXT,
     expires_at TEXT,
     status TEXT NOT NULL DEFAULT 'ACTIVE',
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    token_ref TEXT
 );
 
 CREATE TABLE IF NOT EXISTS users (

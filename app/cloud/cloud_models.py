@@ -11,6 +11,25 @@ class CloudProviderType(StrEnum):
     GOOGLE_DRIVE = "GOOGLE_DRIVE"
 
 
+class CloudOAuthState(StrEnum):
+    NOT_CONFIGURED = "NOT_CONFIGURED"
+    DISCONNECTED = "DISCONNECTED"
+    AUTHENTICATING = "AUTHENTICATING"
+    CONNECTED = "CONNECTED"
+    TOKEN_EXPIRED = "TOKEN_EXPIRED"
+    REAUTH_REQUIRED = "REAUTH_REQUIRED"
+    ERROR = "ERROR"
+    DISABLED = "DISABLED"
+
+
+class CloudConfigurationSource(StrEnum):
+    BUNDLED = "BUNDLED"
+    ENVIRONMENT = "ENVIRONMENT"
+    ADMIN_LOCAL = "ADMIN_LOCAL"
+    DEVELOPMENT = "DEVELOPMENT"
+    MISSING = "MISSING"
+
+
 class CloudSyncState(StrEnum):
     LOCAL_ONLY = "LOCAL_ONLY"
     PENDING_UPLOAD = "PENDING_UPLOAD"
@@ -52,6 +71,7 @@ class CloudAccount:
     expires_at: str | None = None
     status: str = "ACTIVE"
     created_at: str = ""
+    token_ref: str | None = None
 
 
 @dataclass(slots=True)

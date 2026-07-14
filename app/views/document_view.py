@@ -59,6 +59,7 @@ class DocumentView(QWidget):
     disconnect_cloud_requested = pyqtSignal()
     cloud_history_requested = pyqtSignal()
     cloud_login_requested = pyqtSignal(str)
+    cloud_oauth_settings_requested = pyqtSignal()
     copy_requested = pyqtSignal(int)
     paste_requested = pyqtSignal()
     restore_requested = pyqtSignal(int)
@@ -133,7 +134,10 @@ class DocumentView(QWidget):
         self.btn_add_cloud.setObjectName("cloudAccountButton")
         IconProvider.apply(self.btn_add_cloud, "cloud_add")
         self.btn_add_cloud.clicked.connect(self.add_cloud_account_requested.emit)
-        cloud_account_menu=QMenu(self.btn_add_cloud); cloud_account_menu.addAction("Microsoft OneDrive",lambda:self.cloud_login_requested.emit("ONEDRIVE")); cloud_account_menu.addAction("Google Drive",lambda:self.cloud_login_requested.emit("GOOGLE_DRIVE")); self.btn_add_cloud.setMenu(cloud_account_menu)
+        cloud_account_menu=QMenu(self.btn_add_cloud)
+        cloud_account_menu.addAction("Microsoft OneDrive",lambda:self.cloud_login_requested.emit("ONEDRIVE"))
+        cloud_account_menu.addAction("Google Drive",lambda:self.cloud_login_requested.emit("GOOGLE_DRIVE"))
+        self.btn_add_cloud.setMenu(cloud_account_menu)
         cloud_row.addWidget(self.btn_add_cloud)
         self.cloud_status_label = QLabel("Armazenamento local")
         self.cloud_status_label.setObjectName("cloudStatusLabel")
@@ -201,9 +205,14 @@ class DocumentView(QWidget):
         sync_menu.addAction("Pausar", self.pause_sync_requested.emit)
         sync_menu.addAction("Retomar", self.resume_sync_requested.emit)
         sync_menu.addSeparator()
-        sync_menu.addAction("Configurar Conta", self.add_cloud_account_requested.emit)
+        sync_menu.addAction("Conectar conta", self.add_cloud_account_requested.emit)
         sync_menu.addAction("Desconectar", self.disconnect_cloud_requested.emit)
         sync_menu.addAction("Histórico", self.cloud_history_requested.emit)
+        sync_menu.addSeparator()
+        self.oauth_settings_action = sync_menu.addAction(
+            "Configuração OAuth avançada", self.cloud_oauth_settings_requested.emit
+        )
+        self.oauth_settings_action.setVisible(False)
         self.btn_sync.setMenu(sync_menu)
         actions.addStretch(1)
         left_layout.addLayout(actions)
@@ -386,12 +395,23 @@ class DocumentView(QWidget):
         self.folder_tree.blockSignals(False)
         self.folder_selected.emit(None)
 
-    def set_cloud_settings(self, settings, account=None) -> None:
+    def set_cloud_settings(self, settings, account=None, oauth_state=None) -> None:
         self.cloud_combo.blockSignals(True)
         index = self.cloud_combo.findData(settings.sync_mode)
         self.cloud_combo.setCurrentIndex(max(0, index))
         self.cloud_combo.blockSignals(False)
-        if settings.sync_mode == "LOCAL":
+        state = getattr(oauth_state, "value", oauth_state)
+        if state == "NOT_CONFIGURED":
+            text = "Integração não configurada pelo administrador"
+        elif state == "AUTHENTICATING":
+            text = "Autenticando…"
+        elif state == "TOKEN_EXPIRED":
+            text = "Autorização expirada — conecte novamente"
+        elif state == "REAUTH_REQUIRED":
+            text = "Nova autenticação necessária"
+        elif state == "ERROR":
+            text = "Erro na conexão da nuvem"
+        elif settings.sync_mode == "LOCAL":
             text = "Armazenamento local"
         elif settings.paused:
             text = f"{settings.sync_mode} — pausado"
@@ -402,6 +422,17 @@ class DocumentView(QWidget):
         if settings.last_sync:
             text += f" · última sincronização {settings.last_sync}"
         self.cloud_status_label.setText(text)
+
+    def apply_cloud_permissions(self, context) -> None:
+        can_view = context is None or context.has_permission("cloud.view")
+        can_connect = context is None or context.has_permission("cloud.connect")
+        can_sync = context is None or context.has_permission("cloud.sync")
+        can_configure = context is not None and context.has_permission("cloud.oauth.configure")
+        self.cloud_combo.setVisible(can_view)
+        self.cloud_status_label.setVisible(can_view)
+        self.btn_add_cloud.setVisible(can_view and can_connect)
+        self.btn_sync.setVisible(can_view and can_sync)
+        self.oauth_settings_action.setVisible(can_configure)
 
     def set_storage_usage(self, summary) -> None:
         used = self._format_gb(summary.used_bytes)

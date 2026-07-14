@@ -7,7 +7,7 @@ from pathlib import Path
 from app.errors.persistence_exceptions import DatabaseError
 
 logger = logging.getLogger(__name__)
-CURRENT_SCHEMA_VERSION = 9
+CURRENT_SCHEMA_VERSION = 10
 GIB = 1024 ** 3
 
 
@@ -190,6 +190,8 @@ def _upgrade_cloud(connection: sqlite3.Connection) -> None:
         SELECT id, 'LOCAL', 0 FROM organizations
         """
     )
+    if "token_ref" not in _columns(connection, "cloud_accounts"):
+        connection.execute("ALTER TABLE cloud_accounts ADD COLUMN token_ref TEXT")
 
 
 def _upgrade_auth(connection: sqlite3.Connection) -> None:

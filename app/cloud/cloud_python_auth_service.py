@@ -7,6 +7,12 @@ from urllib.request import Request, urlopen
 from app.cloud.cloud_models import CloudAuthResult
 from app.cloud.cloud_oauth_config_service import CloudOAuthConfigService
 from app.cloud.cloud_provider import CloudAuthenticationError
+from app.errors.cloud_exceptions import (
+    CloudAuthorizationCancelledError,
+    CloudAuthorizationDeniedError,
+    CloudConfigurationMissingError,
+    CloudTokenExpiredError,
+)
 
 
 class CloudPythonAuthService:
@@ -21,31 +27,44 @@ class CloudPythonAuthService:
     def __init__(self, database):
         self.config = CloudOAuthConfigService(database)
 
-    def authenticate(self, provider: str) -> CloudAuthResult:
+    def authenticate(self, provider: str, *, interactive: bool = True) -> CloudAuthResult:
         if provider == "ONEDRIVE":
-            return self._authenticate_onedrive()
+            return self._authenticate_onedrive(interactive=interactive)
         if provider == "GOOGLE_DRIVE":
             return self._authenticate_google()
         raise CloudAuthenticationError("Provedor de nuvem inválido.")
 
-    def _authenticate_onedrive(self) -> CloudAuthResult:
+    def _authenticate_onedrive(self, *, interactive: bool = True) -> CloudAuthResult:
         try:
             import msal
         except ImportError as exc:
             raise CloudAuthenticationError("Instale a dependência Python 'msal'.") from exc
         config = self.config.provider_config("ONEDRIVE")
         if not config.get("client_id"):
-            raise CloudAuthenticationError("Configure o Client ID do OneDrive.")
+            raise CloudConfigurationMissingError(
+                "A integração com o OneDrive ainda não foi configurada pelo administrador do SmartFile."
+            )
         authority = f"https://login.microsoftonline.com/{config.get('tenant') or 'common'}"
         cache=msal.SerializableTokenCache(); serialized=self.config.load_cache("ONEDRIVE")
         if serialized: cache.deserialize(serialized)
         application = msal.PublicClientApplication(config["client_id"], authority=authority, token_cache=cache)
         accounts=application.get_accounts(); result=application.acquire_token_silent(self.MICROSOFT_SCOPES,account=accounts[0]) if accounts else None
-        if not result:
+        if not result and interactive:
             result = application.acquire_token_interactive(scopes=self.MICROSOFT_SCOPES,redirect_uri="http://localhost",prompt="select_account")
+        if not result:
+            raise CloudTokenExpiredError(
+                "A autorização expirou. Conecte novamente sua conta."
+            )
         if cache.has_state_changed:self.config.save_cache("ONEDRIVE",cache.serialize())
         if "access_token" not in result:
-            raise CloudAuthenticationError(result.get("error_description") or "Login Microsoft não concluído.")
+            error = str(result.get("error") or "")
+            if error in {"access_denied", "consent_required"}:
+                raise CloudAuthorizationDeniedError(
+                    "A autorização não foi concedida. O SmartFile não poderá sincronizar esta organização."
+                )
+            raise CloudAuthorizationCancelledError(
+                "A conexão foi cancelada. Nenhuma conta foi vinculada."
+            )
         claims = result.get("id_token_claims") or {}
         return CloudAuthResult(
             access_token=result["access_token"],
@@ -63,13 +82,21 @@ class CloudPythonAuthService:
         config = self.config.provider_config("GOOGLE_DRIVE")
         client_config = config.get("client_config")
         if not client_config:
-            raise CloudAuthenticationError("Configure o JSON OAuth Desktop do Google.")
+            raise CloudConfigurationMissingError(
+                "A integração com o Google Drive ainda não foi configurada pelo administrador do SmartFile."
+            )
         flow = InstalledAppFlow.from_client_config(client_config, self.GOOGLE_SCOPES)
-        credentials = flow.run_local_server(
-            host="localhost", port=0, open_browser=True,
-            authorization_prompt_message="Abrindo autenticação do Google Drive...",
-            success_message="Autenticação concluída. Você pode fechar esta janela e voltar ao SmartFile.",
-        )
+        try:
+            credentials = flow.run_local_server(
+                host="localhost", port=0, open_browser=True,
+                authorization_prompt_message="Abrindo autenticação do Google Drive...",
+                success_message="Autenticação concluída. Você pode fechar esta janela e voltar ao SmartFile.",
+                timeout_seconds=180,
+            )
+        except (KeyboardInterrupt, SystemExit) as exc:
+            raise CloudAuthorizationCancelledError(
+                "A conexão foi cancelada. Nenhuma conta foi vinculada."
+            ) from exc
         profile = self._google_profile(credentials.token)
         expiry = credentials.expiry
         if expiry and expiry.tzinfo is None:

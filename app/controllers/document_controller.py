@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QDialog, QFileDialog, QInputDialog, QMessageBox
+from PyQt6.QtWidgets import QFileDialog, QInputDialog, QMessageBox
 
 from app.controllers.convert_controller import ConvertController
 from app.controllers.pdf_controller import PDFController
@@ -22,6 +22,8 @@ from app.workers.cloud_auth_worker import CloudAuthWorker
 from app.entities.organization_member_entity import OrganizationMemberEntity
 from app.repositories.organization_member_repository import OrganizationMemberRepository
 from app.services.folder_template_service import FolderTemplateService
+from app.cloud.cloud_models import CloudOAuthState
+from app.errors.cloud_exceptions import CloudConfigurationMissingError, CloudPermissionError
 
 
 class DocumentController:
@@ -34,6 +36,7 @@ class DocumentController:
         self.pdf_controller = pdf_controller
         self.pdf_viewer_controller = pdf_viewer_controller
         self.session_context = session_context
+        self.service.cloud_manager.session_context = session_context
         self._current_search = ""
         self._current_type = "Todos"
         self._current_folder_id: int | None = None
@@ -80,6 +83,7 @@ class DocumentController:
         self.view.disconnect_cloud_requested.connect(self.on_disconnect_cloud)
         self.view.cloud_history_requested.connect(self.on_cloud_history)
         self.view.cloud_login_requested.connect(self.on_add_cloud_account)
+        self.view.cloud_oauth_settings_requested.connect(self.on_configure_cloud_oauth)
         self.view.copy_requested.connect(self.on_copy_document)
         self.view.paste_requested.connect(self.on_paste_document)
         self.view.restore_requested.connect(self.on_restore_document)
@@ -96,6 +100,7 @@ class DocumentController:
         self.main_view.sidebar.hide()
         self.workspace.show_view("documents")
         self._refresh_organizations()
+        self.view.apply_cloud_permissions(self.session_context)
         self._refresh_folders()
         self._refresh_cloud()
         self.on_refresh_documents()
@@ -325,7 +330,9 @@ class DocumentController:
             if provider == "LOCAL":
                 self.service.cloud_manager.configure(self.service.active_organization_id, "LOCAL")
             else:
-                account = self.service.cloud_manager.active_account_for(provider)
+                account = self.service.cloud_manager.active_account_for(
+                    provider, self.service.active_organization_id
+                )
                 if account is None:
                     QMessageBox.information(
                         self.view, "Camada de Nuvem",
@@ -344,7 +351,10 @@ class DocumentController:
     def on_add_cloud_account(self,provider=None):
         provider = str(provider or self.view.cloud_combo.currentData())
         index=self.view.cloud_combo.findData(provider)
-        if index>=0:self.view.cloud_combo.setCurrentIndex(index)
+        if index>=0:
+            self.view.cloud_combo.blockSignals(True)
+            self.view.cloud_combo.setCurrentIndex(index)
+            self.view.cloud_combo.blockSignals(False)
         if provider == "LOCAL":
             QMessageBox.information(
                 self.view, "Adicionar conta", "Selecione OneDrive ou Google Drive."
@@ -354,30 +364,60 @@ class DocumentController:
             QMessageBox.information(self.view,"Adicionar conta","Já existe uma autenticação em andamento.")
             return
         try:
+            self._require_cloud_permission("cloud.connect")
             config=CloudOAuthConfigService(self.service.database)
             if not config.is_configured(provider):
-                dialog=CloudApiSettingsDialog(config,self.view,provider)
-                if dialog.exec()!=QDialog.DialogCode.Accepted:return
+                self._refresh_cloud(provider)
+                raise CloudConfigurationMissingError(
+                    f"A integração com o {config.display_name(provider)} ainda não foi configurada "
+                    "pelo administrador do SmartFile."
+                )
+            settings = self.service.cloud_manager.settings(self.service.active_organization_id)
+            self.view.set_cloud_settings(settings, None, CloudOAuthState.AUTHENTICATING)
             service=CloudPythonAuthService(self.service.database); worker=CloudAuthWorker(service,provider); self._cloud_auth_worker=worker
             worker.progress.connect(lambda _value,message:self.view.set_status(message))
             worker.succeeded.connect(lambda result,p=provider,w=worker:self._on_cloud_auth_succeeded(p,result,w))
-            worker.failed.connect(lambda message,w=worker:self._on_cloud_auth_failed(message,w))
+            worker.failed.connect(lambda message,p=provider,w=worker:self._on_cloud_auth_failed(p,message,w))
             worker.finished.connect(lambda w=worker:self._cleanup_cloud_auth_worker(w)); worker.start()
         except Exception as exc: QMessageBox.warning(self.view,"Adicionar conta",str(exc))
 
     def _on_cloud_auth_succeeded(self,provider,result,worker):
         if worker is not self._cloud_auth_worker:return
         try:
-            self.service.cloud_manager.save_authentication_result(self.service.active_organization_id,provider,result); self._refresh_cloud(); self.view.set_status("Conta de nuvem autenticada e sincronização ativada")
+            self.service.cloud_manager.save_authentication_result(self.service.active_organization_id,provider,result); self._refresh_cloud(); self.view.set_status(f"{CloudOAuthConfigService.display_name(provider)} conectado com sucesso.")
         except Exception as exc:QMessageBox.warning(self.view,"Adicionar conta",str(exc))
 
-    def _on_cloud_auth_failed(self,message,worker):
-        if worker is self._cloud_auth_worker:QMessageBox.warning(self.view,"Autenticação da nuvem",message); self.view.set_status("Autenticação da nuvem não concluída")
+    def _on_cloud_auth_failed(self,provider,message,worker):
+        if worker is self._cloud_auth_worker:
+            self.service.cloud_manager._audit(
+                "CLOUD_CONNECT_FAILED", self.service.active_organization_id, None,
+                f"Autorização {provider} não concluída",
+            )
+            QMessageBox.warning(self.view,"Autenticação da nuvem",message)
+            self.view.set_status("Autenticação da nuvem não concluída")
 
     def _cleanup_cloud_auth_worker(self,worker):
         if self._cloud_auth_worker is worker:self._cloud_auth_worker=None; worker.deleteLater()
 
+    def on_configure_cloud_oauth(self):
+        try:
+            self._require_cloud_permission("cloud.oauth.configure")
+            dialog = CloudApiSettingsDialog(
+                CloudOAuthConfigService(self.service.database),
+                self.view,
+                str(self.view.cloud_combo.currentData() or "ONEDRIVE"),
+            )
+            dialog.exec()
+            self._refresh_cloud()
+        except Exception as exc:
+            QMessageBox.warning(self.view, "Configuração OAuth", str(exc))
+
     def on_sync_now(self):
+        try:
+            self._require_cloud_permission("cloud.sync")
+        except CloudPermissionError as exc:
+            QMessageBox.warning(self.view, "Sincronização", str(exc))
+            return
         if self._cloud_worker is not None:
             QMessageBox.information(self.view, "Sincronização", "Já existe uma sincronização em andamento.")
             return
@@ -401,6 +441,11 @@ class DocumentController:
         self.view.set_status("Sincronização pausada" if paused else "Sincronização retomada")
 
     def on_disconnect_cloud(self):
+        try:
+            self._require_cloud_permission("cloud.disconnect")
+        except CloudPermissionError as exc:
+            QMessageBox.warning(self.view, "Desconectar nuvem", str(exc))
+            return
         answer = QMessageBox.question(
             self.view, "Desconectar nuvem",
             "Desconectar a conta desta organização? Os documentos locais serão preservados."
@@ -591,7 +636,7 @@ class DocumentController:
         folders = self.service.folder_service.list_folders(organization.id)
         self.view.set_folders(organization.name, folders)
 
-    def _refresh_cloud(self):
+    def _refresh_cloud(self, selected_provider=None):
         settings = self.service.cloud_manager.settings(self.service.active_organization_id)
         account = None
         if settings.cloud_account_id:
@@ -599,7 +644,24 @@ class DocumentController:
                 account = self.service.cloud_manager.account(settings.cloud_account_id)
             except Exception:
                 account = None
-        self.view.set_cloud_settings(settings, account)
+        provider = selected_provider or (account.provider if account else None)
+        if provider in {"ONEDRIVE", "GOOGLE_DRIVE"}:
+            state = self.service.cloud_manager.authentication_state(
+                self.service.active_organization_id, provider
+            )
+        else:
+            state = CloudOAuthState.DISCONNECTED
+        self.view.set_cloud_settings(settings, account, state)
+
+    def _require_cloud_permission(self, permission: str) -> None:
+        if self.session_context is None:
+            return
+        try:
+            self.session_context.require_permission(permission)
+        except Exception as exc:
+            raise CloudPermissionError(
+                "Você não possui permissão para conectar uma conta de nuvem nesta organização."
+            ) from exc
 
     def _refresh_storage(self):
         self.view.set_storage_usage(self.service.get_storage_usage())
