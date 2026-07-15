@@ -1,6 +1,7 @@
 import json
 import inspect
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from PyQt6.QtWidgets import QApplication
@@ -133,3 +134,26 @@ def test_msal_cache_is_kept_out_of_oauth_configuration_file(tmp_path, monkeypatc
     encrypted_config = service.path.read_text(encoding="utf-8")
     assert "serialized-msal-secret" not in encrypted_config
     assert "serialized-msal-secret" not in (database.data_dir / ".cloud_token_store").read_text()
+
+
+@pytest.mark.parametrize(
+    ("state", "expected"),
+    [
+        ("NOT_CONFIGURED", "não configurada"),
+        ("DISCONNECTED", "Armazenamento local"),
+        ("AUTHENTICATING", "Autenticando"),
+        ("CONNECTED", "Conta Real"),
+        ("TOKEN_EXPIRED", "expirada"),
+        ("REAUTH_REQUIRED", "autenticação necessária"),
+        ("ERROR", "Erro na conexão"),
+        ("DISABLED", "indisponível para este perfil"),
+    ],
+)
+def test_every_oauth_state_has_a_clear_interface_message(state, expected):
+    app = QApplication.instance() or QApplication([])
+    view = DocumentView()
+    settings = SimpleNamespace(sync_mode="ONEDRIVE" if state == "CONNECTED" else "LOCAL", paused=False, last_sync=None)
+    account = SimpleNamespace(display_name="Conta Real", email="real@example.test") if state == "CONNECTED" else None
+    view.set_cloud_settings(settings, account, state)
+    assert expected in view.cloud_status_label.text()
+    view.close(); app.processEvents()

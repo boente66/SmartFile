@@ -163,7 +163,7 @@ class CloudManager:
                 from app.cloud.cloud_python_auth_service import CloudPythonAuthService
                 try:
                     refreshed = CloudPythonAuthService(self.database).authenticate(
-                        account.provider, interactive=False
+                        account.provider, interactive=False, account_hint=account.email
                     )
                 except Exception as exc:
                     self.database.execute_query(
@@ -185,8 +185,11 @@ class CloudManager:
             return CloudOAuthState.DISABLED
         if not CloudOAuthConfigService(self.database).is_provider_configured(provider):
             return CloudOAuthState.NOT_CONFIGURED
-        account = self.active_account_for(provider, organization_id)
-        if account is None or account.status == "DISCONNECTED":
+        settings = self.settings(organization_id)
+        if settings.cloud_account_id is None or settings.sync_mode != provider:
+            return CloudOAuthState.DISCONNECTED
+        account = self.account(settings.cloud_account_id)
+        if account.provider != provider or account.status == "DISCONNECTED":
             return CloudOAuthState.DISCONNECTED
         if account.status == "REAUTH_REQUIRED":
             return CloudOAuthState.REAUTH_REQUIRED
@@ -195,6 +198,14 @@ class CloudManager:
         if self._expired(account):
             return CloudOAuthState.TOKEN_EXPIRED
         return CloudOAuthState.CONNECTED
+
+    def mark_reauthentication_required(self, organization_id: int) -> None:
+        settings = self.settings(organization_id)
+        if settings.cloud_account_id is not None:
+            self.database.execute_query(
+                "UPDATE cloud_accounts SET status='REAUTH_REQUIRED' WHERE id=?",
+                (settings.cloud_account_id,),
+            )
 
     def oauth_credentials(self, provider: str) -> dict[str, str]:
         configured=CloudOAuthConfigService(self.database).provider_config(provider)

@@ -16,8 +16,8 @@ class CloudSyncWorker(QThread):
             self.progress.emit(10, "Consultando alterações remotas")
             changes = self.sync_service.sync_changes(self.organization_id)
             processed = 0
-            while not self.isInterruptionRequested() and self.sync_service.queue.next_pending():
-                self.sync_service.process_next()
+            while not self.isInterruptionRequested() and self.sync_service.queue.next_pending(self.organization_id):
+                self.sync_service.process_next(self.organization_id)
                 processed += 1
                 self.progress.emit(min(90, 20 + processed * 10), "Processando fila de sincronização")
             self.progress.emit(100, "Sincronização concluída")

@@ -10,6 +10,7 @@ from app.cloud.cloud_provider import CloudAuthenticationError
 from app.errors.cloud_exceptions import (
     CloudAuthorizationCancelledError,
     CloudAuthorizationDeniedError,
+    CloudAuthorizationTimeoutError,
     CloudConfigurationMissingError,
     CloudTokenExpiredError,
 )
@@ -27,14 +28,20 @@ class CloudPythonAuthService:
     def __init__(self, database):
         self.config = CloudOAuthConfigService(database)
 
-    def authenticate(self, provider: str, *, interactive: bool = True) -> CloudAuthResult:
+    def authenticate(
+        self, provider: str, *, interactive: bool = True, account_hint: str | None = None,
+    ) -> CloudAuthResult:
         if provider == "ONEDRIVE":
-            return self._authenticate_onedrive(interactive=interactive)
+            return self._authenticate_onedrive(
+                interactive=interactive, account_hint=account_hint
+            )
         if provider == "GOOGLE_DRIVE":
             return self._authenticate_google()
         raise CloudAuthenticationError("Provedor de nuvem inválido.")
 
-    def _authenticate_onedrive(self, *, interactive: bool = True) -> CloudAuthResult:
+    def _authenticate_onedrive(
+        self, *, interactive: bool = True, account_hint: str | None = None,
+    ) -> CloudAuthResult:
         try:
             import msal
         except ImportError as exc:
@@ -48,13 +55,37 @@ class CloudPythonAuthService:
         cache=msal.SerializableTokenCache(); serialized=self.config.load_cache("ONEDRIVE")
         if serialized: cache.deserialize(serialized)
         application = msal.PublicClientApplication(config["client_id"], authority=authority, token_cache=cache)
-        accounts=application.get_accounts(); result=application.acquire_token_silent(self.MICROSOFT_SCOPES,account=accounts[0]) if accounts else None
+        accounts = application.get_accounts(username=account_hint) if account_hint else application.get_accounts()
+        result = application.acquire_token_silent(
+            self.MICROSOFT_SCOPES, account=accounts[0]
+        ) if accounts else None
         if not result and interactive:
-            result = application.acquire_token_interactive(scopes=self.MICROSOFT_SCOPES,redirect_uri="http://localhost",prompt="select_account")
+            try:
+                result = application.acquire_token_interactive(
+                    scopes=self.MICROSOFT_SCOPES,
+                    redirect_uri="http://localhost",
+                    prompt="select_account",
+                    login_hint=account_hint,
+                    timeout=180,
+                )
+            except TimeoutError as exc:
+                raise CloudAuthorizationTimeoutError(
+                    "A autenticação não foi concluída dentro do tempo esperado."
+                ) from exc
+            except OSError as exc:
+                raise CloudAuthenticationError(
+                    "Não foi possível iniciar o callback local da Microsoft."
+                ) from exc
+            except Exception as exc:
+                raise CloudAuthenticationError(
+                    "Não foi possível concluir a autorização da conta Microsoft."
+                ) from exc
         if not result:
-            raise CloudTokenExpiredError(
-                "A autorização expirou. Conecte novamente sua conta."
-            )
+            if interactive:
+                raise CloudAuthorizationCancelledError(
+                    "A conexão foi cancelada. Nenhuma conta foi vinculada."
+                )
+            raise CloudTokenExpiredError("A autorização expirou. Conecte novamente sua conta.")
         if cache.has_state_changed:self.config.save_cache("ONEDRIVE",cache.serialize())
         if "access_token" not in result:
             error = str(result.get("error") or "")
@@ -96,6 +127,23 @@ class CloudPythonAuthService:
         except (KeyboardInterrupt, SystemExit) as exc:
             raise CloudAuthorizationCancelledError(
                 "A conexão foi cancelada. Nenhuma conta foi vinculada."
+            ) from exc
+        except TimeoutError as exc:
+            raise CloudAuthorizationTimeoutError(
+                "A autenticação não foi concluída dentro do tempo esperado."
+            ) from exc
+        except OSError as exc:
+            raise CloudAuthenticationError(
+                "Não foi possível iniciar o callback local do Google Drive."
+            ) from exc
+        except Exception as exc:
+            message = str(exc).lower()
+            if "access_denied" in message or "consent" in message:
+                raise CloudAuthorizationDeniedError(
+                    "A autorização não foi concedida. O SmartFile não poderá sincronizar esta organização."
+                ) from exc
+            raise CloudAuthenticationError(
+                "Não foi possível concluir a autorização da conta Google."
             ) from exc
         profile = self._google_profile(credentials.token)
         expiry = credentials.expiry

@@ -411,6 +411,8 @@ class DocumentView(QWidget):
             text = "Nova autenticação necessária"
         elif state == "ERROR":
             text = "Erro na conexão da nuvem"
+        elif state == "DISABLED":
+            text = "Nuvem indisponível para este perfil"
         elif settings.sync_mode == "LOCAL":
             text = "Armazenamento local"
         elif settings.paused:

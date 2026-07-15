@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import io
+from email.message import Message
+from urllib.error import HTTPError
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -12,7 +15,11 @@ from app.cloud.cloud_manager import CloudManager
 from app.cloud.cloud_models import (
     CloudAuthResult, CloudOperation, CloudSyncState, CloudUploadRequest, RemoteMetadata,
 )
-from app.cloud.cloud_provider import CloudOfflineError, CloudProvider
+from app.cloud.cloud_provider import (
+    CloudAuthenticationError, CloudFileTooLargeError, CloudOfflineError,
+    CloudPermissionDeniedError, CloudProvider, CloudRateLimitError,
+    CloudResourceNotFoundError, urllib_transport,
+)
 from app.cloud.cloud_sync_service import CloudSyncService
 from app.cloud.providers.google_drive_provider import GoogleDriveProvider
 from app.cloud.providers.onedrive_provider import OneDriveProvider
@@ -191,3 +198,96 @@ def test_cloud_workers_keep_native_finished_signal():
     assert "finished" not in CloudUploadWorker.__dict__
     assert "finished" not in CloudDownloadWorker.__dict__
     assert "finished" not in CloudSyncWorker.__dict__
+
+
+def test_queue_processing_is_isolated_by_organization(tmp_path: Path):
+    source = tmp_path / "isolado.pdf"; source.write_bytes(b"isolamento")
+    documents = DocumentService(db_path=str(tmp_path / "smartfile.db"))
+    first_org = documents.active_organization_id
+    first_account = _account(documents.cloud_manager, "ONEDRIVE")
+    documents.cloud_manager.configure(first_org, "ONEDRIVE", first_account.id)
+    first = documents.import_document(str(source))
+
+    second_org = documents.organization_service.create("Empresa isolada")
+    second_account = _account(documents.cloud_manager, "GOOGLE_DRIVE")
+    documents.cloud_manager.configure(second_org.id, "GOOGLE_DRIVE", second_account.id)
+    documents.set_active_organization(second_org.id)
+    second = documents.import_document(str(source))
+
+    provider = FakeProvider()
+    documents.cloud_manager.provider_for = lambda _organization_id: provider
+    first_job = documents.cloud_sync_service.queue.next_pending(first_org)
+    documents.cloud_sync_service.process_next(first_org)
+
+    assert documents.cloud_sync_service.queue.get(first_job.id).status == "COMPLETED"
+    assert documents.cloud_sync_service.queue.next_pending(second_org.id).document_id == second.id
+    assert documents.document_repository.find_by_id(first.id, first_org).cloud_status == "SYNCED"
+    assert documents.document_repository.find_by_id(second.id, second_org.id).cloud_status == "PENDING_UPLOAD"
+
+
+def test_authentication_states_preserve_reauth_and_error(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("SMARTFILE_ONEDRIVE_CLIENT_ID", "public-client")
+    database = Database(str(tmp_path / "smartfile.db")); manager = CloudManager(database)
+    organization_id = database.fetch_one("SELECT id FROM organizations LIMIT 1")["id"]
+    account = _account(manager)
+    manager.configure(organization_id, "ONEDRIVE", account.id)
+    database.execute_query("UPDATE cloud_accounts SET status='REAUTH_REQUIRED' WHERE id=?", (account.id,))
+    assert manager.authentication_state(organization_id, "ONEDRIVE").value == "REAUTH_REQUIRED"
+    database.execute_query("UPDATE cloud_accounts SET status='ERROR' WHERE id=?", (account.id,))
+    assert manager.authentication_state(organization_id, "ONEDRIVE").value == "ERROR"
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        (401, CloudAuthenticationError), (403, CloudPermissionDeniedError),
+        (404, CloudResourceNotFoundError), (413, CloudFileTooLargeError),
+        (429, CloudRateLimitError), (503, CloudOfflineError),
+    ],
+)
+def test_http_failures_are_translated_to_domain_errors(monkeypatch, status, expected):
+    headers = Message(); headers["Retry-After"] = "3"
+    error = HTTPError("https://provider.test/file", status, "failure", headers, io.BytesIO(b"safe"))
+    monkeypatch.setattr("app.cloud.cloud_provider.urlopen", lambda *_args, **_kwargs: (_ for _ in ()).throw(error))
+    with pytest.raises(expected) as caught:
+        urllib_transport("GET", "https://provider.test/file", {}, None)
+    assert "safe" not in str(caught.value)
+
+
+def test_google_large_upload_is_streamed_in_256k_aligned_chunks(tmp_path: Path):
+    source = tmp_path / "grande.bin"
+    source.write_bytes(b"x" * (17 * 1024 * 1024 + 7))
+    chunks = []
+
+    def transport(method, url, headers, data):
+        if "uploadType=resumable" in url:
+            return 200, {"Location": "https://upload.test/session"}, b""
+        chunks.append((len(data), headers["Content-Range"]))
+        if sum(size for size, _range in chunks) < source.stat().st_size:
+            return 308, {"Range": f"bytes=0-{sum(size for size, _range in chunks)-1}"}, b""
+        return 200, {}, json.dumps({"id": "remote-large", "name": source.name, "size": source.stat().st_size}).encode()
+
+    result = GoogleDriveProvider("access", transport).upload(CloudUploadRequest(source, source.name))
+    assert result.remote_id == "remote-large"
+    assert len(chunks) == 3
+    assert all(size % (256 * 1024) == 0 for size, _range in chunks[:-1])
+    assert max(size for size, _range in chunks) <= 8 * 1024 * 1024
+
+
+def test_offline_download_remains_pending_download(tmp_path: Path):
+    source = tmp_path / "download.pdf"; source.write_bytes(b"original")
+    documents = DocumentService(db_path=str(tmp_path / "smartfile.db"))
+    account = _account(documents.cloud_manager)
+    documents.cloud_manager.configure(documents.active_organization_id, "ONEDRIVE", account.id)
+    document = documents.import_document(str(source), sync_cloud=False)
+    documents.document_repository.update_cloud_state(
+        document.id, CloudSyncState.PENDING_DOWNLOAD, "ONEDRIVE", "remote-download"
+    )
+    documents.cloud_sync_service.queue.enqueue(document.id, CloudOperation.DOWNLOAD, "ONEDRIVE")
+    provider = FakeProvider()
+    provider.download = lambda *_args: (_ for _ in ()).throw(CloudOfflineError("offline"))
+    documents.cloud_manager.provider_for = lambda _organization_id: provider
+    documents.cloud_sync_service.process_next(documents.active_organization_id)
+    stored = documents.document_repository.find_by_id(document.id, documents.active_organization_id)
+    assert stored.cloud_status == "PENDING_DOWNLOAD"
+    assert documents.cloud_sync_service.queue.next_pending(documents.active_organization_id).status == "RETRY"

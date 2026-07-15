@@ -1,11 +1,14 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+
 from app.cloud.cloud_manager import CloudManager
 from app.cloud.cloud_models import CloudAuthResult
 from app.cloud.cloud_oauth_config_service import CloudOAuthConfigService
 from app.cloud.cloud_python_auth_service import CloudPythonAuthService
 from app.database.database import Database
+from app.errors.cloud_exceptions import CloudAuthorizationTimeoutError
 
 
 def test_oauth_configuration_is_encrypted_and_supports_both_providers(tmp_path: Path):
@@ -53,3 +56,34 @@ def test_python_auth_result_is_saved_encrypted_and_activates_provider(tmp_path: 
     stored=database.fetch_one("SELECT * FROM cloud_accounts WHERE id=?",(account.id,)); settings=manager.settings(organization_id)
     assert "secret-access" not in stored["access_token"] and "secret-refresh" not in stored["refresh_token"]
     assert settings.sync_mode=="ONEDRIVE" and settings.cloud_account_id==account.id
+
+
+def test_google_callback_timeout_is_a_domain_error(tmp_path: Path, monkeypatch):
+    database=Database(str(tmp_path/"smartfile.db")); config=CloudOAuthConfigService(database)
+    google=tmp_path/"google.json"; google.write_text('{"installed":{"client_id":"google-id","client_secret":"secret","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","redirect_uris":["http://localhost"]}}')
+    config.save_google_client_file(str(google))
+    class Flow:
+        def run_local_server(self,**_kwargs): raise TimeoutError("secret technical detail")
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    monkeypatch.setattr(InstalledAppFlow,"from_client_config",lambda *_args,**_kwargs:Flow())
+    with pytest.raises(CloudAuthorizationTimeoutError) as caught:
+        CloudPythonAuthService(database).authenticate("GOOGLE_DRIVE")
+    assert "secret technical detail" not in str(caught.value)
+
+
+def test_msal_silent_refresh_selects_the_linked_account(tmp_path: Path, monkeypatch):
+    database=Database(str(tmp_path/"smartfile.db")); config=CloudOAuthConfigService(database)
+    config.save_onedrive("client-id","common"); captured={}
+    class Application:
+        def __init__(self,*_args,**_kwargs): pass
+        def get_accounts(self,username=None): captured["username"]=username; return [{"username":username}]
+        def acquire_token_silent(self,_scopes,account=None):
+            captured["account"]=account
+            return {"access_token":"silent-access","expires_in":3600,"id_token_claims":{"preferred_username":account["username"]}}
+    import msal
+    monkeypatch.setattr(msal,"PublicClientApplication",Application)
+    result=CloudPythonAuthService(database).authenticate(
+        "ONEDRIVE",interactive=False,account_hint="conta@empresa.test"
+    )
+    assert captured["username"]=="conta@empresa.test"
+    assert result.email=="conta@empresa.test"

@@ -27,6 +27,24 @@ class CloudConflictError(CloudError):
     pass
 
 
+class CloudPermissionDeniedError(CloudError):
+    pass
+
+
+class CloudResourceNotFoundError(CloudError):
+    pass
+
+
+class CloudRateLimitError(CloudError):
+    def __init__(self, message: str, retry_after: str | None = None):
+        self.retry_after = retry_after
+        super().__init__(message)
+
+
+class CloudFileTooLargeError(CloudError):
+    pass
+
+
 Transport = Callable[[str, str, dict[str, str], bytes | None], tuple[int, dict[str, str], bytes]]
 
 
@@ -37,12 +55,40 @@ def urllib_transport(method: str, url: str, headers: dict[str, str], data: bytes
             return response.status, dict(response.headers.items()), response.read()
     except HTTPError as exc:
         body = exc.read()
+        headers = dict(exc.headers.items()) if exc.headers else {}
+        if exc.code == 308:
+            return exc.code, headers, body
+        if exc.code == 401:
+            raise CloudAuthenticationError(
+                "A autorização da nuvem expirou ou foi removida. Conecte novamente sua conta."
+            ) from exc
         if exc.code == 409:
             raise CloudConflictError("O provedor informou um conflito remoto.") from exc
         quota_markers = (b"quota", b"storageLimit", b"storageQuota", b"insufficientStorage")
-        if exc.code in {413, 507} or (exc.code == 403 and any(marker.lower() in body.lower() for marker in quota_markers)):
+        if exc.code == 413:
+            raise CloudFileTooLargeError(
+                "O arquivo excede o tamanho aceito pelo provedor de nuvem."
+            ) from exc
+        if exc.code == 507 or (exc.code == 403 and any(marker.lower() in body.lower() for marker in quota_markers)):
             raise CloudStorageLimitError(
                 "O armazenamento da nuvem está cheio. O documento local foi preservado."
+            ) from exc
+        if exc.code == 403:
+            raise CloudPermissionDeniedError(
+                "A conta não possui permissão para executar esta operação na nuvem."
+            ) from exc
+        if exc.code == 404:
+            raise CloudResourceNotFoundError(
+                "O arquivo ou a pasta não foi encontrado no provedor de nuvem."
+            ) from exc
+        if exc.code == 429:
+            raise CloudRateLimitError(
+                "O provedor limitou temporariamente as solicitações. A operação será repetida.",
+                headers.get("Retry-After") or headers.get("retry-after"),
+            ) from exc
+        if 500 <= exc.code <= 599:
+            raise CloudOfflineError(
+                "O provedor de nuvem está temporariamente indisponível."
             ) from exc
         raise CloudError(f"Falha no provedor de nuvem (HTTP {exc.code}).") from exc
     except (URLError, TimeoutError, OSError) as exc:

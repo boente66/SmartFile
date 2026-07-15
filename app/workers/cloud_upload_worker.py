@@ -18,7 +18,7 @@ class CloudUploadWorker(QThread):
             job = self.sync_service.enqueue_upload(self.document_id, self.organization_id)
             if job is not None:
                 self.progress.emit(40, "Enviando documento")
-                self.sync_service.process_next()
+                self.sync_service.process_next(self.organization_id)
             self.progress.emit(100, "Sincronização processada")
             self.succeeded.emit(job)
         except Exception as exc:

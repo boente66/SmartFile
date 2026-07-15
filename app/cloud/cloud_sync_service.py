@@ -9,7 +9,12 @@ from uuid import uuid4
 from app.cloud.cloud_job_queue import CloudJobQueue
 from app.cloud.cloud_manager import CloudManager
 from app.cloud.cloud_models import CloudOperation, CloudSyncState, CloudUploadRequest, SyncJob
-from app.cloud.cloud_provider import CloudConflictError, CloudOfflineError
+from app.cloud.cloud_provider import (
+    CloudAuthenticationError,
+    CloudConflictError,
+    CloudOfflineError,
+    CloudRateLimitError,
+)
 from app.database.database import Database
 from app.repositories.document_repository import DocumentRepository
 from app.errors.storage_exceptions import CloudStorageLimitError
@@ -32,8 +37,8 @@ class CloudSyncService:
         self.documents.update_cloud_state(document_id, CloudSyncState.PENDING_UPLOAD, settings.sync_mode)
         return self.queue.enqueue(document_id, CloudOperation.UPLOAD, settings.sync_mode)
 
-    def process_next(self) -> SyncJob | None:
-        job = self.queue.next_pending()
+    def process_next(self, organization_id: int | None = None) -> SyncJob | None:
+        job = self.queue.next_pending(organization_id)
         if job is None:
             return None
         self.queue.mark_running(job.id)
@@ -41,11 +46,11 @@ class CloudSyncService:
         if document is None:
             self.queue.retry(job.id, "Documento local não encontrado.")
             return job
-        provider = self.manager.provider_for(document.organization_id)
-        if provider is None:
-            self.queue.retry(job.id, "Sincronização local ou pausada.")
-            return job
         try:
+            provider = self.manager.provider_for(document.organization_id)
+            if provider is None:
+                self.queue.retry(job.id, "Sincronização local ou pausada.")
+                return job
             if job.operation == CloudOperation.UPLOAD:
                 self.documents.update_cloud_state(document.id, CloudSyncState.UPLOADING, job.provider)
                 local_path = Path(document.storage_path or document.path)
@@ -67,8 +72,21 @@ class CloudSyncService:
         except CloudConflictError as exc:
             self.documents.update_cloud_state(document.id, CloudSyncState.CONFLICT, job.provider, document.remote_id)
             self.queue.retry(job.id, str(exc))
-        except CloudOfflineError as exc:
-            self.documents.update_cloud_state(document.id, CloudSyncState.PENDING_UPLOAD, job.provider, document.remote_id)
+        except (CloudOfflineError, CloudRateLimitError) as exc:
+            pending_state = (
+                CloudSyncState.PENDING_DOWNLOAD
+                if job.operation == CloudOperation.DOWNLOAD
+                else CloudSyncState.PENDING_UPLOAD
+            )
+            self.documents.update_cloud_state(
+                document.id, pending_state, job.provider, document.remote_id
+            )
+            self.queue.retry(job.id, str(exc))
+        except CloudAuthenticationError as exc:
+            self.manager.mark_reauthentication_required(document.organization_id)
+            self.documents.update_cloud_state(
+                document.id, CloudSyncState.SYNC_ERROR, job.provider, document.remote_id
+            )
             self.queue.retry(job.id, str(exc))
         except CloudStorageLimitError:
             message = (

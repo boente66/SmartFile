@@ -89,10 +89,24 @@ class GoogleDriveProvider(CloudProvider):
         location = response_headers.get("Location") or response_headers.get("location")
         if not location:
             raise ValueError("O Google Drive não iniciou a sessão de upload.")
-        content = request.local_path.read_bytes()
-        _status, _headers, response = self._transport(
-            "PUT", location, {"Content-Type": mime, "Content-Length": str(len(content))}, content
-        )
+        total = request.local_path.stat().st_size
+        chunk_size = 8 * 1024 * 1024
+        response = b""
+        with request.local_path.open("rb") as handle:
+            start = 0
+            while start < total:
+                chunk = handle.read(chunk_size)
+                end = start + len(chunk) - 1
+                _status, _headers, response = self._transport(
+                    "PUT", location,
+                    {
+                        "Content-Type": mime,
+                        "Content-Length": str(len(chunk)),
+                        "Content-Range": f"bytes {start}-{end}/{total}",
+                    },
+                    chunk,
+                )
+                start = end + 1
         return self._metadata(json.loads(response.decode()))
 
     def download(self, remote_id: str, destination: Path) -> Path:

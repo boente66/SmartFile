@@ -31,13 +31,19 @@ class CloudJobQueue:
         )
         return self.get(cursor.lastrowid)
 
-    def next_pending(self) -> SyncJob | None:
-        row = self.database.fetch_one(
-            """
-            SELECT * FROM sync_jobs WHERE status IN ('PENDING', 'RETRY')
-            ORDER BY attempts, created_at, id LIMIT 1
-            """
-        )
+    def next_pending(self, organization_id: int | None = None) -> SyncJob | None:
+        if organization_id is None:
+            row = self.database.fetch_one(
+                """SELECT * FROM sync_jobs WHERE status IN ('PENDING', 'RETRY')
+                   ORDER BY attempts, created_at, id LIMIT 1"""
+            )
+        else:
+            row = self.database.fetch_one(
+                """SELECT j.* FROM sync_jobs j JOIN documents d ON d.id=j.document_id
+                   WHERE j.status IN ('PENDING','RETRY') AND d.organization_id=?
+                   ORDER BY j.attempts,j.created_at,j.id LIMIT 1""",
+                (organization_id,),
+            )
         return self._job(row) if row else None
 
     def mark_running(self, job_id: int) -> None:
@@ -56,10 +62,17 @@ class CloudJobQueue:
             raise ValueError("Job de sincronização não encontrado.")
         return self._job(row)
 
-    def pending_count(self) -> int:
-        row = self.database.fetch_one(
-            "SELECT COUNT(*) AS total FROM sync_jobs WHERE status IN ('PENDING', 'RETRY', 'RUNNING')"
-        )
+    def pending_count(self, organization_id: int | None = None) -> int:
+        if organization_id is None:
+            row = self.database.fetch_one(
+                "SELECT COUNT(*) AS total FROM sync_jobs WHERE status IN ('PENDING', 'RETRY', 'RUNNING')"
+            )
+        else:
+            row = self.database.fetch_one(
+                """SELECT COUNT(*) AS total FROM sync_jobs j JOIN documents d ON d.id=j.document_id
+                   WHERE j.status IN ('PENDING','RETRY','RUNNING') AND d.organization_id=?""",
+                (organization_id,),
+            )
         return int(row["total"])
 
     def _update(self, job_id: int, status: str, error: str | None, increment: bool = False) -> None:

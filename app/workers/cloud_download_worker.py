@@ -23,7 +23,7 @@ class CloudDownloadWorker(QThread):
             job = self.sync_service.queue.enqueue(
                 self.document.id, CloudOperation.DOWNLOAD, self.document.cloud_provider
             )
-            self.sync_service.process_next()
+            self.sync_service.process_next(self.document.organization_id)
             self.progress.emit(100, "Download concluído")
             self.succeeded.emit(job)
         except Exception as exc:

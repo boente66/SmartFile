@@ -540,7 +540,9 @@ class DocumentController:
         if (
             settings.sync_mode != "LOCAL"
             and not settings.paused
-            and self.service.cloud_sync_service.queue.pending_count() > 0
+            and self.service.cloud_sync_service.queue.pending_count(
+                self.service.active_organization_id
+            ) > 0
             and self._cloud_worker is None
         ):
             self.on_sync_now()
