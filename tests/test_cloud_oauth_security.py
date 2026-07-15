@@ -101,12 +101,16 @@ def test_common_user_never_sees_technical_oauth_action():
     app = QApplication.instance() or QApplication([])
     view = DocumentView()
     common = SessionContext()
+    from app.models.user_model import UserModel
+    common.current_user = UserModel(1,"comum",None,"Comum",None,True,False,None)
     common.permissions = {"cloud.view", "cloud.connect"}
     view.apply_cloud_permissions(common)
     assert not view.oauth_settings_action.isVisible()
-    common.permissions.add("cloud.oauth.configure")
+    assert view.btn_configure_provider.isHidden()
+    common.current_user = UserModel(2,"admin",None,"Administrador",None,True,True,None)
     view.apply_cloud_permissions(common)
     assert view.oauth_settings_action.isVisible()
+    assert not view.btn_configure_provider.isHidden()
     view.close()
     app.processEvents()
 
@@ -134,6 +138,15 @@ def test_msal_cache_is_kept_out_of_oauth_configuration_file(tmp_path, monkeypatc
     encrypted_config = service.path.read_text(encoding="utf-8")
     assert "serialized-msal-secret" not in encrypted_config
     assert "serialized-msal-secret" not in (database.data_dir / ".cloud_token_store").read_text()
+
+
+def test_oauth_cache_can_be_removed_without_deleting_public_provider_config(tmp_path, monkeypatch):
+    database = Database(str(tmp_path / "smartfile.db")); service = CloudOAuthConfigurationService(database)
+    service.save_onedrive("public-client-id", "common")
+    service.save_cache("ONEDRIVE", "private-cache")
+    service.delete_cache("ONEDRIVE")
+    assert service.load_cache("ONEDRIVE") is None
+    assert service.get_onedrive_config()["client_id"] == "public-client-id"
 
 
 @pytest.mark.parametrize(

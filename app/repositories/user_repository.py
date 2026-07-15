@@ -36,6 +36,9 @@ class UserRepository(BaseRepository):
     def count(self) -> int:
         return int(self._fetch_one("SELECT COUNT(*) total FROM users")["total"])
 
+    def count_active(self) -> int:
+        return int(self._fetch_one("SELECT COUNT(*) total FROM users WHERE is_active=1")["total"])
+
     def search(self, query: str):
         value=f"%{query.strip()}%"
         return [self._entity(r) for r in self._fetch_all(

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import logging
 import re
+import secrets
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from app.auth.password_service import PasswordService
 from app.auth.session_context import SessionContext
@@ -11,7 +13,7 @@ from app.database.database import Database
 from app.entities.organization_member_entity import OrganizationMemberEntity
 from app.entities.user_entity import UserEntity
 from app.errors.auth_exceptions import (
-    EmailAlreadyExistsError, InvalidCredentialsError, PasswordPolicyError,
+    AccountDeletionError, EmailAlreadyExistsError, InvalidCredentialsError, PasswordPolicyError,
     RegistrationError, UserAlreadyExistsError, UserInactiveError, UserLockedError,
 )
 from app.models.registration_request import RegistrationRequest
@@ -42,7 +44,7 @@ class AuthService:
         self.audit = AuditService(database)
 
     def has_users(self) -> bool:
-        return self.users.count() > 0
+        return self.users.count_active() > 0
 
     def register_first_user(self, request: RegistrationRequest) -> UserModel:
         if self.has_users():
@@ -51,19 +53,20 @@ class AuthService:
             if request.email and self.users.find_by_email(request.email.strip().lower()):
                 raise EmailAlreadyExistsError("E-mail já cadastrado.")
             raise RegistrationError("O cadastro inicial já foi concluído.")
-        return self._register_user(request, use_existing_default=True)
+        return self._register_user(request, use_existing_default=True, is_superuser=True)
 
     def register_user(self, request: RegistrationRequest) -> UserModel:
         """Cria uma conta local com organização e armazenamento lógico isolados."""
         if not self.has_users():
             return self.register_first_user(request)
-        return self._register_user(request, use_existing_default=False)
+        return self._register_user(request, use_existing_default=False, is_superuser=False)
 
     def _register_user(
         self,
         request: RegistrationRequest,
         *,
         use_existing_default: bool,
+        is_superuser: bool,
     ) -> UserModel:
         username, email, display_name = self._validate_registration(request)
         now = self._now()
@@ -75,6 +78,7 @@ class AuthService:
                     username=username, email=email, display_name=display_name,
                     phone=request.phone.strip() if request.phone else None,
                     password_hash=self.passwords.hash_password(request.password),
+                    is_superuser=is_superuser,
                     avatar_path=stored_avatar,
                     avatar_initials=self.avatars.initials(display_name), avatar_color="#2563eb",
                     created_at=now, updated_at=now,
@@ -178,6 +182,115 @@ class AuthService:
         self._validate_password(user.username, new_password, confirmation)
         user.password_hash = self.passwords.hash_password(new_password); user.updated_at = self._now()
         self.users.update(user); logger.info("Senha alterada user_id=%s", user.id)
+
+    def delete_current_account(self, current_password: str, confirmation: str) -> None:
+        """Desativa e anonimiza a conta local sem apagar documentos ou auditoria."""
+        if not self.session_context.is_authenticated():
+            raise AccountDeletionError("Sessão não autenticada.")
+        if confirmation.strip().upper() != "EXCLUIR":
+            raise AccountDeletionError("Digite EXCLUIR para confirmar a remoção da conta.")
+        user = self.users.find_by_id(self.session_context.current_user.id)
+        if user is None or not self.passwords.verify_password(current_password, user.password_hash):
+            raise AccountDeletionError("Senha atual inválida.")
+
+        memberships = self.members.find_by_user(user.id)
+        blocked = []
+        for membership in memberships:
+            if (
+                membership.role == "OWNER"
+                and self.members.count_active_owners(membership.organization_id) <= 1
+                and self.members.count_active(membership.organization_id) > 1
+            ):
+                organization = self.organizations.repository.find_by_id(membership.organization_id)
+                blocked.append(organization.name if organization else str(membership.organization_id))
+        if blocked:
+            names = ", ".join(blocked)
+            raise AccountDeletionError(
+                "Transfira a propriedade antes de excluir a conta. "
+                f"Organizações pendentes: {names}."
+            )
+
+        now = self._now()
+        previous_avatar = user.avatar_path
+        token_refs: list[str] = []
+        cache_providers: set[str] = set()
+        with self.database.transaction() as connection:
+            self.audit.record(
+                "ACCOUNT_DELETED", user_id=user.id,
+                organization_id=getattr(self.session_context.active_organization, "id", None),
+                target_type="user", target_id=user.id,
+                description="Conta local excluída e dados de identificação anonimizados",
+            )
+            for membership in memberships:
+                if self.members.count_active(membership.organization_id) == 1:
+                    setting = connection.execute(
+                        "SELECT cloud_account_id FROM cloud_settings WHERE organization_id=?",
+                        (membership.organization_id,),
+                    ).fetchone()
+                    account_id = setting["cloud_account_id"] if setting else None
+                    connection.execute(
+                        """UPDATE cloud_settings SET cloud_account_id=NULL,sync_mode='LOCAL',
+                           paused=0,delta_token=NULL WHERE organization_id=?""",
+                        (membership.organization_id,),
+                    )
+                    if account_id:
+                        linked = connection.execute(
+                            "SELECT COUNT(*) total FROM cloud_settings WHERE cloud_account_id=?",
+                            (account_id,),
+                        ).fetchone()["total"]
+                        if linked == 0:
+                            account = connection.execute(
+                                "SELECT provider,token_ref FROM cloud_accounts WHERE id=?",
+                                (account_id,),
+                            ).fetchone()
+                            if account:
+                                if account["token_ref"]:
+                                    token_refs.append(account["token_ref"])
+                                cache_providers.add(account["provider"])
+                                connection.execute("DELETE FROM cloud_accounts WHERE id=?", (account_id,))
+                membership.status = "REMOVED"
+                membership.deactivated_at = membership.updated_at = now
+                self.members.update(membership)
+
+            connection.execute(
+                "UPDATE sessions SET revoked_at=COALESCE(revoked_at,?) WHERE user_id=?",
+                (now, user.id),
+            )
+            user.username = f"deleted_{user.id}_{secrets.token_hex(4)}"
+            user.email = None
+            user.display_name = "Conta excluída"
+            user.phone = None
+            user.password_hash = self.passwords.hash_password(secrets.token_urlsafe(48))
+            user.is_active = False
+            user.is_superuser = False
+            user.failed_login_attempts = 0
+            user.locked_until = None
+            user.avatar_path = None
+            user.avatar_initials = None
+            user.must_change_password = False
+            user.updated_at = now
+            self.users.update(user)
+
+        from app.cloud.cloud_oauth_config_service import CloudOAuthConfigService
+        try:
+            config = CloudOAuthConfigService(self.database)
+            for reference in token_refs:
+                config.token_store.delete(reference)
+            for provider in cache_providers:
+                remaining = self.database.fetch_one(
+                    "SELECT COUNT(*) total FROM cloud_accounts WHERE provider=?", (provider,)
+                )["total"]
+                if remaining == 0:
+                    config.delete_cache(provider)
+            if previous_avatar:
+                avatar = Path(previous_avatar).resolve()
+                if avatar.parent == self.avatars.directory.resolve():
+                    avatar.unlink(missing_ok=True)
+        except Exception:
+            logger.exception("Falha na limpeza complementar da conta excluída user_id=%s", user.id)
+        finally:
+            logger.info("Conta local excluída user_id=%s", user.id)
+            self.session_context.logout()
 
     def _validate_registration(self, request):
         username=request.username.strip(); display_name=" ".join(request.display_name.split()); email=request.email.strip().lower() if request.email else None

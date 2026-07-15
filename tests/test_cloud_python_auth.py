@@ -28,12 +28,28 @@ def test_msal_interactive_flow_is_used(tmp_path: Path,monkeypatch):
         def __init__(self,client_id,authority,token_cache=None): captured.update(client_id=client_id,authority=authority,token_cache=token_cache)
         def get_accounts(self): return []
         def acquire_token_silent(self,*_args,**_kwargs): return None
-        def acquire_token_interactive(self,**kwargs): captured.update(kwargs); return {"access_token":"access","refresh_token":"refresh","expires_in":3600,"id_token_claims":{"preferred_username":"user@example.com","name":"Pessoa"}}
+        def acquire_token_interactive(self,scopes,prompt=None,login_hint=None,timeout=None): captured.update(scopes=scopes,prompt=prompt,login_hint=login_hint,timeout=timeout); return {"access_token":"access","refresh_token":"refresh","expires_in":3600,"id_token_claims":{"preferred_username":"user@example.com","name":"Pessoa"}}
     import msal
     monkeypatch.setattr(msal,"PublicClientApplication",Application)
     result=CloudPythonAuthService(database).authenticate("ONEDRIVE")
     assert result.access_token=="access" and result.email=="user@example.com"
-    assert captured["client_id"]=="client-id" and captured["redirect_uri"]=="http://localhost"
+    assert captured["client_id"]=="client-id" and captured["timeout"]==180
+
+
+@pytest.mark.parametrize(
+    ("description", "expected"),
+    [
+        ("AADSTS50011: reply URL mismatch", "http://localhost"),
+        ("AADSTS700016: application was not found", "Client ID"),
+        ("AADSTS7000218: request body must contain client_secret", "cliente público"),
+        ("AADSTS65001: consent required", "consentimento"),
+    ],
+)
+def test_microsoft_configuration_errors_are_translated(description, expected):
+    message = CloudPythonAuthService._microsoft_result_message(
+        {"error": "invalid_request", "error_description": description}
+    )
+    assert expected in message
 
 
 def test_google_installed_app_local_server_flow_is_used(tmp_path: Path,monkeypatch):

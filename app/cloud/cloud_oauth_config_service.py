@@ -145,6 +145,26 @@ class CloudOAuthConfigurationService:
             data.pop("_token_caches", None)
         self._save(data)
 
+    def delete_cache(self, provider: str) -> None:
+        """Remove somente o cache OAuth do provedor, preservando a configuração pública."""
+        provider = self._provider(provider)
+        data = self.load()
+        references = data.get("_token_cache_refs") or {}
+        reference = references.pop(provider, None)
+        if reference:
+            self.token_store.delete(reference)
+        if references:
+            data["_token_cache_refs"] = references
+        else:
+            data.pop("_token_cache_refs", None)
+        caches = data.get("_token_caches") or {}
+        caches.pop(provider, None)
+        if caches:
+            data["_token_caches"] = caches
+        else:
+            data.pop("_token_caches", None)
+        self._save(data)
+
     def _candidates(self, provider: str):
         bundled = self._bundled(provider)
         if bundled:

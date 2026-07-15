@@ -139,6 +139,12 @@ class DocumentView(QWidget):
         cloud_account_menu.addAction("Google Drive",lambda:self.cloud_login_requested.emit("GOOGLE_DRIVE"))
         self.btn_add_cloud.setMenu(cloud_account_menu)
         cloud_row.addWidget(self.btn_add_cloud)
+        self.btn_configure_provider = QPushButton("Configurar provedor")
+        self.btn_configure_provider.setObjectName("configureCloudProviderButton")
+        IconProvider.apply(self.btn_configure_provider, "provider_settings")
+        self.btn_configure_provider.clicked.connect(self.cloud_oauth_settings_requested.emit)
+        self.btn_configure_provider.setVisible(False)
+        cloud_row.addWidget(self.btn_configure_provider)
         self.cloud_status_label = QLabel("Armazenamento local")
         self.cloud_status_label.setObjectName("cloudStatusLabel")
         cloud_row.addWidget(self.cloud_status_label)
@@ -206,11 +212,11 @@ class DocumentView(QWidget):
         sync_menu.addAction("Retomar", self.resume_sync_requested.emit)
         sync_menu.addSeparator()
         sync_menu.addAction("Conectar conta", self.add_cloud_account_requested.emit)
-        sync_menu.addAction("Desconectar", self.disconnect_cloud_requested.emit)
+        sync_menu.addAction("Remover conta/login", self.disconnect_cloud_requested.emit)
         sync_menu.addAction("Histórico", self.cloud_history_requested.emit)
         sync_menu.addSeparator()
         self.oauth_settings_action = sync_menu.addAction(
-            "Configuração OAuth avançada", self.cloud_oauth_settings_requested.emit
+            "Configurar provedor", self.cloud_oauth_settings_requested.emit
         )
         self.oauth_settings_action.setVisible(False)
         self.btn_sync.setMenu(sync_menu)
@@ -429,12 +435,13 @@ class DocumentView(QWidget):
         can_view = context is None or context.has_permission("cloud.view")
         can_connect = context is None or context.has_permission("cloud.connect")
         can_sync = context is None or context.has_permission("cloud.sync")
-        can_configure = context is not None and context.has_permission("cloud.oauth.configure")
+        can_configure = context is not None and context.is_system_admin()
         self.cloud_combo.setVisible(can_view)
         self.cloud_status_label.setVisible(can_view)
         self.btn_add_cloud.setVisible(can_view and can_connect)
         self.btn_sync.setVisible(can_view and can_sync)
         self.oauth_settings_action.setVisible(can_configure)
+        self.btn_configure_provider.setVisible(can_configure)
 
     def set_storage_usage(self, summary) -> None:
         used = self._format_gb(summary.used_bytes)

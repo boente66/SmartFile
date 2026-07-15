@@ -178,7 +178,7 @@ Não foram criados providers adicionais nem removidas APIs públicas existentes.
 
 | Verificação | Resultado | Classificação |
 |---|---|---|
-| Suíte `pytest` | 172 testes aprovados | ✔ Validado por testes automatizados |
+| Suíte `pytest` | 183 testes aprovados | ✔ Validado por testes automatizados |
 | Compilação Python | Aprovada por `compileall` | ✔ Validado por testes automatizados |
 | Integridade de dependências | `pip check`: nenhuma dependência quebrada | ✔ Validado por testes automatizados |
 | Qualidade do diff textual | `git diff --check`: aprovado para arquivos-fonte | ✔ Validado por testes automatizados |
@@ -269,11 +269,27 @@ registrados em logs.
 | Fallback cifrado e migração | Cobertos | ✔ Validado por testes automatizados |
 | Revogação remota | Ausente | ✖ Não implementado |
 
+## Adendo — Administração OAuth e exclusão de contas
+
+Após a emissão inicial deste relatório, foram implementados e validados:
+
+- exclusão da própria conta mediante senha atual e confirmação textual;
+- anonimização dos dados pessoais, revogação de sessões e remoção de vínculos;
+- bloqueio da exclusão quando for necessária transferência de propriedade;
+- remoção do login de nuvem, tokens locais e cache OAuth não compartilhado;
+- preservação dos documentos locais e dos registros de auditoria;
+- botão **Configurar provedor** exclusivo do administrador global;
+- separação entre `is_superuser` e o papel `ADMIN` de uma organização;
+- migration 11, que garante um administrador global em instalações existentes;
+- instruções administrativas específicas para Microsoft Entra e Google Cloud.
+
+O total da suíte após as correções OAuth passou para 183 testes aprovados.
+
 ## 15. Conclusão técnica
 
 A Cloud Layer apresenta arquitetura coerente com o modelo local-first do
 SmartFile e, após as correções descritas, demonstrou estabilidade nos testes
-automatizados. A suíte de 172 testes foi aprovada, assim como compilação,
+automatizados. A suíte de 183 testes foi aprovada, assim como compilação,
 integridade de dependências e verificações de qualidade do diff.
 
 Foram confirmados em ambiente real o keyring, o callback loopback, a detecção de

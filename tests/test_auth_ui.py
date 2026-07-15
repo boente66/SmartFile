@@ -13,6 +13,7 @@ from app.views.first_user_setup_view import FirstUserSetupView
 from app.views.login_view import LoginView
 from app.views.main_view import MainView
 from app.views.account_menu import AccountMenu
+from app.views.delete_account_dialog import DeleteAccountDialog
 
 _APPLICATION = None
 
@@ -130,3 +131,21 @@ def test_account_menu_hides_member_management_without_permission():
     _app(); menu=AccountMenu(); from app.auth.session_context import SessionContext
     context=SessionContext(); context.permissions={"organization.view","profile.view","session.view"}; menu.apply_permissions(context)
     assert menu.manage_organizations_action.isVisible(); assert menu.members_action.isVisible() is False
+    assert menu.provider_settings_action.isVisible() is False
+    assert menu.delete_account_action.isVisible()
+
+
+def test_provider_configuration_is_visible_only_with_administrative_permission():
+    _app(); menu=AccountMenu(); from app.auth.session_context import SessionContext
+    from app.models.user_model import UserModel
+    context=SessionContext(); context.permissions={"cloud.view"}; context.current_user=UserModel(1,"comum",None,"Comum",None,True,False,None); menu.apply_permissions(context)
+    assert not menu.provider_settings_action.isVisible()
+    context.current_user=UserModel(2,"admin",None,"Admin",None,True,True,None); menu.apply_permissions(context)
+    assert menu.provider_settings_action.isVisible()
+
+
+def test_delete_account_dialog_protects_password_and_requires_explicit_text():
+    _app(); dialog=DeleteAccountDialog(); dialog.password.setText("segredo"); dialog.confirmation.setText("EXCLUIR")
+    assert dialog.password.echoMode()==QLineEdit.EchoMode.Password
+    assert dialog.values()==("segredo","EXCLUIR")
+    dialog.close()

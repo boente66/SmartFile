@@ -393,6 +393,7 @@ class DocumentController:
                 "CLOUD_CONNECT_FAILED", self.service.active_organization_id, None,
                 f"Autorização {provider} não concluída",
             )
+            self._refresh_cloud(provider)
             QMessageBox.warning(self.view,"Autenticação da nuvem",message)
             self.view.set_status("Autenticação da nuvem não concluída")
 
@@ -401,7 +402,10 @@ class DocumentController:
 
     def on_configure_cloud_oauth(self):
         try:
-            self._require_cloud_permission("cloud.oauth.configure")
+            if self.session_context is None or not self.session_context.is_system_admin():
+                raise CloudPermissionError(
+                    "Somente o administrador do sistema pode configurar provedores OAuth."
+                )
             dialog = CloudApiSettingsDialog(
                 CloudOAuthConfigService(self.service.database),
                 self.view,
@@ -447,11 +451,11 @@ class DocumentController:
             QMessageBox.warning(self.view, "Desconectar nuvem", str(exc))
             return
         answer = QMessageBox.question(
-            self.view, "Desconectar nuvem",
-            "Desconectar a conta desta organização? Os documentos locais serão preservados."
+            self.view, "Remover conta da nuvem",
+            "Remover o login da nuvem desta organização? Os tokens locais serão apagados e os documentos locais serão preservados."
         )
         if answer == QMessageBox.StandardButton.Yes:
-            self.service.cloud_manager.disconnect(self.service.active_organization_id)
+            self.service.cloud_manager.remove_account(self.service.active_organization_id)
             self._refresh_cloud()
 
     def on_cloud_history(self):

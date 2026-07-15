@@ -59,7 +59,7 @@ Esta classificação não declara a Cloud Layer pronta para produção com conta
 
 ## Cobertura automatizada
 
-- 172 testes aprovados;
+- 183 testes aprovados;
 - OneDrive e Google: OAuth simulado, PKCE, perfil e refresh;
 - upload pequeno e grande, download, metadata, rename, move e delete;
 - fila offline, retry, limite de tentativas e reconexão;

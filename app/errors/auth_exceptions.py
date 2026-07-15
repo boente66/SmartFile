@@ -12,3 +12,4 @@ class AdministrationError(AuthenticationError): pass
 class LastOwnerError(AdministrationError): pass
 class MembershipError(AdministrationError): pass
 class AvatarError(AdministrationError): pass
+class AccountDeletionError(AuthenticationError): pass

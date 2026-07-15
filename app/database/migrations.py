@@ -7,7 +7,7 @@ from pathlib import Path
 from app.errors.persistence_exceptions import DatabaseError
 
 logger = logging.getLogger(__name__)
-CURRENT_SCHEMA_VERSION = 10
+CURRENT_SCHEMA_VERSION = 11
 GIB = 1024 ** 3
 
 
@@ -293,6 +293,15 @@ def _upgrade_administration(connection: sqlite3.Connection) -> None:
     )
 
 
+def _upgrade_system_administrator(connection: sqlite3.Connection) -> None:
+    """Garante um administrador global sem ampliar privilégios de ADMIN organizacional."""
+    connection.execute(
+        """UPDATE users SET is_superuser=1, updated_at=COALESCE(updated_at, datetime('now'))
+           WHERE id=(SELECT id FROM users WHERE is_active=1 ORDER BY id LIMIT 1)
+             AND NOT EXISTS (SELECT 1 FROM users WHERE is_superuser=1 AND is_active=1)"""
+    )
+
+
 def _upgrade_storage_quotas(connection: sqlite3.Connection) -> None:
     """Adiciona cotas lógicas em GB e migra o uso dos arquivos gerenciados."""
     organization_columns = _columns(connection, "organizations")
@@ -410,6 +419,7 @@ def migrate(connection: sqlite3.Connection, schema_path: Path) -> int:
             _upgrade_cloud(connection)
             _upgrade_auth(connection)
             _upgrade_administration(connection)
+            _upgrade_system_administrator(connection)
             _upgrade_storage_quotas(connection)
             connection.execute(
                 "UPDATE documents SET source_path = path WHERE source_path IS NULL"

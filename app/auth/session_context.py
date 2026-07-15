@@ -11,7 +11,7 @@ from app.models.user_model import UserModel
 
 ROLE_PERMISSIONS = {
     "OWNER": {"*"},
-    "ADMIN": {"document.*", "folder.*", "tools.use", "organization.view", "organization.create", "organization.update", "member.view", "member.add", "member.create_user", "member.change_role", "member.deactivate", "member.remove", "profile.view", "profile.update", "session.view", "session.revoke", "cloud.view", "cloud.connect", "cloud.disconnect", "cloud.sync", "cloud.oauth.configure"},
+    "ADMIN": {"document.*", "folder.*", "tools.use", "organization.view", "organization.create", "organization.update", "member.view", "member.add", "member.create_user", "member.change_role", "member.deactivate", "member.remove", "profile.view", "profile.update", "session.view", "session.revoke", "cloud.view", "cloud.connect", "cloud.disconnect", "cloud.sync"},
     "EDITOR": {"document.create", "document.import", "document.update", "document.open", "document.view", "document.search", "folder.*", "tools.use", "organization.view", "organization.create", "profile.view", "profile.update", "session.view", "session.revoke", "cloud.view", "cloud.sync"},
     "VIEWER": {"document.view", "document.open", "document.search", "organization.view", "profile.view", "profile.update", "session.view", "session.revoke", "cloud.view"},
 }
@@ -29,6 +29,9 @@ class SessionContext:
 
     def is_authenticated(self) -> bool:
         return self.current_user is not None and self.session_id is not None
+
+    def is_system_admin(self) -> bool:
+        return bool(self.current_user and self.current_user.is_superuser)
 
     def login(self, user, session_id, organization, memberships) -> None:
         self.current_user = user; self.session_id = session_id

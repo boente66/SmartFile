@@ -6,7 +6,7 @@ import pytest
 from app.auth.session_context import SessionContext
 from app.database.database import Database
 from app.errors.auth_exceptions import (
-    EmailAlreadyExistsError, InvalidCredentialsError, PasswordPolicyError,
+    AccountDeletionError, EmailAlreadyExistsError, InvalidCredentialsError, PasswordPolicyError,
     RegistrationError, UserAlreadyExistsError, UserInactiveError,
 )
 from app.models.registration_request import RegistrationRequest
@@ -34,6 +34,7 @@ def test_first_access_registration_hash_membership_session_and_logout(tmp_path: 
     member = database.fetch_one("SELECT * FROM organization_members WHERE user_id=?", (user.id,))
     session = database.fetch_one("SELECT * FROM sessions WHERE user_id=?", (user.id,))
     assert stored["password_hash"].startswith("$argon2id$")
+    assert stored["is_superuser"] == 1
     assert "senha-segura" not in stored["password_hash"]
     assert member["role"] == "OWNER"
     assert session["token_hash"] and "senha" not in session["token_hash"]
@@ -102,7 +103,7 @@ def test_additional_local_user_gets_isolated_organization_and_template(tmp_path:
     )
     second_organization = auth.session_context.active_organization.id
 
-    assert second.id != first.id
+    assert second.id != first.id and second.is_superuser is False
     assert second_organization != first_organization
     membership = auth.members.find(second_organization, second.id)
     assert membership is not None and membership.role == "OWNER"
@@ -135,7 +136,17 @@ def test_auth_migration_is_idempotent(tmp_path: Path):
     database = Database(str(tmp_path / "smartfile.db")); Database(str(tmp_path / "smartfile.db"))
     tables = {row["name"] for row in database.fetch_all("SELECT name FROM sqlite_master WHERE type='table'")}
     assert {"users", "sessions", "organization_members"} <= tables
-    assert database.connect().execute("PRAGMA user_version").fetchone()[0] == 10
+    assert database.connect().execute("PRAGMA user_version").fetchone()[0] == 11
+
+
+def test_migration_promotes_first_active_user_to_system_administrator(tmp_path: Path):
+    path = tmp_path / "smartfile.db"; database = Database(str(path)); auth = AuthService(database)
+    user = auth.register_first_user(_request())
+    database.execute_query("UPDATE users SET is_superuser=0 WHERE id=?", (user.id,))
+    database.connect().execute("PRAGMA user_version=10"); database.close()
+    reopened = Database(str(path))
+    assert reopened.fetch_one("SELECT is_superuser FROM users WHERE id=?", (user.id,))["is_superuser"] == 1
+    assert reopened.connect().execute("PRAGMA user_version").fetchone()[0] == 11
 
 
 def test_repeated_failures_lock_account_without_revealing_credentials(tmp_path: Path):
@@ -165,3 +176,42 @@ def test_session_context_switches_only_to_linked_organization():
     assert context.has_permission("document.import") is True
     with pytest.raises(Exception):
         context.set_active_organization(OrganizationEntity(id=3, name="Terceira"))
+
+
+def test_delete_account_anonymizes_identity_revokes_sessions_and_allows_new_setup(tmp_path: Path):
+    database = Database(str(tmp_path / "smartfile.db")); auth = AuthService(database)
+    user = auth.register_first_user(_request())
+    avatar = database.data_dir / "avatars" / "fake.png"; avatar.parent.mkdir(exist_ok=True); avatar.write_bytes(b"avatar")
+    entity = auth.users.find_by_id(user.id); entity.avatar_path = str(avatar); auth.users.update(entity)
+
+    with pytest.raises(AccountDeletionError):
+        auth.delete_current_account("senha-incorreta", "EXCLUIR")
+    auth.delete_current_account("senha-segura", "EXCLUIR")
+
+    deleted = auth.users.find_by_id(user.id)
+    assert deleted.is_active is False and deleted.email is None
+    assert deleted.username.startswith(f"deleted_{user.id}_")
+    assert deleted.display_name == "Conta excluída" and deleted.avatar_path is None
+    assert auth.session_context.is_authenticated() is False and auth.has_users() is False
+    assert not avatar.exists()
+    assert database.fetch_one(
+        "SELECT COUNT(*) total FROM sessions WHERE user_id=? AND revoked_at IS NULL", (user.id,)
+    )["total"] == 0
+    assert database.fetch_one(
+        "SELECT status FROM organization_members WHERE user_id=?", (user.id,)
+    )["status"] == "REMOVED"
+    replacement = auth.register_first_user(_request(username="nova", email="nova@example.com"))
+    assert replacement.is_active and auth.session_context.is_authenticated()
+
+
+def test_delete_account_requires_ownership_transfer_when_other_members_exist(tmp_path: Path):
+    database = Database(str(tmp_path / "smartfile.db")); auth = AuthService(database)
+    owner = auth.register_first_user(_request())
+    organization_id = auth.session_context.active_organization.id
+    from app.services.member_service import MemberService
+    MemberService(database, auth.session_context).create_user(
+        organization_id, "Outro usuário", "outro", "senha-temporaria", role="EDITOR"
+    )
+    with pytest.raises(AccountDeletionError, match="Transfira a propriedade"):
+        auth.delete_current_account("senha-segura", "EXCLUIR")
+    assert auth.users.find_by_id(owner.id).is_active is True

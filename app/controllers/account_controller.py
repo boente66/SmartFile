@@ -1,10 +1,13 @@
 from PyQt6.QtWidgets import QDialog,QInputDialog,QLineEdit,QMessageBox
 
+from app.cloud.cloud_oauth_config_service import CloudOAuthConfigService
 from app.services.member_service import MemberService
 from app.services.organization_admin_service import OrganizationAdminService
 from app.services.profile_service import ProfileService
 from app.views.account_menu import AccountMenu
 from app.views.change_password_dialog import ChangePasswordDialog
+from app.views.cloud_api_settings_dialog import CloudApiSettingsDialog
+from app.views.delete_account_dialog import DeleteAccountDialog
 from app.views.member_management_view import MemberManagementView
 from app.views.organization_dialog import OrganizationDialog
 from app.views.organization_management_view import OrganizationManagementView
@@ -14,7 +17,7 @@ from app.views.profile_dialog import ProfileDialog
 class AccountController:
     def __init__(self,main_view,auth_service,app_controller,logout_callback):
         self.main_view=main_view; self.auth=auth_service; self.app_controller=app_controller; self.logout_callback=logout_callback; self.organizations=OrganizationAdminService(auth_service.database,auth_service.session_context); self.members=MemberService(auth_service.database,auth_service.session_context); self.profile=ProfileService(auth_service.database,auth_service.session_context)
-        self.menu=AccountMenu(main_view); self.menu.profile_action.triggered.connect(self.edit_profile); self.menu.change_password_action.triggered.connect(self.change_password); self.menu.manage_organizations_action.triggered.connect(self.manage_organizations); self.menu.members_action.triggered.connect(lambda:self.manage_members(self.auth.session_context.active_organization.id)); self.menu.sessions_action.triggered.connect(self.show_sessions); self.menu.logout_action.triggered.connect(self.logout_callback); self.menu.aboutToShow.connect(self.refresh); self.refresh()
+        self.menu=AccountMenu(main_view); self.menu.profile_action.triggered.connect(self.edit_profile); self.menu.change_password_action.triggered.connect(self.change_password); self.menu.manage_organizations_action.triggered.connect(self.manage_organizations); self.menu.members_action.triggered.connect(lambda:self.manage_members(self.auth.session_context.active_organization.id)); self.menu.sessions_action.triggered.connect(self.show_sessions); self.menu.provider_settings_action.triggered.connect(self.configure_provider); self.menu.delete_account_action.triggered.connect(self.delete_account); self.menu.logout_action.triggered.connect(self.logout_callback); self.menu.aboutToShow.connect(self.refresh); self.refresh()
 
     def refresh(self):
         context=self.auth.session_context; user=context.current_user; organizations=[o for o,_,_ in self.organizations.list_for_current_user()]; self.menu.set_organizations(organizations,getattr(context.active_organization,"id",None),self.switch_organization); self.menu.apply_permissions(context); self.main_view.set_account(user.display_name if user else "Conta",self.menu)
@@ -86,3 +89,26 @@ class AccountController:
     def show_sessions(self):
         sessions=self.profile.active_sessions(); text="\n".join(f"{row['device_name']} — {row['created_at']}" for row in sessions) or "Nenhuma sessão ativa."; result=QMessageBox.question(self.main_view,"Sessões",text+"\n\nEncerrar as outras sessões?")
         if result==QMessageBox.StandardButton.Yes:self.profile.revoke_other_sessions()
+
+    def configure_provider(self):
+        try:
+            if not self.auth.session_context.is_system_admin():
+                raise PermissionError("Somente o administrador do sistema pode configurar provedores OAuth.")
+            CloudApiSettingsDialog(
+                CloudOAuthConfigService(self.auth.database),
+                self.main_view,
+            ).exec()
+            if self.app_controller.document_controller:
+                self.app_controller.document_controller.activate()
+        except Exception as exc:
+            QMessageBox.warning(self.main_view,"Configurar provedor",str(exc))
+
+    def delete_account(self):
+        dialog=DeleteAccountDialog(self.main_view)
+        if dialog.exec()!=QDialog.DialogCode.Accepted:return
+        try:
+            password,confirmation=dialog.values(); self.auth.delete_current_account(password,confirmation)
+            QMessageBox.information(self.main_view,"Conta excluída","Sua conta foi excluída e todas as sessões foram encerradas.")
+            self.logout_callback()
+        except Exception as exc:
+            QMessageBox.warning(self.main_view,"Excluir minha conta",str(exc))

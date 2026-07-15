@@ -85,4 +85,6 @@ class AuthController:
     def logout(self):
         self.service.logout()
         if self.main_view: self.main_view.close(); self.main_view=None
-        self.app_controller=None; self.account_controller=None; self._show_login()
+        self.app_controller=None; self.account_controller=None
+        if self.service.has_users(): self._show_login()
+        else: self._show_setup()

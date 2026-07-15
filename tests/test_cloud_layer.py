@@ -77,6 +77,20 @@ def test_tokens_are_encrypted_and_active_account_is_per_organization(tmp_path: P
     assert (database.data_dir / ".cloud_tokens.key").stat().st_mode & 0o077 == 0
 
 
+def test_remove_cloud_account_unlinks_organization_and_deletes_local_login(tmp_path: Path):
+    database = Database(str(tmp_path / "smartfile.db")); manager = CloudManager(database)
+    account = _account(manager); organization_id = database.fetch_one(
+        "SELECT id FROM organizations WHERE is_default=1"
+    )["id"]
+    manager.configure(organization_id, "ONEDRIVE", account.id)
+    assert manager.token_store.load(account.token_ref)[0] == "secret-access-token"
+    manager.remove_account(organization_id)
+    settings = manager.settings(organization_id)
+    assert settings.sync_mode == "LOCAL" and settings.cloud_account_id is None
+    assert database.fetch_one("SELECT id FROM cloud_accounts WHERE id=?", (account.id,)) is None
+    assert manager.token_store.load(account.token_ref) == ("", None)
+
+
 @pytest.mark.parametrize(
     ("provider_class", "token_fragment", "profile_fragment"),
     [

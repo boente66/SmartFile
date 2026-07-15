@@ -1,6 +1,6 @@
 # SmartFile — Manual do Usuário
 
-**Versão do manual:** 1.3
+**Versão do manual:** 1.4
 
 **Aplicação:** SmartFile — Mini GED Local
 
@@ -44,7 +44,9 @@ O cadastro utiliza um wizard de quatro etapas:
 
 É possível voltar às etapas anteriores sem persistir dados parciais.
 
-O primeiro usuário recebe o papel de proprietário (`OWNER`) da organização padrão.
+O primeiro usuário recebe o papel de proprietário (`OWNER`) da organização padrão
+e torna-se o administrador global da instalação. Administradores de uma organização
+não recebem automaticamente permissão para alterar a configuração OAuth global.
 Os modelos Pessoal, Estudante e Empresarial servem somente para criar as pastas
 iniciais; eles não são níveis de acesso.
 
@@ -77,9 +79,22 @@ No menu da conta é possível:
 
 - trocar a organização ativa;
 - alterar a senha;
+- excluir a própria conta;
 - encerrar a sessão.
 
 Ao sair, a sessão atual é revogada e o SmartFile retorna à tela de login.
+
+### Excluir a própria conta
+
+Selecione **Excluir minha conta**, informe a senha atual e digite `EXCLUIR`. A
+operação revoga todas as sessões, remove os vínculos ativos e anonimiza username,
+e-mail, telefone, avatar e senha. Documentos e registros de auditoria são
+preservados. Se o usuário for o único `OWNER` de uma organização que ainda possui
+outros membros, deverá transferir a propriedade antes da exclusão.
+
+Quando a conta for o único membro de uma organização conectada à nuvem, o vínculo
+OAuth local, os tokens e a conta local do provedor também serão removidos. Essa
+ação não apaga os documentos armazenados no SmartFile.
 
 ## 5. Organizações e pastas
 
@@ -294,6 +309,21 @@ Se a integração ainda não tiver sido preparada, a tela mostrará **Integraç�
 configurada pelo administrador**. A configuração pública do aplicativo pertence ao
 administrador ou ao empacotamento do SmartFile e não deve ser confundida com a conta
 OneDrive/Google Drive escolhida pelo usuário.
+
+Somente o administrador global da instalação visualiza **Configurar provedor**.
+Essa ação serve exclusivamente para fornecer a configuração OAuth pública do
+aplicativo SmartFile; ela não efetua login e não recebe tokens de usuários.
+
+- **OneDrive:** registrar o SmartFile no Microsoft Entra, configurar aplicativo
+  público em **Aplicativos móveis e da área de trabalho**, cadastrar exatamente o
+  redirect URI `http://localhost`, habilitar fluxos de cliente público e adicionar
+  as permissões delegadas `User.Read` e `Files.ReadWrite`. Depois, informar o
+  Application (client) ID e o tenant. Não é necessário Client Secret.
+- **Google Drive:** criar um projeto no Google Cloud, habilitar a Drive API, criar
+  um cliente OAuth do tipo Desktop e selecionar o JSON disponibilizado pelo Google.
+
+Use **Remover conta/login** para desvincular a organização. O SmartFile volta ao
+modo local, apaga os tokens locais e preserva os documentos internos.
 
 As configurações são criptografadas no diretório de dados. A autenticação é executada
 pelas APIs Python `msal` e `google-auth-oauthlib`, usando navegador do sistema e

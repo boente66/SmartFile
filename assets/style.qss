@@ -65,6 +65,19 @@ QWidget#documentsView QLabel {
     color: #dbe4ee;
 }
 
+/* Diálogos nativos mantêm contraste mesmo quando abertos sobre módulos escuros. */
+QWidget#documentsView QMessageBox,
+QWidget#documentsView QMessageBox QLabel {
+    background: #f8fafc;
+    color: #0f1720;
+}
+
+QWidget#documentsView QMessageBox QPushButton {
+    background: #ffffff;
+    color: #1f2937;
+    border: 1px solid #cbd5e1;
+}
+
 QWidget#documentsView QLabel#title {
     color: #ffffff;
 }

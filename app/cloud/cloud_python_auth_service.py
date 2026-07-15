@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import re
 from datetime import datetime, timedelta, timezone
 from urllib.request import Request, urlopen
 
@@ -14,6 +16,8 @@ from app.errors.cloud_exceptions import (
     CloudConfigurationMissingError,
     CloudTokenExpiredError,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class CloudPythonAuthService:
@@ -63,7 +67,6 @@ class CloudPythonAuthService:
             try:
                 result = application.acquire_token_interactive(
                     scopes=self.MICROSOFT_SCOPES,
-                    redirect_uri="http://localhost",
                     prompt="select_account",
                     login_hint=account_hint,
                     timeout=180,
@@ -77,8 +80,11 @@ class CloudPythonAuthService:
                     "Não foi possível iniciar o callback local da Microsoft."
                 ) from exc
             except Exception as exc:
+                logger.warning(
+                    "Falha no fluxo interativo MSAL: %s", type(exc).__name__
+                )
                 raise CloudAuthenticationError(
-                    "Não foi possível concluir a autorização da conta Microsoft."
+                    self._microsoft_exception_message(exc)
                 ) from exc
         if not result:
             if interactive:
@@ -93,9 +99,7 @@ class CloudPythonAuthService:
                 raise CloudAuthorizationDeniedError(
                     "A autorização não foi concedida. O SmartFile não poderá sincronizar esta organização."
                 )
-            raise CloudAuthorizationCancelledError(
-                "A conexão foi cancelada. Nenhuma conta foi vinculada."
-            )
+            raise CloudAuthenticationError(self._microsoft_result_message(result))
         claims = result.get("id_token_claims") or {}
         return CloudAuthResult(
             access_token=result["access_token"],
@@ -167,3 +171,32 @@ class CloudPythonAuthService:
                 return json.loads(response.read().decode())
         except Exception:
             return {}
+
+    @staticmethod
+    def _microsoft_result_message(result: dict) -> str:
+        description = str(result.get("error_description") or "")
+        code_match = re.search(r"AADSTS\d+", description)
+        code = code_match.group(0) if code_match else ""
+        messages = {
+            "AADSTS50011": "O redirect URI do SmartFile não está cadastrado no Microsoft Entra. Configure http://localhost como aplicativo Mobile e desktop.",
+            "AADSTS700016": "O Client ID não foi encontrado no tenant configurado. Confira o Client ID e o tenant no SmartFile.",
+            "AADSTS7000218": "O aplicativo Microsoft não está habilitado como cliente público. Ative 'Permitir fluxos de cliente público' no Microsoft Entra.",
+            "AADSTS65001": "O consentimento para acessar o OneDrive ainda não foi concedido.",
+        }
+        if code in messages:
+            return f"{messages[code]} ({code})"
+        error = str(result.get("error") or "")
+        if error == "access_denied":
+            return "A autorização foi recusada. Nenhuma conta foi vinculada."
+        if error:
+            return f"A Microsoft não concluiu a autorização ({error}). Verifique a configuração do aplicativo."
+        return "A conexão foi cancelada. Nenhuma conta foi vinculada."
+
+    @staticmethod
+    def _microsoft_exception_message(exc: Exception) -> str:
+        message = str(exc)
+        if "redirect_uri" in message and "multiple values" in message:
+            return "A biblioteca de autenticação Microsoft está incompatível com a configuração do callback local."
+        if "browser" in message.lower():
+            return "Não foi possível abrir o navegador para autenticar a conta Microsoft."
+        return "Não foi possível concluir a autorização da conta Microsoft. Confira o redirect URI e o cliente público no Microsoft Entra."

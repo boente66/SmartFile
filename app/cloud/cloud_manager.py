@@ -132,22 +132,44 @@ class CloudManager:
         )
 
     def disconnect(self, organization_id: int) -> None:
+        """Compatibilidade: desconectar também remove o login local não compartilhado."""
+        self.remove_account(organization_id, audit_action="CLOUD_DISCONNECTED")
+
+    def remove_account(
+        self, organization_id: int, *, audit_action: str = "CLOUD_ACCOUNT_REMOVED",
+    ) -> None:
         self._require("cloud.disconnect")
         settings = self.settings(organization_id)
+        token_ref = None
+        provider = None
         if settings.cloud_account_id:
             account = self.account(settings.cloud_account_id)
-            self.database.execute_query(
-                "UPDATE cloud_accounts SET status = 'DISCONNECTED' WHERE id = ?",
-                (settings.cloud_account_id,),
+            token_ref = account.token_ref
+            provider = account.provider
+        with self.database.transaction() as connection:
+            connection.execute(
+                """INSERT INTO cloud_settings (organization_id,cloud_account_id,sync_mode,paused)
+                   VALUES (?,NULL,'LOCAL',0) ON CONFLICT(organization_id) DO UPDATE SET
+                   cloud_account_id=NULL,sync_mode='LOCAL',paused=0,delta_token=NULL""",
+                (organization_id,),
             )
-            self.token_store.delete(account.token_ref)
-        self.database.execute_query(
-            """INSERT INTO cloud_settings (organization_id,cloud_account_id,sync_mode,paused)
-               VALUES (?,NULL,'LOCAL',0) ON CONFLICT(organization_id) DO UPDATE SET
-               cloud_account_id=NULL,sync_mode='LOCAL',paused=0,delta_token=NULL""",
-            (organization_id,),
-        )
-        self._audit("CLOUD_DISCONNECTED", organization_id, settings.cloud_account_id, "Conta de nuvem desconectada")
+            if settings.cloud_account_id:
+                linked = connection.execute(
+                    "SELECT COUNT(*) total FROM cloud_settings WHERE cloud_account_id=?",
+                    (settings.cloud_account_id,),
+                ).fetchone()["total"]
+                if linked == 0:
+                    connection.execute("DELETE FROM cloud_accounts WHERE id=?", (settings.cloud_account_id,))
+        if token_ref and self.database.fetch_one(
+            "SELECT 1 FROM cloud_accounts WHERE token_ref=? LIMIT 1", (token_ref,)
+        ) is None:
+            self.token_store.delete(token_ref)
+        if provider and self.database.fetch_one(
+            "SELECT 1 FROM cloud_accounts WHERE provider=? LIMIT 1", (provider,)
+        ) is None:
+            CloudOAuthConfigService(self.database).delete_cache(provider)
+        description = "Conta de nuvem removida" if audit_action == "CLOUD_ACCOUNT_REMOVED" else "Conta de nuvem desconectada"
+        self._audit(audit_action, organization_id, settings.cloud_account_id, description)
 
     def provider_for(self, organization_id: int) -> CloudProvider | None:
         self._require("cloud.sync")
