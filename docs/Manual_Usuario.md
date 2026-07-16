@@ -637,3 +637,27 @@ sudo apt remove smartfile
 A remoção do pacote preserva documentos, banco, tokens protegidos, configurações
 e backups do usuário. A exclusão total desses dados é uma operação manual e
 irreversível, descrita no guia da versão beta.
+
+## 18. Backup administrativo ZIP
+
+Somente o administrador do sistema visualiza a opção **Conta → Criar backup
+ZIP**. Antes de qualquer operação, o SmartFile pergunta se o administrador
+deseja realmente iniciar o backup. Se a resposta for negativa, nenhum arquivo é
+criado e nenhuma pasta é solicitada.
+
+O backup completo inclui:
+
+- snapshot consistente do banco SQLite;
+- documentos do storage interno de todas as organizações;
+- avatares locais;
+- manifesto com versão, tamanho e SHA-256 de cada arquivo.
+
+Tokens, credenciais OAuth, configuração privada de provedores, logs, cache,
+temporários e backups anteriores não são incluídos. A geração ocorre em segundo
+plano e produz um arquivo `.zip` por escrita atômica, evitando manter saída
+parcial em caso de falha.
+
+O arquivo ZIP deve ser guardado em local seguro. Embora credenciais externas
+sejam excluídas, o backup contém documentos e dados cadastrais sensíveis. A
+restauração automática será implementada separadamente, com validação integral
+do manifesto e confirmação administrativa específica.

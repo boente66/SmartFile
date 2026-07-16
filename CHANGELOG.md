@@ -12,6 +12,8 @@
 - Centralized read-only resource resolution for source and frozen execution
 - Added package validation, isolated smoke tests, and SHA-256 generation
 - Documented external integrations and beta limitations
+- Added administrator-only full ZIP backup with confirmation, SQLite snapshot,
+  file manifest, checksums, audit history, and background execution
 
 ## [0.8.0] - 2026-07-10
 

@@ -113,6 +113,25 @@ class Database:
                 self.conn = None
                 logger.info("Banco fechado: %s", self.db_path)
 
+    def backup_to(self, destination: Path | str) -> Path:
+        """Cria um snapshot SQLite consistente sem copiar WAL parcialmente."""
+
+        target_path = Path(destination).expanduser().resolve()
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target: sqlite3.Connection | None = None
+        try:
+            with self._lock:
+                target = sqlite3.connect(str(target_path))
+                self.connect().backup(target)
+                target.commit()
+            return target_path
+        except (sqlite3.Error, OSError) as exc:
+            target_path.unlink(missing_ok=True)
+            raise DatabaseError(f"Não foi possível criar o snapshot do banco: {exc}") from exc
+        finally:
+            if target is not None:
+                target.close()
+
     def __enter__(self) -> "Database":
         return self
 

@@ -10,6 +10,7 @@ SmartFile is a cross-platform desktop application for local document management,
 - Edit and manage PDF files
 - Scan documents from compatible devices
 - Work with a lightweight local Mini GED based on SQLite
+- Create full ZIP backups as system administrator, with confirmation and checksums
 
 ## 🖼️ Screenshots
 
