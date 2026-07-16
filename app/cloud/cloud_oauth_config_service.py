@@ -12,6 +12,7 @@ from app.errors.cloud_exceptions import (
     CloudConfigurationInvalidError,
     CloudConfigurationMissingError,
 )
+from app.system.resources import resource_path
 
 
 class CloudOAuthConfigurationService:
@@ -24,7 +25,7 @@ class CloudOAuthConfigurationService:
         self.key_path = database.data_dir / ".cloud_tokens.key"
         self._cipher: TokenCipher | None = None
         self.token_store = CloudTokenStore(database.data_dir)
-        self.bundled_dir = bundled_dir or Path(__file__).with_name("resources")
+        self.bundled_dir = bundled_dir or resource_path("app/cloud/resources")
 
     @property
     def cipher(self) -> TokenCipher:

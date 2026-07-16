@@ -10,6 +10,7 @@ from app.views.sidebar_view import SidebarView
 from app.views.workspace_view import WorkspaceView
 from app.ui.progress_manager import ProgressManager
 from app.ui.icon_provider import IconProvider
+from app.version import __version__
 
 
 class MainView(QMainWindow):
@@ -27,7 +28,7 @@ class MainView(QMainWindow):
     # Configuração da janela
     # -------------------------
     def _setup_window(self):
-        self.setWindowTitle("SmartFile")
+        self.setWindowTitle(f"SmartFile {__version__}")
         self.setWindowIcon(IconProvider.icon("app"))
         self.resize(1100, 700)
         self.setMinimumSize(800, 560)

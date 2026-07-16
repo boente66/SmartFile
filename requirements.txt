@@ -34,6 +34,6 @@ numpy>=1.26.0
 # =========================
 # Scanner (dependente do SO)
 # =========================
-python-sane>=2.9.1      # Linux
-twain>=1.0.0            # Windows
-pywin32>=306            # Windows
+python-sane>=2.9.1; sys_platform == "linux"
+twain>=1.0.0; sys_platform == "win32"
+pywin32>=306; sys_platform == "win32"

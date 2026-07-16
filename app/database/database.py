@@ -10,9 +10,10 @@ from typing import Iterator, Optional, Sequence
 from app.database.migrations import migrate
 from app.errors.persistence_exceptions import DatabaseError
 from app.system.app_paths import AppPaths
+from app.system.resources import resource_path
 
 logger = logging.getLogger(__name__)
-SCHEMA_PATH = Path(__file__).with_name("schema.sql")
+SCHEMA_PATH = resource_path("app/database/schema.sql")
 
 
 DEFAULT_DB_PATH = AppPaths().database

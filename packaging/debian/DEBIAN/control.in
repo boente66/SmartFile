@@ -1,0 +1,12 @@
+Package: smartfile
+Version: @VERSION@
+Section: office
+Priority: optional
+Architecture: amd64
+Maintainer: @MAINTAINER@
+Installed-Size: @INSTALLED_SIZE@
+Depends: libc6, libstdc++6, libgl1, libegl1, libglib2.0-0, libxkbcommon-x11-0, libxcb-cursor0, libdbus-1-3
+Recommends: libsecret-1-0, sane-utils, libsane1, poppler-utils, libreoffice
+Description: SmartFile - sistema desktop de gestão documental
+ Mini GED com ferramentas de PDF, scanner, conversão,
+ organização documental e integrações opcionais de nuvem.

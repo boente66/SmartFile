@@ -3,12 +3,12 @@ import sys
 
 from app.controllers.auth_controller import AuthController
 from app.database.database import Database
-from pathlib import Path
+from app.system.resources import resource_path
 
 
 # load stylesheet if present
 def _load_stylesheet(app: QApplication):
-    qss_path = Path(__file__).with_name('assets').joinpath('style.qss')
+    qss_path = resource_path("assets/style.qss")
     if qss_path.exists():
         app.setStyleSheet(qss_path.read_text(encoding='utf-8'))
 

@@ -19,14 +19,11 @@ Screenshots will be added in the folder below as the interface evolves:
 
 ## 🛠️ Technologies
 
-- Python 3.10+
+- Python 3.12
 - PyQt6 for the desktop interface
 - SQLite for local persistence
 - PyMuPDF, pypdf, reportlab, Pillow
 - python-docx, openpyxl, pandas
-
-
-```
 
 ### Run the application
 
@@ -35,6 +32,22 @@ python run.py
 ```
 
 > On Linux, scanner support may require additional system packages depending on your environment.
+
+## Linux beta package
+
+The first Linux beta is distributed for compatible amd64 systems based on
+Linux Mint, Ubuntu, and Debian. Install a generated artifact with:
+
+```bash
+sudo apt install ./smartfile_0.9.0~beta1_amd64.deb
+```
+
+Start it from the applications menu or with `smartfile`. Remove only the
+application with `sudo apt remove smartfile`. Package removal intentionally
+preserves the database, documents, settings, and backups in the user's data
+directories. See [Linux beta notes](docs/BETA_LINUX.md) for build instructions,
+optional system integrations, known limitations, and complete data-removal
+guidance.
 
 ## 📁 Project structure
 

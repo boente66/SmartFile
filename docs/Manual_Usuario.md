@@ -614,3 +614,26 @@ Nesta versão não estão incluídos:
 
 Para encerrar a sessão, utilize **Conta → Sair**. O logout revoga a sessão atual e
 retorna à tela de login. Depois disso, a aplicação pode ser fechada normalmente.
+
+## 17. Instalação da versão beta no Linux
+
+Em sistemas amd64 compatíveis com Linux Mint, Ubuntu ou Debian, instale o pacote
+baixado usando o APT:
+
+```bash
+sudo apt install ./smartfile_0.9.0~beta1_amd64.deb
+```
+
+O SmartFile pode ser aberto pelo menu de aplicativos ou pelo comando
+`smartfile`. Scanner, conversões e integração com o cofre de credenciais podem
+depender de componentes opcionais do sistema; consulte `BETA_LINUX.md`.
+
+Para remover somente o aplicativo:
+
+```bash
+sudo apt remove smartfile
+```
+
+A remoção do pacote preserva documentos, banco, tokens protegidos, configurações
+e backups do usuário. A exclusão total desses dados é uma operação manual e
+irreversível, descrita no guia da versão beta.

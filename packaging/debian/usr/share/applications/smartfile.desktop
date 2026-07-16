@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=SmartFile
+Comment=Gestão inteligente de documentos
+Exec=smartfile
+Icon=smartfile
+Terminal=false
+Categories=Office;Utility;
+StartupNotify=true

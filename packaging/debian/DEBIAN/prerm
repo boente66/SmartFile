@@ -1,0 +1,5 @@
+#!/bin/sh
+set -e
+
+# Os dados do usuário não pertencem ao pacote e nunca são removidos aqui.
+exit 0

@@ -1,14 +1,14 @@
-from pathlib import Path
-
 from PyQt6.QtCore import QSize
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QAbstractButton
+
+from app.system.resources import resource_path
 
 
 class IconProvider:
     """Ponto único de acesso aos ícones SVG do SmartFile."""
 
-    _icons_dir = Path(__file__).resolve().parents[2] / "assets" / "icons"
+    _icons_dir = resource_path("assets/icons")
     DEFAULT_SIZE = QSize(18, 18)
 
     @classmethod
