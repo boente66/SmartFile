@@ -1,7 +1,9 @@
 # SmartFile 0.9.0 Beta 1
 
 Primeira distribuição beta Linux amd64 do SmartFile para avaliação em sistemas
-compatíveis baseados em Linux Mint, Ubuntu e Debian.
+compatíveis baseados em Linux Mint, Ubuntu e Debian. Este pacote é um
+**protótipo não oficial para testes**; usuários devem relatar os problemas
+encontrados pelo rastreador de issues do projeto.
 
 ## Destaques
 

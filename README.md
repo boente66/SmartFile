@@ -38,6 +38,9 @@ python run.py
 The first Linux beta is distributed for compatible amd64 systems based on
 Linux Mint, Ubuntu, and Debian. Install a generated artifact with:
 
+> This package is a non-official beta prototype for testing. Keep independent
+> backups and report any problems found through the project's issue tracker.
+
 ```bash
 sudo apt install ./smartfile_0.9.0~beta1_amd64.deb
 ```

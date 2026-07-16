@@ -1,8 +1,9 @@
 # SmartFile 0.9.0 Beta 1 — Linux amd64
 
-Esta distribuição é destinada a avaliação. Não utilize o SmartFile como a única
-cópia de documentos críticos. Mantenha backups independentes do banco e do
-storage.
+Esta distribuição é um **protótipo beta não oficial**, destinado exclusivamente
+a avaliação e testes. Não utilize o SmartFile como a única cópia de documentos
+críticos. Mantenha backups independentes do banco e do storage e relate todos os
+erros, comportamentos inesperados ou incompatibilidades encontrados.
 
 ## Compatibilidade inicial
 

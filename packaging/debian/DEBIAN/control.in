@@ -10,3 +10,5 @@ Recommends: libsecret-1-0, sane-utils, libsane1, poppler-utils, libreoffice
 Description: SmartFile - sistema desktop de gestão documental
  Mini GED com ferramentas de PDF, scanner, conversão,
  organização documental e integrações opcionais de nuvem.
+ Esta é uma versão de protótipo beta, não oficial, destinada a testes.
+ Usuários devem manter backups e relatar os problemas encontrados.
