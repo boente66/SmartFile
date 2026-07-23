@@ -8,12 +8,14 @@ from pathlib import Path
 
 
 FORBIDDEN_SUFFIXES = {
-    ".db", ".sqlite", ".sqlite3", ".log", ".pfx", ".p12", ".pem", ".key",
+    ".db", ".sqlite", ".sqlite3", ".log", ".pfx", ".p12", ".key",
 }
 FORBIDDEN_NAMES = {
     ".git", "venv", ".venv", "__pycache__", "storage", "tokens", "cache",
 }
-TEXT_SUFFIXES = {".cfg", ".ini", ".json", ".md", ".qss", ".sql", ".txt", ".xml"}
+TEXT_SUFFIXES = {
+    ".cfg", ".ini", ".json", ".md", ".pem", ".qss", ".sql", ".txt", ".xml",
+}
 SECRET_PATTERNS = (
     re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
     re.compile(r"(?i)(?:access|refresh)[_-]?token\s*[:=]\s*[\"'][^\"']{16,}"),

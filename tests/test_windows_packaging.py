@@ -80,3 +80,32 @@ def test_bundle_audit_rejects_mutable_database(tmp_path):
     (bundle / "_internal/smartfile.db").write_bytes(b"not allowed")
 
     assert any("smartfile.db" in error for error in audit_bundle(bundle))
+
+
+def test_bundle_audit_allows_public_ca_bundle_but_rejects_private_key(tmp_path):
+    bundle = tmp_path / "SmartFile"
+    required = (
+        bundle / "SmartFile.exe",
+        bundle / "_internal/assets/style.qss",
+        bundle / "_internal/assets/icons/app.svg",
+        bundle / "_internal/app/database/schema.sql",
+        bundle / "_internal/PyQt6/Qt6/plugins/platforms/qwindows.dll",
+    )
+    for path in required:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"placeholder")
+    ca_bundle = bundle / "_internal/certifi/cacert.pem"
+    ca_bundle.parent.mkdir(parents=True)
+    ca_bundle.write_text(
+        "-----BEGIN CERTIFICATE-----\nPUBLIC-CA\n-----END CERTIFICATE-----\n",
+        encoding="utf-8",
+    )
+
+    assert audit_bundle(bundle) == []
+
+    ca_bundle.write_text(
+        "-----BEGIN PRIVATE KEY-----\nSECRET\n-----END PRIVATE KEY-----\n",
+        encoding="utf-8",
+    )
+
+    assert any("cacert.pem" in error for error in audit_bundle(bundle))
