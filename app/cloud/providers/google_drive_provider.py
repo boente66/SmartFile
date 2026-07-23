@@ -150,8 +150,45 @@ class GoogleDriveProvider(CloudProvider):
         data, _ = self._json_request("GET", f"{self.API}/files/{quote(remote_id)}?fields=*")
         return self._metadata(data)
 
+    def ensure_folder(self, name: str, parent_id: str | None = None) -> RemoteMetadata:
+        clean_name = self._folder_name(name)
+        escaped = clean_name.replace("\\", "\\\\").replace("'", "\\'")
+        clauses = [
+            f"name = '{escaped}'",
+            "mimeType = 'application/vnd.google-apps.folder'",
+            "trashed = false",
+        ]
+        if parent_id:
+            clauses.append(f"'{parent_id}' in parents")
+        query = urlencode({
+            "q": " and ".join(clauses),
+            "fields": "files(id,name,size,version,modifiedTime,parents,trashed)",
+            "pageSize": "2",
+        })
+        listing, _ = self._json_request("GET", f"{self.API}/files?{query}")
+        files = listing.get("files", [])
+        if files:
+            return self._metadata(files[0])
+        metadata = {
+            "name": clean_name,
+            "mimeType": "application/vnd.google-apps.folder",
+        }
+        if parent_id:
+            metadata["parents"] = [parent_id]
+        created, _ = self._json_request(
+            "POST", f"{self.API}/files?fields=*", metadata
+        )
+        return self._metadata(created)
+
     def disconnect(self) -> None:
         self.access_token = ""
+
+    @staticmethod
+    def _folder_name(name: str) -> str:
+        clean = " ".join(name.split()).strip()
+        if not clean or len(clean) > 120 or "/" in clean or "\x00" in clean:
+            raise ValueError("Nome de pasta incompatível com o Google Drive.")
+        return clean
 
     def _token_request(self, payload: dict[str, str]) -> dict:
         _status, _headers, response = self._transport(

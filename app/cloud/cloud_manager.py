@@ -10,6 +10,7 @@ from app.cloud.token_store import CloudTokenStore
 from app.cloud.cloud_oauth_config_service import CloudOAuthConfigService
 from app.database.database import Database
 from app.errors.cloud_exceptions import CloudPermissionError, CloudTokenExpiredError
+from app.repositories.cloud_folder_repository import CloudFolderRepository
 from app.services.audit_service import AuditService
 
 
@@ -23,6 +24,7 @@ class CloudManager:
         self._cipher: TokenCipher | None = None
         self.token_store = CloudTokenStore(database.data_dir)
         self.audit = AuditService(database)
+        self.folder_mappings = CloudFolderRepository(database=database)
 
     @property
     def cipher(self) -> TokenCipher:
@@ -111,18 +113,36 @@ class CloudManager:
             account_id = None
         elif account_id is None:
             raise ValueError("Adicione uma conta antes de ativar a sincronização.")
-        self.database.execute_query(
-            """
-            INSERT INTO cloud_settings (organization_id, cloud_account_id, sync_mode, paused)
-            VALUES (?, ?, ?, 0)
-            ON CONFLICT(organization_id) DO UPDATE SET
-                cloud_account_id = excluded.cloud_account_id,
-                sync_mode = excluded.sync_mode,
-                paused = 0,
-                delta_token = CASE WHEN cloud_settings.sync_mode = excluded.sync_mode THEN cloud_settings.delta_token ELSE NULL END
-            """,
-            (organization_id, account_id, sync_mode),
+        current = self.settings(organization_id)
+        changed_account = (
+            current.sync_mode != sync_mode or current.cloud_account_id != account_id
         )
+        with self.database.transaction() as connection:
+            connection.execute(
+                """
+                INSERT INTO cloud_settings (
+                    organization_id,cloud_account_id,sync_mode,paused,remote_root_id,delta_token
+                ) VALUES (?,?,?,0,NULL,NULL)
+                ON CONFLICT(organization_id) DO UPDATE SET
+                    cloud_account_id=excluded.cloud_account_id,
+                    sync_mode=excluded.sync_mode,
+                    paused=0,
+                    remote_root_id=CASE
+                        WHEN cloud_settings.sync_mode=excluded.sync_mode
+                         AND cloud_settings.cloud_account_id=excluded.cloud_account_id
+                        THEN cloud_settings.remote_root_id ELSE NULL END,
+                    delta_token=CASE
+                        WHEN cloud_settings.sync_mode=excluded.sync_mode
+                         AND cloud_settings.cloud_account_id=excluded.cloud_account_id
+                        THEN cloud_settings.delta_token ELSE NULL END
+                """,
+                (organization_id, account_id, sync_mode),
+            )
+            if changed_account:
+                connection.execute(
+                    "DELETE FROM cloud_folder_mappings WHERE organization_id=?",
+                    (organization_id,),
+                )
 
     def set_paused(self, organization_id: int, paused: bool) -> None:
         self._require("cloud.sync")
@@ -150,7 +170,11 @@ class CloudManager:
             connection.execute(
                 """INSERT INTO cloud_settings (organization_id,cloud_account_id,sync_mode,paused)
                    VALUES (?,NULL,'LOCAL',0) ON CONFLICT(organization_id) DO UPDATE SET
-                   cloud_account_id=NULL,sync_mode='LOCAL',paused=0,delta_token=NULL""",
+                   cloud_account_id=NULL,sync_mode='LOCAL',paused=0,delta_token=NULL,remote_root_id=NULL""",
+                (organization_id,),
+            )
+            connection.execute(
+                "DELETE FROM cloud_folder_mappings WHERE organization_id=?",
                 (organization_id,),
             )
             if settings.cloud_account_id:

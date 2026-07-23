@@ -5,6 +5,7 @@ import pytest
 
 from app.auth.session_context import SessionContext
 from app.database.database import Database
+from app.database.migrations import CURRENT_SCHEMA_VERSION
 from app.errors.auth_exceptions import (
     AccountDeletionError, EmailAlreadyExistsError, InvalidCredentialsError, PasswordPolicyError,
     RegistrationError, UserAlreadyExistsError, UserInactiveError,
@@ -136,7 +137,10 @@ def test_auth_migration_is_idempotent(tmp_path: Path):
     database = Database(str(tmp_path / "smartfile.db")); Database(str(tmp_path / "smartfile.db"))
     tables = {row["name"] for row in database.fetch_all("SELECT name FROM sqlite_master WHERE type='table'")}
     assert {"users", "sessions", "organization_members"} <= tables
-    assert database.connect().execute("PRAGMA user_version").fetchone()[0] == 11
+    assert (
+        database.connect().execute("PRAGMA user_version").fetchone()[0]
+        == CURRENT_SCHEMA_VERSION
+    )
 
 
 def test_migration_promotes_first_active_user_to_system_administrator(tmp_path: Path):
@@ -146,7 +150,10 @@ def test_migration_promotes_first_active_user_to_system_administrator(tmp_path: 
     database.connect().execute("PRAGMA user_version=10"); database.close()
     reopened = Database(str(path))
     assert reopened.fetch_one("SELECT is_superuser FROM users WHERE id=?", (user.id,))["is_superuser"] == 1
-    assert reopened.connect().execute("PRAGMA user_version").fetchone()[0] == 11
+    assert (
+        reopened.connect().execute("PRAGMA user_version").fetchone()[0]
+        == CURRENT_SCHEMA_VERSION
+    )
 
 
 def test_repeated_failures_lock_account_without_revealing_credentials(tmp_path: Path):

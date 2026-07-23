@@ -39,6 +39,7 @@ def test_database_creates_document_table_and_required_indexes(tmp_path: Path):
     }
 
     assert "documents" in tables
+    assert "cloud_folder_mappings" in tables
     assert {
         "idx_documents_name",
         "idx_documents_file_type",
@@ -130,6 +131,14 @@ def test_legacy_database_is_migrated_without_losing_documents(tmp_path: Path):
     assert legacy[0] == "/tmp/legado.pdf"
     assert legacy[1] is None
     assert legacy[2] == 0
+    cloud_columns = {
+        row[1]
+        for row in migrated.execute("PRAGMA table_info(cloud_folder_mappings)")
+    }
+    assert {
+        "organization_id", "folder_id", "provider", "remote_id",
+        "remote_parent_id", "remote_name", "synced_at",
+    } <= cloud_columns
 
 
 def test_transaction_rolls_back_on_failure(tmp_path: Path):

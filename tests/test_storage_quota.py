@@ -7,7 +7,7 @@ import pytest
 from app.database.database import Database
 from app.errors.storage_exceptions import InsufficientLocalDiskSpaceError, StorageQuotaError, StorageQuotaExceededError
 from app.errors.storage_exceptions import CloudStorageLimitError
-from app.cloud.cloud_models import CloudOperation
+from app.cloud.cloud_models import CloudOperation, RemoteMetadata
 from app.services.document_service import DocumentService
 from app.services.storage_quota_service import GB, StorageQuotaService
 
@@ -207,6 +207,13 @@ def test_cloud_download_over_quota_preserves_local_document(tmp_path: Path):
 
 
 class _FullProvider:
+    def ensure_folder(self, name, parent_id=None):
+        return RemoteMetadata(
+            remote_id=f"folder-{name}",
+            name=name,
+            parent_id=parent_id,
+        )
+
     def upload(self, _request):
         raise CloudStorageLimitError("sem espaço")
 

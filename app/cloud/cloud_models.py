@@ -126,3 +126,14 @@ class CloudUploadRequest:
     remote_name: str
     remote_parent_id: str | None = None
     remote_id: str | None = None
+
+
+@dataclass(slots=True)
+class CloudFolderMapping:
+    organization_id: int
+    folder_id: int
+    provider: str
+    remote_id: str
+    remote_parent_id: str | None
+    remote_name: str
+    synced_at: str

@@ -121,6 +121,19 @@ CREATE TABLE IF NOT EXISTS cloud_settings (
     FOREIGN KEY (cloud_account_id) REFERENCES cloud_accounts(id)
 );
 
+CREATE TABLE IF NOT EXISTS cloud_folder_mappings (
+    organization_id INTEGER NOT NULL,
+    folder_id INTEGER NOT NULL,
+    provider TEXT NOT NULL CHECK (provider IN ('ONEDRIVE', 'GOOGLE_DRIVE')),
+    remote_id TEXT NOT NULL,
+    remote_parent_id TEXT,
+    remote_name TEXT NOT NULL,
+    synced_at TEXT NOT NULL,
+    PRIMARY KEY (organization_id, folder_id, provider),
+    FOREIGN KEY (organization_id) REFERENCES organizations(id),
+    FOREIGN KEY (folder_id) REFERENCES folders(id)
+);
+
 INSERT INTO organizations (
     name, description, slug, icon, color, created_at, updated_at, is_default, status
 ) SELECT 'Minha Organização', 'Organização padrão do SmartFile', 'minha-organizacao',
@@ -258,6 +271,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_folders_sibling_name
 CREATE INDEX IF NOT EXISTS idx_sync_jobs_status ON sync_jobs(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_sync_jobs_document ON sync_jobs(document_id);
 CREATE INDEX IF NOT EXISTS idx_cloud_accounts_provider ON cloud_accounts(provider, status);
+CREATE INDEX IF NOT EXISTS idx_cloud_folder_remote
+    ON cloud_folder_mappings(organization_id, provider, remote_id);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id, revoked_at);
 CREATE INDEX IF NOT EXISTS idx_members_user ON organization_members(user_id, status);

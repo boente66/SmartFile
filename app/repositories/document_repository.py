@@ -240,6 +240,22 @@ class DocumentRepository(BaseRepository):
             (self._now(), organization_id, organization_id),
         )
 
+    def find_in_folder_tree(self, organization_id: int, folder_id: int) -> list[DocumentEntity]:
+        return self._entities(
+            """
+            WITH RECURSIVE descendants(id) AS (
+                SELECT id FROM folders WHERE id=? AND organization_id=?
+                UNION ALL
+                SELECT f.id FROM folders f JOIN descendants d ON f.parent_id=d.id
+            )
+            SELECT d.* FROM documents d
+            WHERE d.organization_id=? AND d.folder_id IN descendants
+              AND d.status='ACTIVE'
+            ORDER BY d.id
+            """,
+            (folder_id, organization_id, organization_id),
+        )
+
     def update_cloud_state(
         self,
         document_id: int,

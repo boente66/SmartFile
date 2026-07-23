@@ -1,9 +1,12 @@
-from PyQt6.QtWidgets import QDialog,QInputDialog,QLineEdit,QMessageBox
+from datetime import datetime
+
+from PyQt6.QtWidgets import QDialog,QFileDialog,QInputDialog,QLineEdit,QMessageBox
 
 from app.cloud.cloud_oauth_config_service import CloudOAuthConfigService
 from app.services.member_service import MemberService
 from app.services.organization_admin_service import OrganizationAdminService
 from app.services.profile_service import ProfileService
+from app.services.backup_service import BackupService
 from app.views.account_menu import AccountMenu
 from app.views.change_password_dialog import ChangePasswordDialog
 from app.views.cloud_api_settings_dialog import CloudApiSettingsDialog
@@ -12,12 +15,13 @@ from app.views.member_management_view import MemberManagementView
 from app.views.organization_dialog import OrganizationDialog
 from app.views.organization_management_view import OrganizationManagementView
 from app.views.profile_dialog import ProfileDialog
+from app.workers.backup_worker import BackupWorker
 
 
 class AccountController:
     def __init__(self,main_view,auth_service,app_controller,logout_callback):
         self.main_view=main_view; self.auth=auth_service; self.app_controller=app_controller; self.logout_callback=logout_callback; self.organizations=OrganizationAdminService(auth_service.database,auth_service.session_context); self.members=MemberService(auth_service.database,auth_service.session_context); self.profile=ProfileService(auth_service.database,auth_service.session_context)
-        self.menu=AccountMenu(main_view); self.menu.profile_action.triggered.connect(self.edit_profile); self.menu.change_password_action.triggered.connect(self.change_password); self.menu.manage_organizations_action.triggered.connect(self.manage_organizations); self.menu.members_action.triggered.connect(lambda:self.manage_members(self.auth.session_context.active_organization.id)); self.menu.sessions_action.triggered.connect(self.show_sessions); self.menu.provider_settings_action.triggered.connect(self.configure_provider); self.menu.delete_account_action.triggered.connect(self.delete_account); self.menu.logout_action.triggered.connect(self.logout_callback); self.menu.aboutToShow.connect(self.refresh); self.refresh()
+        self._backup_worker=None; self.menu=AccountMenu(main_view); self.menu.profile_action.triggered.connect(self.edit_profile); self.menu.change_password_action.triggered.connect(self.change_password); self.menu.manage_organizations_action.triggered.connect(self.manage_organizations); self.menu.members_action.triggered.connect(lambda:self.manage_members(self.auth.session_context.active_organization.id)); self.menu.sessions_action.triggered.connect(self.show_sessions); self.menu.provider_settings_action.triggered.connect(self.configure_provider); self.menu.backup_action.triggered.connect(self.create_backup); self.menu.delete_account_action.triggered.connect(self.delete_account); self.menu.logout_action.triggered.connect(self.logout_callback); self.menu.aboutToShow.connect(self.refresh); self.refresh()
 
     def refresh(self):
         context=self.auth.session_context; user=context.current_user; organizations=[o for o,_,_ in self.organizations.list_for_current_user()]; self.menu.set_organizations(organizations,getattr(context.active_organization,"id",None),self.switch_organization); self.menu.apply_permissions(context); self.main_view.set_account(user.display_name if user else "Conta",self.menu)
@@ -102,6 +106,71 @@ class AccountController:
                 self.app_controller.document_controller.activate()
         except Exception as exc:
             QMessageBox.warning(self.main_view,"Configurar provedor",str(exc))
+
+    def create_backup(self):
+        if self._backup_worker and self._backup_worker.isRunning():
+            QMessageBox.information(
+                self.main_view, "Backup", "Já existe um backup em andamento."
+            )
+            return
+        if not self.auth.session_context.is_system_admin():
+            QMessageBox.warning(
+                self.main_view,
+                "Backup",
+                "Somente o administrador do sistema pode criar um backup completo.",
+            )
+            return
+        answer = QMessageBox.question(
+            self.main_view,
+            "Criar backup completo?",
+            "Deseja criar agora um backup ZIP completo do SmartFile?\n\n"
+            "Serão incluídos o banco, documentos e avatares de todas as organizações. "
+            "Tokens, credenciais, logs e arquivos temporários não serão incluídos.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        default_name = f"smartfile_backup_{datetime.now():%Y%m%d_%H%M%S}.zip"
+        default_path = self.auth.database.paths.backups / default_name
+        destination, _ = QFileDialog.getSaveFileName(
+            self.main_view,
+            "Salvar backup ZIP",
+            str(default_path),
+            "Backup ZIP (*.zip)",
+        )
+        if not destination:
+            return
+        if not destination.lower().endswith(".zip"):
+            destination += ".zip"
+        service = BackupService(self.auth.database, self.auth.session_context)
+        worker = BackupWorker(service, destination, self.main_view)
+        self._backup_worker = worker
+        worker.progress.connect(
+            lambda _value, message: self.main_view.status.showMessage(message)
+        )
+        worker.succeeded.connect(self._backup_succeeded)
+        worker.failed.connect(self._backup_failed)
+        worker.finished.connect(worker.deleteLater)
+        worker.finished.connect(self._backup_finished)
+        self.menu.backup_action.setEnabled(False)
+        worker.start()
+
+    def _backup_succeeded(self, result):
+        QMessageBox.information(
+            self.main_view,
+            "Backup concluído",
+            f"Backup criado com sucesso em:\n{result.output_path}\n\n"
+            f"Arquivos: {result.file_count}\nSHA-256: {result.sha256}",
+        )
+
+    def _backup_failed(self, message):
+        QMessageBox.warning(self.main_view, "Erro no backup", message)
+
+    def _backup_finished(self):
+        self.main_view.status.showMessage("Pronto")
+        self.menu.backup_action.setEnabled(True)
+        self._backup_worker = None
 
     def delete_account(self):
         dialog=DeleteAccountDialog(self.main_view)

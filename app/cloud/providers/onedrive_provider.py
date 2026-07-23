@@ -100,8 +100,42 @@ class OneDriveProvider(CloudProvider):
         data, _ = self._json_request("GET", f"{self.GRAPH}/me/drive/items/{quote(remote_id)}")
         return self._metadata(data)
 
+    def ensure_folder(self, name: str, parent_id: str | None = None) -> RemoteMetadata:
+        clean_name = self._folder_name(name)
+        parent_url = (
+            f"{self.GRAPH}/me/drive/items/{quote(parent_id)}/children"
+            if parent_id
+            else f"{self.GRAPH}/me/drive/root/children"
+        )
+        escaped = clean_name.replace("'", "''")
+        query = urlencode({
+            "$filter": f"name eq '{escaped}'",
+            "$select": "id,name,size,eTag,lastModifiedDateTime,parentReference,folder",
+        })
+        listing, _ = self._json_request("GET", f"{parent_url}?{query}")
+        for item in listing.get("value", []):
+            if item.get("folder") is not None and item.get("name") == clean_name:
+                return self._metadata(item)
+        created, _ = self._json_request(
+            "POST",
+            parent_url,
+            {
+                "name": clean_name,
+                "folder": {},
+                "@microsoft.graph.conflictBehavior": "fail",
+            },
+        )
+        return self._metadata(created)
+
     def disconnect(self) -> None:
         self.access_token = ""
+
+    @staticmethod
+    def _folder_name(name: str) -> str:
+        clean = " ".join(name.split()).strip(". ")
+        if not clean or len(clean) > 120 or any(character in clean for character in '\\/:*?"<>|'):
+            raise ValueError("Nome de pasta incompatível com o OneDrive.")
+        return clean
 
     def _form_request(self, url: str, payload: dict[str, str]) -> dict:
         body = urlencode(payload).encode()
