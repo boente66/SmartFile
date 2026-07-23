@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 import io
 from email.message import Message
 from urllib.error import HTTPError
@@ -133,7 +134,10 @@ def test_tokens_are_encrypted_and_active_account_is_per_organization(tmp_path: P
     assert "secret-refresh-token" not in raw["refresh_token"]
     assert manager.account(account.id).access_token == "secret-access-token"
     assert manager.settings(organization["id"]).sync_mode == "ONEDRIVE"
-    assert (database.data_dir / ".cloud_tokens.key").stat().st_mode & 0o077 == 0
+    key_path = database.data_dir / ".cloud_tokens.key"
+    assert key_path.is_file()
+    if os.name != "nt":
+        assert stat.S_IMODE(key_path.stat().st_mode) & 0o077 == 0
 
 
 def test_remove_cloud_account_unlinks_organization_and_deletes_local_login(tmp_path: Path):

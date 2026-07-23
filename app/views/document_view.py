@@ -327,6 +327,11 @@ class DocumentView(QWidget):
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._apply_compact_layout(event.size().width() < 1500)
+        viewport_width = self.scroll_area.viewport().width()
+        if viewport_width > 0:
+            # O conteúdo deve se reorganizar verticalmente, nunca criar uma
+            # rolagem horizontal por diferenças de métricas entre plataformas.
+            self.scroll_content.setFixedWidth(viewport_width)
 
     def _apply_compact_layout(self, compact: bool) -> None:
         if compact == self._compact:

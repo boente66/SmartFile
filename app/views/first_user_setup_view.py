@@ -117,6 +117,9 @@ class FirstUserSetupView(QWidget):
         self.stack.addWidget(self._organization_page())
         self.stack.addWidget(self._template_page())
         self.stack.addWidget(self._summary_page())
+        # Mantém a navegação vertical disponível em telas compactas,
+        # independentemente das métricas de fonte do Windows ou Linux.
+        self.stack.setMinimumHeight(440)
         self.scroll.setWidget(self.stack)
         layout.addWidget(self.scroll, 1)
 
