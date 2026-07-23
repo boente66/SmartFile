@@ -3,6 +3,7 @@ import sys
 
 from app.controllers.auth_controller import AuthController
 from app.database.database import Database
+from app.system.logging_config import configure_logging
 from app.system.resources import resource_path
 
 
@@ -14,6 +15,7 @@ def _load_stylesheet(app: QApplication):
 
 
 def main():
+    configure_logging()
     app = QApplication(sys.argv)
     _load_stylesheet(app)
 

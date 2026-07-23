@@ -226,7 +226,8 @@ def test_remote_quota_failure_keeps_local_document_and_safe_message(tmp_path: Pa
     service.cloud_sync_service.queue.enqueue(document.id, CloudOperation.UPLOAD, "ONEDRIVE")
     service.cloud_manager.provider_for = lambda _organization_id: _FullProvider()
 
-    service.cloud_sync_service.process_next()
+    with pytest.raises(CloudStorageLimitError):
+        service.cloud_sync_service.process_next()
 
     refreshed = service.get_document(document.id)
     job = service.cloud_sync_service.queue.get(1)

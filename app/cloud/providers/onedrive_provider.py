@@ -3,19 +3,29 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import logging
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote, urlencode
 
 from app.cloud.cloud_models import CloudAuthResult, CloudUploadRequest, RemoteMetadata
-from app.cloud.cloud_provider import CloudAuthenticationError, CloudProvider
+from app.cloud.cloud_provider import (
+    CloudAuthenticationError,
+    CloudError,
+    CloudProvider,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class OneDriveProvider(CloudProvider):
     GRAPH = "https://graph.microsoft.com/v1.0"
     AUTH = "https://login.microsoftonline.com/common/oauth2/v2.0"
     SCOPES = "offline_access User.Read Files.ReadWrite"
+    MAX_DELTA_PAGES = 100
+    DELTA_DEADLINE_SECONDS = 120
 
     def authenticate(self, credentials: dict[str, str]) -> CloudAuthResult:
         action = credentials.get("action", "complete")
@@ -87,13 +97,39 @@ class OneDriveProvider(CloudProvider):
 
     def list_changes(self, cursor: str | None = None) -> tuple[list[RemoteMetadata], str | None]:
         url = cursor or f"{self.GRAPH}/me/drive/root/delta"
-        changes = []
+        changes: list[RemoteMetadata] = []
         final_cursor = cursor
+        visited_urls: set[str] = set()
+        page = 0
+        deadline = time.monotonic() + self.DELTA_DEADLINE_SECONDS
+        logger.info(
+            "cloud.onedrive.delta.start cursor_present=%s",
+            bool(cursor),
+        )
         while url:
+            if url in visited_urls:
+                raise CloudError(
+                    "O Microsoft Graph repetiu a mesma página de alterações. "
+                    "A sincronização foi interrompida com segurança."
+                )
+            if page >= self.MAX_DELTA_PAGES or time.monotonic() >= deadline:
+                raise CloudError(
+                    "A consulta de alterações do OneDrive excedeu o limite seguro."
+                )
+            visited_urls.add(url)
+            page += 1
+            logger.info("cloud.onedrive.delta.page page=%s", page)
             data, _ = self._json_request("GET", url)
             changes.extend(self._metadata(item) for item in data.get("value", []))
-            url = data.get("@odata.nextLink")
-            final_cursor = data.get("@odata.deltaLink", final_cursor)
+            next_url = data.get("@odata.nextLink")
+            delta_url = data.get("@odata.deltaLink")
+            if delta_url:
+                final_cursor = delta_url
+            url = next_url
+        logger.info(
+            "cloud.onedrive.delta.done pages=%s changes=%s cursor_updated=%s",
+            page, len(changes), final_cursor != cursor,
+        )
         return changes, final_cursor
 
     def get_metadata(self, remote_id: str) -> RemoteMetadata:

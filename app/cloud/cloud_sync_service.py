@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import os
 import hashlib
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 from uuid import uuid4
 
 from app.cloud.cloud_job_queue import CloudJobQueue
@@ -25,6 +27,9 @@ from app.repositories.document_repository import DocumentRepository
 from app.repositories.folder_repository import FolderRepository
 from app.repositories.organization_repository import OrganizationRepository
 from app.services.storage_quota_service import StorageQuotaService
+
+logger = logging.getLogger(__name__)
+ProgressCallback = Callable[[int, str], None]
 
 
 class CloudSyncService:
@@ -61,16 +66,26 @@ class CloudSyncService:
         job = self.queue.next_pending(organization_id)
         if job is None:
             return None
+        logger.info(
+            "cloud.sync.job.start job_id=%s document_id=%s operation=%s provider=%s",
+            job.id, job.document_id, job.operation, job.provider,
+        )
         self.queue.mark_running(job.id)
         document = self.documents.find_by_id(job.document_id)
         if document is None:
-            self.queue.retry(job.id, "Documento local não encontrado.")
-            return job
+            message = "Documento local não encontrado para sincronização."
+            self.queue.retry(job.id, message)
+            logger.error(
+                "cloud.sync.job.missing_document job_id=%s document_id=%s",
+                job.id, job.document_id,
+            )
+            raise ValueError(message)
         try:
             provider = self.manager.provider_for(document.organization_id)
             if provider is None:
-                self.queue.retry(job.id, "Sincronização local ou pausada.")
-                return job
+                raise CloudAuthenticationError(
+                    "A conta de nuvem não está disponível. Reconecte a conta e tente novamente."
+                )
             root_id = self.synchronize_structure(
                 document.organization_id, provider=provider, reconcile_documents=False
             )
@@ -91,17 +106,20 @@ class CloudSyncService:
             elif job.operation == CloudOperation.DOWNLOAD:
                 self._download(provider, document)
             elif job.operation == CloudOperation.MOVE:
-                if document.remote_id:
-                    parent_id = self._remote_parent_id(
-                        document.organization_id, document.folder_id, job.provider, root_id
-                    )
-                    metadata = provider.move(document.remote_id, parent_id)
-                    self.documents.update_cloud_state(
-                        document.id, CloudSyncState.SYNCED, job.provider,
-                        document.remote_id, metadata.version or document.remote_version,
-                        self._now(),
-                    )
-            elif job.operation == CloudOperation.RENAME and document.remote_id:
+                if not document.remote_id:
+                    raise ValueError("Documento remoto ausente para movimentação.")
+                parent_id = self._remote_parent_id(
+                    document.organization_id, document.folder_id, job.provider, root_id
+                )
+                metadata = provider.move(document.remote_id, parent_id)
+                self.documents.update_cloud_state(
+                    document.id, CloudSyncState.SYNCED, job.provider,
+                    document.remote_id, metadata.version or document.remote_version,
+                    self._now(),
+                )
+            elif job.operation == CloudOperation.RENAME:
+                if not document.remote_id:
+                    raise ValueError("Documento remoto ausente para renomeação.")
                 metadata = provider.rename(document.remote_id, document.name)
                 self.documents.update_cloud_state(
                     document.id, CloudSyncState.SYNCED, job.provider,
@@ -111,27 +129,45 @@ class CloudSyncService:
             elif job.operation == CloudOperation.DELETE and document.remote_id:
                 provider.delete(document.remote_id)
                 self.documents.update_cloud_state(document.id, CloudSyncState.LOCAL_DELETED, job.provider)
+            else:
+                raise ValueError(
+                    f"Operação de sincronização não suportada: {job.operation}."
+                )
             self.queue.complete(job.id)
+            logger.info(
+                "cloud.sync.job.done job_id=%s document_id=%s operation=%s",
+                job.id, document.id, job.operation,
+            )
         except CloudConflictError as exc:
             self.documents.update_cloud_state(document.id, CloudSyncState.CONFLICT, job.provider, document.remote_id)
             self.queue.retry(job.id, str(exc))
-        except (CloudOfflineError, CloudRateLimitError) as exc:
-            pending_state = (
-                CloudSyncState.PENDING_DOWNLOAD
-                if job.operation == CloudOperation.DOWNLOAD
-                else CloudSyncState.PENDING_UPLOAD
+            logger.warning(
+                "cloud.sync.job.conflict job_id=%s document_id=%s",
+                job.id, document.id,
             )
+            raise
+        except (CloudOfflineError, CloudRateLimitError) as exc:
             self.documents.update_cloud_state(
-                document.id, pending_state, job.provider, document.remote_id
+                document.id, CloudSyncState.SYNC_ERROR, job.provider, document.remote_id
             )
             self.queue.retry(job.id, str(exc))
+            logger.warning(
+                "cloud.sync.job.retryable_error job_id=%s document_id=%s error=%s",
+                job.id, document.id, type(exc).__name__,
+            )
+            raise
         except CloudAuthenticationError as exc:
             self.manager.mark_reauthentication_required(document.organization_id)
             self.documents.update_cloud_state(
                 document.id, CloudSyncState.SYNC_ERROR, job.provider, document.remote_id
             )
             self.queue.retry(job.id, str(exc))
-        except CloudStorageLimitError:
+            logger.warning(
+                "cloud.sync.job.authentication_error job_id=%s document_id=%s",
+                job.id, document.id,
+            )
+            raise
+        except CloudStorageLimitError as exc:
             message = (
                 "O documento foi salvo no SmartFile, mas não pôde ser sincronizado "
                 "porque o armazenamento da nuvem está cheio."
@@ -140,18 +176,39 @@ class CloudSyncService:
                 document.id, CloudSyncState.SYNC_ERROR, job.provider, document.remote_id
             )
             self.queue.retry(job.id, message)
+            logger.warning(
+                "cloud.sync.job.storage_limit job_id=%s document_id=%s",
+                job.id, document.id,
+            )
+            raise CloudStorageLimitError(message) from exc
         except Exception as exc:
             self.documents.update_cloud_state(document.id, CloudSyncState.SYNC_ERROR, job.provider, document.remote_id)
-            self.queue.retry(job.id, str(exc))
+            message = str(exc).strip() or "Falha inesperada ao sincronizar o documento."
+            self.queue.retry(job.id, message)
+            logger.exception(
+                "cloud.sync.job.failed job_id=%s document_id=%s operation=%s",
+                job.id, document.id, job.operation,
+            )
+            raise
         return job
 
-    def sync_changes(self, organization_id: int) -> int:
+    def sync_changes(
+        self,
+        organization_id: int,
+        progress: ProgressCallback | None = None,
+    ) -> int:
+        logger.info("cloud.sync.delta.start organization_id=%s", organization_id)
         provider = self.manager.provider_for(organization_id)
         if provider is None:
-            return 0
+            raise CloudAuthenticationError(
+                "A conta de nuvem não está disponível. Reconecte a conta e tente novamente."
+            )
+        self._progress(progress, 10, "Garantindo estrutura da organização")
         self.synchronize_structure(organization_id, provider=provider, reconcile_documents=True)
+        self._progress(progress, 25, "Consultando alterações remotas")
         settings = self.manager.settings(organization_id)
         changes, cursor = provider.list_changes(settings.delta_token)
+        self._progress(progress, 35, "Consulta remota concluída")
         for change in changes:
             if change.deleted:
                 self.database.execute_query(
@@ -165,7 +222,50 @@ class CloudSyncService:
             "UPDATE cloud_settings SET delta_token = ?, last_sync = ? WHERE organization_id = ?",
             (cursor, self._now(), organization_id),
         )
+        logger.info(
+            "cloud.sync.delta.done organization_id=%s changes=%s cursor_updated=%s",
+            organization_id, len(changes), cursor != settings.delta_token,
+        )
         return len(changes)
+
+    def mark_pending_documents_failed(
+        self, organization_id: int, error: str,
+    ) -> int:
+        """Expõe falha de sessão nos documentos sem descartar jobs repetíveis."""
+
+        message = error.strip() or "Falha na sincronização da nuvem."
+        rows = self.database.fetch_all(
+            """
+            SELECT DISTINCT d.id,d.cloud_provider,d.remote_id
+            FROM documents d JOIN sync_jobs j ON j.document_id=d.id
+            WHERE d.organization_id=?
+              AND j.status IN ('PENDING','RETRY','RUNNING')
+            """,
+            (organization_id,),
+        )
+        for row in rows:
+            self.documents.update_cloud_state(
+                row["id"], CloudSyncState.SYNC_ERROR,
+                row["cloud_provider"], row["remote_id"],
+            )
+        self.database.execute_query(
+            """
+            UPDATE sync_jobs SET
+                status=CASE WHEN status='RUNNING' THEN 'RETRY' ELSE status END,
+                last_error=?,updated_at=?
+            WHERE id IN (
+                SELECT j.id FROM sync_jobs j JOIN documents d ON d.id=j.document_id
+                WHERE d.organization_id=?
+                  AND j.status IN ('PENDING','RETRY','RUNNING')
+            )
+            """,
+            (message[:1000], self._now(), organization_id),
+        )
+        logger.warning(
+            "cloud.sync.pending_marked_failed organization_id=%s documents=%s",
+            organization_id, len(rows),
+        )
+        return len(rows)
 
     def synchronize_structure(
         self, organization_id: int, *, provider=None, reconcile_documents: bool = True,
@@ -180,6 +280,10 @@ class CloudSyncService:
         if organization is None or organization.status != "ACTIVE":
             raise ValueError("Organização não encontrada para sincronização.")
         provider_name = settings.sync_mode
+        logger.info(
+            "cloud.sync.structure.start organization_id=%s provider=%s",
+            organization_id, provider_name,
+        )
         organization_remote_name = self._organization_remote_name(
             organization.name, organization_id
         )
@@ -193,6 +297,10 @@ class CloudSyncService:
             except CloudResourceNotFoundError:
                 root_id = None
         if not root_id:
+            logger.info(
+                "cloud.sync.structure.ensure_roots organization_id=%s",
+                organization_id,
+            )
             application_root = provider.ensure_folder("SmartFile")
             organization_root = provider.ensure_folder(
                 organization_remote_name, application_root.remote_id
@@ -205,6 +313,10 @@ class CloudSyncService:
 
         all_folders = self.folders.find_all_including_deleted(organization_id)
         active = [folder for folder in all_folders if folder.status == "ACTIVE"]
+        logger.info(
+            "cloud.sync.structure.folders organization_id=%s active=%s",
+            organization_id, len(active),
+        )
         remote_by_folder: dict[int, str] = {}
         remaining = list(active)
         while remaining:
@@ -255,6 +367,10 @@ class CloudSyncService:
             self._remove_deleted_remote_folders(
                 provider, organization_id, provider_name, all_folders
             )
+        logger.info(
+            "cloud.sync.structure.done organization_id=%s folders=%s",
+            organization_id, len(active),
+        )
         return root_id
 
     def _reconcile_documents(
@@ -332,6 +448,13 @@ class CloudSyncService:
             clean = clean.replace(character, "-")
         clean = clean.strip(". ")[:96] or "Organização"
         return f"{clean} ({organization_id})"
+
+    @staticmethod
+    def _progress(
+        callback: ProgressCallback | None, value: int, message: str,
+    ) -> None:
+        if callback is not None:
+            callback(value, message)
 
     def _download(self, provider, document) -> None:
         if not document.remote_id:

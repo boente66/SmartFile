@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import sys
@@ -24,6 +25,8 @@ from app.repositories.organization_member_repository import OrganizationMemberRe
 from app.services.folder_template_service import FolderTemplateService
 from app.cloud.cloud_models import CloudOAuthState
 from app.errors.cloud_exceptions import CloudConfigurationMissingError, CloudPermissionError
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentController:
@@ -430,6 +433,10 @@ class DocumentController:
             QMessageBox.information(self.view, "Sincronização", "Esta organização utiliza somente armazenamento local.")
             return
         worker = CloudSyncWorker(self.service.cloud_sync_service, self.service.active_organization_id)
+        logger.info(
+            "cloud.sync.ui.start organization_id=%s",
+            self.service.active_organization_id,
+        )
         self._cloud_worker = worker
         worker.progress.connect(lambda value, message: self.main_view.progress.update(value, message))
         worker.succeeded.connect(self._on_cloud_sync_succeeded)
@@ -473,17 +480,26 @@ class DocumentController:
         QMessageBox.information(self.view, "Histórico da nuvem", message)
 
     def _on_cloud_sync_succeeded(self, result):
+        logger.info(
+            "cloud.sync.ui.succeeded jobs=%s changes=%s",
+            result["jobs"], result["changes"],
+        )
         self.main_view.progress.finish("Sincronização concluída")
         self._refresh_cloud(); self._refresh_documents()
         self.view.set_status(f"Sincronização concluída: {result['jobs']} job(s)")
 
     def _on_cloud_sync_failed(self, message: str):
+        logger.error("cloud.sync.ui.failed message=%s", message)
         self.main_view.progress.finish("Falha na sincronização")
+        self._refresh_cloud()
+        self._refresh_documents()
+        self.view.set_status("Falha na sincronização")
         QMessageBox.warning(self.view, "Sincronização", message)
 
     def _cleanup_cloud_worker(self, worker):
         if self._cloud_worker is worker:
             self._cloud_worker = None
+            logger.info("cloud.sync.ui.worker_cleanup")
 
     def on_copy_document(self,document_id): self._copied_document_id=document_id; self.view.set_status("Documento copiado. Escolha a pasta e use Colar.")
     def on_paste_document(self):

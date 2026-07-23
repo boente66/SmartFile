@@ -16,9 +16,10 @@ from app.cloud.cloud_models import (
     CloudAuthResult, CloudOperation, CloudSyncState, CloudUploadRequest, RemoteMetadata,
 )
 from app.cloud.cloud_provider import (
-    CloudAuthenticationError, CloudFileTooLargeError, CloudOfflineError,
-    CloudPermissionDeniedError, CloudProvider, CloudRateLimitError,
-    CloudResourceNotFoundError, urllib_transport,
+    NETWORK_TIMEOUT_SECONDS, CloudAuthenticationError, CloudError,
+    CloudFileTooLargeError, CloudOfflineError, CloudPermissionDeniedError,
+    CloudProvider, CloudRateLimitError, CloudResourceNotFoundError,
+    urllib_transport,
 )
 from app.cloud.cloud_sync_service import CloudSyncService
 from app.cloud.providers.google_drive_provider import GoogleDriveProvider
@@ -213,9 +214,10 @@ def test_offline_import_stays_local_queue_retries_and_reconnects(tmp_path: Path)
 
     fake = FakeProvider(offline=True)
     manager.provider_for = lambda _organization_id: fake
-    documents.cloud_sync_service.process_next()
+    with pytest.raises(CloudOfflineError):
+        documents.cloud_sync_service.process_next()
     retry_document = documents.get_document(document.id)
-    assert retry_document.cloud_status == CloudSyncState.PENDING_UPLOAD
+    assert retry_document.cloud_status == CloudSyncState.SYNC_ERROR
     assert CloudJobQueue(documents.database).next_pending().status == "RETRY"
     assert stored.read_bytes() == b"conteudo local"
 
@@ -359,9 +361,10 @@ def test_offline_download_remains_pending_download(tmp_path: Path):
     provider = FakeProvider()
     provider.download = lambda *_args: (_ for _ in ()).throw(CloudOfflineError("offline"))
     documents.cloud_manager.provider_for = lambda _organization_id: provider
-    documents.cloud_sync_service.process_next(documents.active_organization_id)
+    with pytest.raises(CloudOfflineError):
+        documents.cloud_sync_service.process_next(documents.active_organization_id)
     stored = documents.document_repository.find_by_id(document.id, documents.active_organization_id)
-    assert stored.cloud_status == "PENDING_DOWNLOAD"
+    assert stored.cloud_status == "SYNC_ERROR"
     assert documents.cloud_sync_service.queue.next_pending(documents.active_organization_id).status == "RETRY"
 
 
@@ -495,3 +498,124 @@ def test_provider_ensure_folder_is_idempotent(provider_class):
 
     assert first.remote_id == second.remote_id == "folder-1"
     assert len(created) == 1
+
+
+def test_onedrive_delta_empty_finishes_and_persists_cursor():
+    delta_url = f"{OneDriveProvider.GRAPH}/me/drive/root/delta"
+    final_url = f"{delta_url}?token=final"
+    calls = []
+
+    def transport(method, url, headers, data):
+        calls.append(url)
+        return 200, {}, json.dumps({
+            "value": [],
+            "@odata.deltaLink": final_url,
+        }).encode()
+
+    changes, cursor = OneDriveProvider("access", transport).list_changes()
+
+    assert changes == []
+    assert cursor == final_url
+    assert calls == [delta_url]
+
+
+def test_onedrive_delta_repeated_next_link_is_stopped():
+    delta_url = f"{OneDriveProvider.GRAPH}/me/drive/root/delta"
+    calls = []
+
+    def transport(method, url, headers, data):
+        calls.append(url)
+        return 200, {}, json.dumps({
+            "value": [],
+            "@odata.nextLink": delta_url,
+        }).encode()
+
+    with pytest.raises(CloudError, match="repetiu a mesma página"):
+        OneDriveProvider("access", transport).list_changes()
+
+    assert calls == [delta_url]
+
+
+def test_onedrive_delta_http_error_is_propagated():
+    provider = OneDriveProvider(
+        "access",
+        lambda *_args: (
+            503, {}, json.dumps({"error": {"code": "serviceUnavailable"}}).encode()
+        ),
+    )
+
+    with pytest.raises(CloudOfflineError, match="HTTP 503"):
+        provider.list_changes()
+
+
+def test_network_timeout_is_finite_and_translated(monkeypatch):
+    captured = {}
+
+    def timeout(_request, *, timeout):
+        captured["timeout"] = timeout
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr("app.cloud.cloud_provider.urlopen", timeout)
+
+    with pytest.raises(CloudOfflineError, match="não respondeu"):
+        urllib_transport("GET", "https://graph.microsoft.com/v1.0/me", {}, None)
+
+    assert captured["timeout"] == NETWORK_TIMEOUT_SECONDS
+
+
+def test_sync_worker_processes_pending_upload_after_empty_delta(tmp_path: Path):
+    source = tmp_path / "pendente.pdf"
+    source.write_bytes(b"pendente")
+    documents = DocumentService(db_path=str(tmp_path / "smartfile.db"))
+    organization_id = documents.active_organization_id
+    account = _account(documents.cloud_manager)
+    documents.cloud_manager.configure(organization_id, "ONEDRIVE", account.id)
+    document = documents.import_document(str(source))
+    provider = FakeProvider()
+    documents.cloud_manager.provider_for = lambda _organization_id: provider
+    progress = []
+    succeeded = []
+    failed = []
+    worker = CloudSyncWorker(documents.cloud_sync_service, organization_id)
+    worker.progress.connect(lambda value, message: progress.append((value, message)))
+    worker.succeeded.connect(succeeded.append)
+    worker.failed.connect(failed.append)
+
+    worker.run()
+
+    refreshed = documents.get_document(document.id)
+    assert failed == []
+    assert succeeded == [{"changes": 0, "jobs": 1}]
+    assert refreshed.cloud_status == CloudSyncState.SYNCED
+    assert refreshed.remote_id
+    assert ("SmartFile", None) in provider.folder_calls
+    assert [value for value, _message in progress] == [5, 10, 25, 35, 40, 95, 100]
+
+
+def test_sync_worker_propagates_delta_error_and_marks_pending_document(tmp_path: Path):
+    source = tmp_path / "erro.pdf"
+    source.write_bytes(b"erro")
+    documents = DocumentService(db_path=str(tmp_path / "smartfile.db"))
+    organization_id = documents.active_organization_id
+    account = _account(documents.cloud_manager)
+    documents.cloud_manager.configure(organization_id, "ONEDRIVE", account.id)
+    document = documents.import_document(str(source))
+    provider = FakeProvider()
+    provider.list_changes = lambda *_args: (
+        (_ for _ in ()).throw(CloudOfflineError("Microsoft Graph indisponível"))
+    )
+    documents.cloud_manager.provider_for = lambda _organization_id: provider
+    progress = []
+    failed = []
+    worker = CloudSyncWorker(documents.cloud_sync_service, organization_id)
+    worker.progress.connect(lambda value, message: progress.append((value, message)))
+    worker.failed.connect(failed.append)
+
+    worker.run()
+
+    refreshed = documents.get_document(document.id)
+    job = documents.cloud_sync_service.queue.next_pending(organization_id)
+    assert failed == ["Microsoft Graph indisponível"]
+    assert progress[-1] == (100, "Falha na sincronização")
+    assert refreshed.cloud_status == CloudSyncState.SYNC_ERROR
+    assert job.last_error == "Microsoft Graph indisponível"
