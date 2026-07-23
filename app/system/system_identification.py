@@ -83,7 +83,7 @@ class SystemIdentification:
             return "sane"
 
         if SystemIdentification.is_windows():
-            return "wia"
+            return "twain"
 
         if SystemIdentification.is_mac():
             return "ica"
@@ -105,19 +105,3 @@ class SystemIdentification:
             "downloads": SystemIdentification.get_downloads_directory(),
             "temp": SystemIdentification.get_temp_directory(),
         }
-
-
-    @staticmethod
-    def get_scanner_backend():
-       system = platform.system()
-
-       if system == "Linux":
-        return "sane"
-
-       if system == "Windows":
-        return "twain"
-
-       if system == "Darwin":
-        return "ica"
-
-        return None

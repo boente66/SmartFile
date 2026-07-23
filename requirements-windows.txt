@@ -1,0 +1,3 @@
+# Entrada reproduzível do build Windows. Os marcadores de plataforma em
+# requirements.txt selecionam pytwain/pywin32 e ignoram python-sane.
+-r requirements.txt

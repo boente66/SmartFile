@@ -1,0 +1,106 @@
+name: Bug da beta Windows
+description: Relate uma falha no instalador ou aplicativo Windows experimental.
+title: "[Windows beta] "
+labels:
+  - bug
+  - windows
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Não inclua tokens, senhas, PINs, certificados, chaves privadas ou documentos confidenciais.
+  - type: input
+    id: version
+    attributes:
+      label: Versão do SmartFile
+      placeholder: 0.9.0-beta.1
+    validations:
+      required: true
+  - type: dropdown
+    id: windows
+    attributes:
+      label: Versão do Windows
+      options:
+        - Windows 11
+        - Windows 10
+        - Windows Server
+        - Outra
+    validations:
+      required: true
+  - type: dropdown
+    id: architecture
+    attributes:
+      label: Arquitetura
+      options:
+        - x64
+        - ARM64
+        - x86
+        - Não sei
+    validations:
+      required: true
+  - type: dropdown
+    id: distribution
+    attributes:
+      label: Distribuição usada
+      options:
+        - Instalador
+        - Portátil
+    validations:
+      required: true
+  - type: input
+    id: stage
+    attributes:
+      label: Etapa ou módulo
+      placeholder: Instalação, Login, Documentos, PDF Viewer, Scanner...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Comportamento esperado
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Comportamento observado
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Passos para reproduzir
+      placeholder: |
+        1. Abra...
+        2. Clique...
+        3. Observe...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs sanitizados
+      description: Remova dados pessoais e qualquer segredo antes de anexar.
+      render: shell
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Screenshot
+      description: Arraste uma imagem sem documentos ou dados pessoais visíveis.
+  - type: input
+    id: scanner
+    attributes:
+      label: Scanner e driver
+      placeholder: Modelo, fabricante e versão TWAIN x64; ou “não aplicável”
+  - type: input
+    id: antivirus
+    attributes:
+      label: Antivírus
+      placeholder: Microsoft Defender, outro produto ou “não sei”
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Confirmação
+      options:
+        - label: Revisei o relato e removi tokens, senhas, certificados e dados confidenciais.
+          required: true

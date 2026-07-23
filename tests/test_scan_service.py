@@ -1,4 +1,5 @@
 import sys
+from io import BytesIO
 from types import SimpleNamespace
 
 from PIL import Image
@@ -77,3 +78,74 @@ def test_feeder_error_is_presented_in_portuguese():
 
 def test_scan_worker_keeps_native_finished_signal():
     assert "finished" not in ScanWorker.__dict__
+
+
+def test_windows_pytwain_devices_are_discovered(monkeypatch):
+    class Manager:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        @staticmethod
+        def get_source_list():
+            return ["Scanner TWAIN x64"]
+
+    monkeypatch.setitem(
+        sys.modules,
+        "twain",
+        SimpleNamespace(SourceManager=lambda _window: Manager()),
+    )
+    monkeypatch.setattr(SystemIdentification, "get_scanner_backend", lambda: "twain")
+
+    assert ScanService.list_devices() == ["Scanner TWAIN x64"]
+
+
+def test_windows_pytwain_scan_returns_detached_rgb_image(monkeypatch):
+    buffer = BytesIO()
+    Image.new("RGB", (4, 3), "white").save(buffer, format="BMP")
+
+    class Source:
+        def __init__(self):
+            self.closed = False
+
+        def request_acquire(self, **_kwargs):
+            return None
+
+        @staticmethod
+        def xfer_image_natively():
+            return 123, 0
+
+        def close(self):
+            self.closed = True
+
+    source = Source()
+
+    class Manager:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        @staticmethod
+        def open_source(_name):
+            return source
+
+    monkeypatch.setitem(
+        sys.modules,
+        "twain",
+        SimpleNamespace(
+            SourceManager=lambda _window: Manager(),
+            dib_to_bm_file=lambda _handle: buffer.getvalue(),
+        ),
+    )
+    config = ScanConfigModel("Scanner TWAIN x64", dpi=300, color_mode="color")
+
+    image = ScanService._scan_windows(config)
+
+    assert image.mode == "RGB"
+    assert image.size == (4, 3)
+    assert source.closed is True
+    image.close()

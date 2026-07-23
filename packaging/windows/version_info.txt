@@ -1,0 +1,31 @@
+# UTF-8
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(0, 9, 0, 0),
+    prodvers=(0, 9, 0, 0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo([
+      StringTable(
+        '041604B0',
+        [
+          StringStruct('CompanyName', 'SmartFile contributors'),
+          StringStruct('FileDescription', 'SmartFile - sistema de gestão documental'),
+          StringStruct('FileVersion', '0.9.0-beta.1'),
+          StringStruct('InternalName', 'SmartFile'),
+          StringStruct('LegalCopyright', 'Copyright (c) 2026 SmartFile contributors'),
+          StringStruct('OriginalFilename', 'SmartFile.exe'),
+          StringStruct('ProductName', 'SmartFile'),
+          StringStruct('ProductVersion', '0.9.0-beta.1')
+        ]
+      )
+    ]),
+    VarFileInfo([VarStruct('Translation', [1046, 1200])])
+  ]
+)

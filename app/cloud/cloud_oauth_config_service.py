@@ -21,10 +21,11 @@ class CloudOAuthConfigurationService:
     PROVIDERS = {"ONEDRIVE", "GOOGLE_DRIVE"}
 
     def __init__(self, database, bundled_dir: Path | None = None):
-        self.path = database.data_dir / ".cloud_oauth_config"
-        self.key_path = database.data_dir / ".cloud_tokens.key"
+        config_dir = database.paths.config
+        self.path = config_dir / ".cloud_oauth_config"
+        self.key_path = config_dir / ".cloud_tokens.key"
         self._cipher: TokenCipher | None = None
-        self.token_store = CloudTokenStore(database.data_dir)
+        self.token_store = CloudTokenStore(config_dir)
         self.bundled_dir = bundled_dir or resource_path("app/cloud/resources")
 
     @property

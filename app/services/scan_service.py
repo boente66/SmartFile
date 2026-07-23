@@ -1,3 +1,5 @@
+from io import BytesIO
+
 from PIL import Image
 from app.system.system_identification import SystemIdentification
 
@@ -18,10 +20,11 @@ class ScanService:
         if backend == "twain":
             try:
                 import twain
-                sm = twain.SourceManager(0)
-                devices = sm.GetSourceList()
-                sm.Destroy()
-                return devices
+                with twain.SourceManager(0) as manager:
+                    getter = getattr(manager, "get_source_list", None)
+                    if getter is None:
+                        getter = manager.GetSourceList
+                    return list(getter() or [])
             except Exception:
                 return []
 
@@ -91,43 +94,47 @@ class ScanService:
     # -------------------------
     @staticmethod
     def _scan_windows(config):
-
         import twain
-        import win32ui
 
-        sm = twain.SourceManager(0)
-        source = sm.OpenSource(config.device_name)
+        with twain.SourceManager(0) as manager:
+            opener = getattr(manager, "open_source", None)
+            source = (
+                opener(config.device_name)
+                if opener is not None
+                else manager.OpenSource(config.device_name)
+            )
+            if source is None:
+                raise RuntimeError("O scanner selecionado não está disponível.")
+            try:
+                request = getattr(source, "request_acquire", None)
+                if request is not None:
+                    request(show_ui=False, modal_ui=False)
+                    handle, _remaining = source.xfer_image_natively()
+                    bitmap = twain.dib_to_bm_file(handle)
+                    with Image.open(BytesIO(bitmap), formats=["BMP"]) as image:
+                        return image.convert("RGB")
 
-        source.SetCapability(
-            twain.ICAP_XRESOLUTION, twain.TWTY_FIX32, config.dpi
-        )
-
-        source.SetCapability(
-            twain.ICAP_YRESOLUTION, twain.TWTY_FIX32, config.dpi
-        )
-
-        source.RequestAcquire(0, 0)
-        handle, _ = source.XferImageNatively()
-
-        source.CloseSource()
-        sm.Destroy()
-
-        if not handle:
-            raise RuntimeError("Falha ao digitalizar")
-
-        bmp = win32ui.CreateBitmapFromHandle(handle)
-
-        img = Image.frombuffer(
-            "RGB",
-            (bmp.GetInfo()["bmWidth"], bmp.GetInfo()["bmHeight"]),
-            bmp.GetBitmapBits(True),
-            "raw",
-            "BGRX",
-            0,
-            1
-        )
-
-        return img
+                source.SetCapability(
+                    twain.ICAP_XRESOLUTION, twain.TWTY_FIX32, config.dpi
+                )
+                source.SetCapability(
+                    twain.ICAP_YRESOLUTION, twain.TWTY_FIX32, config.dpi
+                )
+                source.RequestAcquire(0, 0)
+                handle, _remaining = source.XferImageNatively()
+                if not handle:
+                    raise RuntimeError("Falha ao digitalizar.")
+                bitmap = twain.DIBToBMFile(handle)
+                if isinstance(bitmap, (bytes, bytearray)):
+                    with Image.open(BytesIO(bitmap), formats=["BMP"]) as image:
+                        return image.convert("RGB")
+                raise RuntimeError("O backend TWAIN não retornou uma imagem compatível.")
+            finally:
+                closer = getattr(source, "close", None)
+                if closer is not None:
+                    closer()
+                elif hasattr(source, "CloseSource"):
+                    source.CloseSource()
 
     # -------------------------
     # LINUX

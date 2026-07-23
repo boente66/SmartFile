@@ -1,0 +1,192 @@
+name: Windows beta package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Versão pública dos artefatos
+        required: true
+        default: 0.9.0-beta.1
+        type: string
+      generate_setup:
+        description: Gerar instalador Inno Setup
+        required: true
+        default: true
+        type: boolean
+      generate_portable:
+        description: Gerar ZIP portátil
+        required: true
+        default: true
+        type: boolean
+      full_test_suite:
+        description: Executar a suíte completa
+        required: true
+        default: true
+        type: boolean
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      SMARTFILE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '0.9.0-beta.1' }}
+      QT_QPA_PLATFORM: offscreen
+      PYTHONUTF8: '1'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-windows.txt
+            requirements-build.txt
+
+      - name: Validate package version
+        shell: pwsh
+        run: |
+          $sourceVersion = python -c "from app.version import __version__; print(__version__)"
+          if ($env:SMARTFILE_VERSION -ne $sourceVersion) {
+            throw "Versão solicitada ($env:SMARTFILE_VERSION) difere do código ($sourceVersion)."
+          }
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME -ne "v$sourceVersion") {
+            throw "A tag deve ser v$sourceVersion."
+          }
+
+      - name: Install Python dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-windows.txt
+          python -m pip install -r requirements-build.txt
+          python -m pip install "pyinstaller>=6.10,<7"
+
+      - name: Compile sources
+        run: python -m compileall -q app tests run.py
+
+      - name: Validate requested outputs
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        run: |
+          if (-not ('${{ inputs.generate_setup }}' -eq 'true') -and
+              -not ('${{ inputs.generate_portable }}' -eq 'true')) {
+            throw "Selecione ao menos um artefato: setup ou portátil."
+          }
+
+      - name: Run full test suite
+        if: github.event_name != 'workflow_dispatch' || inputs.full_test_suite
+        run: python -m pytest -q
+
+      - name: Run packaging test subset
+        if: github.event_name == 'workflow_dispatch' && inputs.full_test_suite == false
+        run: python -m pytest -q tests/test_windows_packaging.py tests/test_scan_service.py
+
+      - name: Validate dependencies and worktree
+        shell: pwsh
+        run: |
+          python -m pip check
+          git diff --check
+          $forbidden = git ls-files | Select-String -Pattern '(^|/)(storage|tokens|cache)/|[.](pfx|p12|db|sqlite|sqlite3|log)$|app/cloud/resources/.+[.]json$'
+          if ($forbidden) {
+            $forbidden
+            throw "Arquivos sensíveis versionados foram encontrados."
+          }
+
+      - name: Build Windows onedir
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean `
+            --distpath dist `
+            --workpath build/windows/pyinstaller `
+            packaging/pyinstaller/smartfile_windows.spec
+
+      - name: Audit and smoke test bundle
+        shell: pwsh
+        run: |
+          python scripts/audit_windows_bundle.py dist/SmartFile
+          $process = Start-Process `
+            -FilePath "dist/SmartFile/SmartFile.exe" `
+            -ArgumentList "--smoke-test" `
+            -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Smoke test do executável falhou com código $($process.ExitCode)."
+          }
+
+      - name: Install Inno Setup
+        if: github.event_name != 'workflow_dispatch' || inputs.generate_setup
+        shell: pwsh
+        run: |
+          winget install --id JRSoftware.InnoSetup -e --source winget `
+            --silent --accept-source-agreements --accept-package-agreements
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            throw "Compilador ISCC não foi encontrado."
+          }
+
+      - name: Build installer
+        if: github.event_name != 'workflow_dispatch' || inputs.generate_setup
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release/windows | Out-Null
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          $source = (Resolve-Path "dist/SmartFile").Path
+          $output = (Resolve-Path "release/windows").Path
+          & $iscc `
+            "/DAppVersion=$env:SMARTFILE_VERSION" `
+            "/DSourceDir=$source" `
+            "/DOutputDir=$output" `
+            "packaging/windows/smartfile.iss"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup falhou com código $LASTEXITCODE."
+          }
+          $setup = "release/windows/SmartFile-$env:SMARTFILE_VERSION-Windows-x64-Setup.exe"
+          if (-not (Test-Path $setup)) {
+            throw "Instalador esperado não foi criado: $setup"
+          }
+
+      - name: Build portable archive
+        if: github.event_name != 'workflow_dispatch' || inputs.generate_portable
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release/windows | Out-Null
+          $portable = "release/windows/SmartFile-$env:SMARTFILE_VERSION-Windows-x64-Portable.zip"
+          Compress-Archive -Path "dist/SmartFile/*" -DestinationPath $portable -CompressionLevel Optimal
+          if (-not (Test-Path $portable)) {
+            throw "Arquivo portátil esperado não foi criado: $portable"
+          }
+
+      - name: Generate SHA-256 checksums
+        shell: pwsh
+        run: |
+          Get-ChildItem "release/windows/SmartFile-*" -File |
+            Where-Object { $_.Extension -in ".exe", ".zip" } |
+            ForEach-Object {
+              $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              "$hash *$($_.Name)" |
+                Set-Content -NoNewline -Encoding ascii "$($_.FullName).sha256"
+            }
+          Get-ChildItem release/windows
+
+      - name: Upload temporary Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SmartFile-${{ env.SMARTFILE_VERSION }}-Windows-x64
+          path: |
+            release/windows/*
+            CHANGELOG.md
+            docs/RELEASE_NOTES_0.9.0-beta.1.md
+            docs/GUIA_TESTE_WINDOWS_BETA.md
+          if-no-files-found: error
+          retention-days: 30

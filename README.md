@@ -55,6 +55,17 @@ directories. See [Linux beta notes](docs/BETA_LINUX.md) for build instructions,
 optional system integrations, known limitations, and complete data-removal
 guidance.
 
+## Windows experimental package
+
+The Windows x64 onedir bundle and Inno Setup installer are generated on an
+official GitHub Actions Windows runner. Open **Actions > Windows beta package**,
+run the workflow manually, and download its temporary artifact. Builds are not
+published as a final release automatically.
+
+See [the Windows beta test guide](docs/GUIA_TESTE_WINDOWS_BETA.md) before
+distribution. This is an experimental, non-certified build and still requires
+manual validation on real Windows 10 or 11 hardware.
+
 ## 📁 Project structure
 
 ```text
