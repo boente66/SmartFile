@@ -5,6 +5,7 @@ from PIL import Image
 
 from app.auth.session_context import SessionContext
 from app.database.database import Database
+from app.database.migrations import CURRENT_SCHEMA_VERSION
 from app.errors.auth_exceptions import AdministrationError, LastOwnerError, MembershipError, AvatarError
 from app.models.registration_request import RegistrationRequest
 from app.services.auth_service import AuthService
@@ -24,7 +25,10 @@ def build_services(tmp_path):
 def test_custom_organization_and_administration_migration(tmp_path):
     database,context,_=build_services(tmp_path)
     assert context.active_organization.name=="Empresa ABC"
-    assert database.connect().execute("PRAGMA user_version").fetchone()[0]==11
+    assert (
+        database.connect().execute("PRAGMA user_version").fetchone()[0]
+        == CURRENT_SCHEMA_VERSION
+    )
     assert {r["name"] for r in database.fetch_all("SELECT name FROM sqlite_master WHERE type='table'")} >= {"audit_log","organization_members"}
     assert len(database.fetch_all("SELECT * FROM folders WHERE organization_id=?",(context.active_organization.id,)))==8
 

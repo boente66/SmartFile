@@ -61,6 +61,15 @@ class FolderRepository(BaseRepository):
             )
         ]
 
+    def find_all_including_deleted(self, organization_id: int) -> list[FolderEntity]:
+        return [
+            self._entity(row)
+            for row in self._fetch_all(
+                "SELECT * FROM folders WHERE organization_id=? ORDER BY id",
+                (organization_id,),
+            )
+        ]
+
     @staticmethod
     def _values(entity: FolderEntity) -> tuple[object, ...]:
         return (

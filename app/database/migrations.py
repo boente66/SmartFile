@@ -7,7 +7,7 @@ from pathlib import Path
 from app.errors.persistence_exceptions import DatabaseError
 
 logger = logging.getLogger(__name__)
-CURRENT_SCHEMA_VERSION = 11
+CURRENT_SCHEMA_VERSION = 12
 GIB = 1024 ** 3
 
 
@@ -192,6 +192,29 @@ def _upgrade_cloud(connection: sqlite3.Connection) -> None:
     )
     if "token_ref" not in _columns(connection, "cloud_accounts"):
         connection.execute("ALTER TABLE cloud_accounts ADD COLUMN token_ref TEXT")
+
+
+def _upgrade_cloud_organization_structure(connection: sqlite3.Connection) -> None:
+    """Persiste o vínculo entre pastas lógicas e diretórios dos providers."""
+
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS cloud_folder_mappings (
+            organization_id INTEGER NOT NULL,
+            folder_id INTEGER NOT NULL,
+            provider TEXT NOT NULL CHECK (provider IN ('ONEDRIVE', 'GOOGLE_DRIVE')),
+            remote_id TEXT NOT NULL,
+            remote_parent_id TEXT,
+            remote_name TEXT NOT NULL,
+            synced_at TEXT NOT NULL,
+            PRIMARY KEY (organization_id, folder_id, provider),
+            FOREIGN KEY (organization_id) REFERENCES organizations(id),
+            FOREIGN KEY (folder_id) REFERENCES folders(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_cloud_folder_remote
+            ON cloud_folder_mappings(organization_id, provider, remote_id);
+        """
+    )
 
 
 def _upgrade_auth(connection: sqlite3.Connection) -> None:
@@ -421,6 +444,7 @@ def migrate(connection: sqlite3.Connection, schema_path: Path) -> int:
             _upgrade_administration(connection)
             _upgrade_system_administrator(connection)
             _upgrade_storage_quotas(connection)
+            _upgrade_cloud_organization_structure(connection)
             connection.execute(
                 "UPDATE documents SET source_path = path WHERE source_path IS NULL"
             )

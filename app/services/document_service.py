@@ -325,12 +325,28 @@ class DocumentService:
         if document is None:
             raise InvalidDocumentError("Documento não encontrado.")
         self._record_history(document_id, "MOVE", "Documento movido para outra pasta lógica")
+        try:
+            self.cloud_sync_service.enqueue_move(document_id, self.active_organization_id)
+        except Exception:
+            logger.exception("Movimento local concluído, mas não foi enfileirado na nuvem")
         return document
 
     def delete_folder(self, folder_id: int) -> bool:
+        affected = self.document_repository.find_in_folder_tree(
+            self.active_organization_id, folder_id
+        )
         changed = self.folder_service.delete(self.active_organization_id, folder_id)
         if changed:
             self.document_repository.clear_deleted_folders(self.active_organization_id)
+            for document in affected:
+                try:
+                    self.cloud_sync_service.enqueue_move(
+                        document.id, self.active_organization_id
+                    )
+                except Exception:
+                    logger.exception(
+                        "Pasta removida localmente, mas movimento remoto não foi enfileirado"
+                    )
         return changed
 
     def _record_history(self, document_id: Optional[int], action: str, description: str) -> None:

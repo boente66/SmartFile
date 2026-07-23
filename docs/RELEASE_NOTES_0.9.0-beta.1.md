@@ -13,6 +13,8 @@ encontrados pelo rastreador de issues do projeto.
 - conversões documentais;
 - assinaturas digital e manuscrita;
 - sincronização opcional com OneDrive e Google Drive;
+- espelhamento remoto isolado por organização e pastas lógicas;
+- backup ZIP completo restrito ao administrador do sistema;
 - dados mutáveis mantidos fora de `/opt/smartfile`.
 
 ## Instalação
@@ -32,4 +34,5 @@ sha256sum -c smartfile_0.9.0~beta1_amd64.deb.sha256
 Esta é uma versão beta. Não a utilize como única cópia de documentos críticos.
 O scanner e algumas conversões dependem de software e hardware externos. O
 artefato SHA-256 detecta alterações acidentais, mas ainda não possui assinatura
-GPG. Consulte `BETA_LINUX.md` para limitações e remoção.
+GPG. A sincronização de nuvem não substitui o backup do SQLite e do storage.
+Consulte `BETA_LINUX.md` para limitações e remoção.

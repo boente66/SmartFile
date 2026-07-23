@@ -300,6 +300,18 @@ Quando não há internet, os documentos locais continuam disponíveis e as opera
 podem permanecer na fila. A sincronização é retomada quando houver conexão e uma
 conta corretamente configurada.
 
+Ao executar **Sincronizar agora**, o SmartFile prepara no provedor a pasta
+`SmartFile`, cria uma raiz exclusiva para a organização ativa e espelha suas
+pastas lógicas. Documentos sem pasta ficam na raiz da organização; documentos
+organizados são enviados à pasta correspondente. Renomear, mover ou excluir uma
+pasta local é refletido na próxima sincronização, preservando o isolamento entre
+organizações.
+
+Somente documentos e a estrutura lógica necessária são sincronizados. O banco
+`smartfile.db`, senhas, tokens, auditoria local e configurações privadas não são
+copiados para OneDrive ou Google Drive. Use o backup ZIP administrativo para
+salvaguardar o banco e o storage completo.
+
 Para adicionar uma conta, selecione **Adicionar Conta → Microsoft OneDrive** ou
 **Adicionar Conta → Google Drive**. O SmartFile abre a página oficial de autorização
 no navegador. O provedor só é ativado depois que a autorização for concluída. O
@@ -522,17 +534,46 @@ papel ou selecionar a mesa do scanner.
 
 1. O usuário importa ou altera um documento local.
 2. A Cloud Layer cria um trabalho na fila.
-3. O Worker seleciona o provider configurado.
-4. O arquivo é enviado e seus metadados remotos são registrados.
-5. O documento passa para o estado sincronizado.
+3. O Worker seleciona o provider configurado para a organização ativa.
+4. A Cloud Layer localiza ou cria `SmartFile/Nome da Organização (id)`.
+5. As pastas lógicas são reconciliadas com seus identificadores remotos.
+6. O arquivo é enviado à pasta remota correspondente.
+7. Os metadados remotos são registrados e o documento passa para sincronizado.
 
 **Fluxos alternativos:**
 
 - Sem conexão: o trabalho permanece pendente.
 - Token expirado: o provider tenta atualizar a autenticação.
 - Falha remota: o estado de erro e a mensagem técnica são registrados sem expor tokens.
+- Pasta remota removida manualmente: a estrutura é recriada ou o item é marcado
+  como removido remotamente, conforme o recurso afetado.
 
-**Resultado:** cópia remota associada ao documento local da organização.
+**Resultado:** cópia remota associada ao documento local, dentro da estrutura
+exclusiva da organização.
+
+### UC-09A — Reorganizar pastas sincronizadas
+
+**Ator principal:** usuário com permissão para organizar documentos.
+
+**Pré-condição:** organização conectada ao OneDrive ou Google Drive.
+
+**Fluxo principal:**
+
+1. O usuário cria, renomeia, move ou exclui uma pasta lógica.
+2. O SmartFile atualiza primeiro o SQLite e mantém os documentos utilizáveis.
+3. A próxima sincronização compara a hierarquia local com os mapeamentos remotos.
+4. A Cloud Layer cria, renomeia, move ou remove a pasta no provedor.
+5. Documentos afetados são reposicionados na raiz ou na nova pasta.
+
+**Fluxos alternativos:**
+
+- Sem internet: a organização local permanece atualizada e a reconciliação é
+  retomada posteriormente.
+- Troca de conta/provedor: os mapeamentos anteriores são descartados e uma nova
+  raiz organizacional é criada na conta selecionada.
+
+**Resultado:** a estrutura remota acompanha a organização local sem sincronizar
+o banco SQLite.
 
 ### UC-10 — Trocar de organização
 

@@ -130,6 +130,11 @@ class CloudProvider(ABC):
     def get_metadata(self, remote_id: str) -> RemoteMetadata: ...
 
     @abstractmethod
+    def ensure_folder(self, name: str, parent_id: str | None = None) -> RemoteMetadata:
+        """Localiza ou cria uma pasta de forma idempotente."""
+        ...
+
+    @abstractmethod
     def disconnect(self) -> None: ...
 
     def _authorized(self, content_type: str = "application/json") -> dict[str, str]:

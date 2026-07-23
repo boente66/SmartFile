@@ -35,23 +35,81 @@ class FakeProvider(CloudProvider):
         super().__init__("fake-token")
         self.offline = offline
         self.uploaded = []
+        self.upload_requests = []
+        self.items = {}
+        self.folder_calls = []
 
-    def authenticate(self, credentials): return CloudAuthResult(access_token="token")
-    def refresh_token(self, refresh_token, credentials): return CloudAuthResult(access_token="refreshed")
+    def authenticate(self, credentials):
+        return CloudAuthResult(access_token="token")
+
+    def refresh_token(self, refresh_token, credentials):
+        return CloudAuthResult(access_token="refreshed")
 
     def upload(self, request):
         if self.offline:
             raise CloudOfflineError("offline")
         self.uploaded.append(request.local_path)
-        return RemoteMetadata("remote-1", request.remote_name, request.local_path.stat().st_size, "v1")
+        self.upload_requests.append(request)
+        metadata = RemoteMetadata(
+            f"remote-{len(self.uploaded)}", request.remote_name,
+            request.local_path.stat().st_size, "v1",
+            parent_id=request.remote_parent_id,
+        )
+        self.items[metadata.remote_id] = metadata
+        return metadata
 
-    def download(self, remote_id, destination): destination.write_bytes(b"remote"); return destination
-    def delete(self, remote_id): return None
-    def rename(self, remote_id, new_name): return RemoteMetadata(remote_id, new_name)
-    def move(self, remote_id, parent_id): return RemoteMetadata(remote_id, "file", parent_id=parent_id)
-    def list_changes(self, cursor=None): return [], "cursor-2"
-    def get_metadata(self, remote_id): return RemoteMetadata(remote_id, "file")
-    def disconnect(self): self.access_token = ""
+    def download(self, remote_id, destination):
+        destination.write_bytes(b"remote")
+        return destination
+
+    def delete(self, remote_id):
+        self.items.pop(remote_id, None)
+
+    def rename(self, remote_id, new_name):
+        current = self.items.get(remote_id, RemoteMetadata(remote_id, new_name))
+        updated = RemoteMetadata(
+            remote_id, new_name, current.size, current.version,
+            current.modified_at, current.parent_id,
+        )
+        self.items[remote_id] = updated
+        return updated
+
+    def move(self, remote_id, parent_id):
+        current = self.items.get(remote_id, RemoteMetadata(remote_id, "file"))
+        updated = RemoteMetadata(
+            remote_id, current.name, current.size, current.version,
+            current.modified_at, parent_id,
+        )
+        self.items[remote_id] = updated
+        return updated
+
+    def list_changes(self, cursor=None):
+        return [], "cursor-2"
+
+    def get_metadata(self, remote_id):
+        if remote_id not in self.items:
+            raise CloudResourceNotFoundError("missing")
+        return self.items[remote_id]
+
+    def ensure_folder(self, name, parent_id=None):
+        self.folder_calls.append((name, parent_id))
+        existing = next(
+            (
+                item for item in self.items.values()
+                if item.name == name and item.parent_id == parent_id
+            ),
+            None,
+        )
+        if existing:
+            return existing
+        item = RemoteMetadata(
+            f"folder-{len(self.items) + 1}", name, parent_id=parent_id
+        )
+        self.items[item.remote_id] = item
+        return item
+
+    def disconnect(self):
+        self.access_token = ""
 
 
 def _account(manager: CloudManager, provider="ONEDRIVE", expired=False):
@@ -305,3 +363,135 @@ def test_offline_download_remains_pending_download(tmp_path: Path):
     stored = documents.document_repository.find_by_id(document.id, documents.active_organization_id)
     assert stored.cloud_status == "PENDING_DOWNLOAD"
     assert documents.cloud_sync_service.queue.next_pending(documents.active_organization_id).status == "RETRY"
+
+
+def test_organization_structure_is_created_once_and_persisted(tmp_path: Path):
+    documents = DocumentService(db_path=str(tmp_path / "smartfile.db"))
+    organization_id = documents.active_organization_id
+    parent = documents.folder_service.create(organization_id, "Financeiro")
+    child = documents.folder_service.create(organization_id, "Notas Fiscais", parent.id)
+    account = _account(documents.cloud_manager)
+    documents.cloud_manager.configure(organization_id, "ONEDRIVE", account.id)
+    provider = FakeProvider()
+    documents.cloud_manager.provider_for = lambda _organization_id: provider
+
+    root_id = documents.cloud_sync_service.synchronize_structure(organization_id)
+    first_calls = list(provider.folder_calls)
+    second_root = documents.cloud_sync_service.synchronize_structure(organization_id)
+
+    settings = documents.cloud_manager.settings(organization_id)
+    parent_mapping = documents.cloud_sync_service.folder_mappings.find(
+        organization_id, parent.id, "ONEDRIVE"
+    )
+    child_mapping = documents.cloud_sync_service.folder_mappings.find(
+        organization_id, child.id, "ONEDRIVE"
+    )
+    assert root_id == second_root == settings.remote_root_id
+    assert first_calls[0] == ("SmartFile", None)
+    assert first_calls[1][0].endswith(f"({organization_id})")
+    assert parent_mapping.remote_parent_id == root_id
+    assert child_mapping.remote_parent_id == parent_mapping.remote_id
+    assert provider.folder_calls == first_calls
+
+
+def test_upload_uses_remote_folder_from_active_organization(tmp_path: Path):
+    source = tmp_path / "nota.pdf"
+    source.write_bytes(b"nota")
+    documents = DocumentService(db_path=str(tmp_path / "smartfile.db"))
+    organization_id = documents.active_organization_id
+    folder = documents.folder_service.create(organization_id, "Fiscal")
+    account = _account(documents.cloud_manager)
+    documents.cloud_manager.configure(organization_id, "ONEDRIVE", account.id)
+    document = documents.import_document(str(source), folder_id=folder.id)
+    provider = FakeProvider()
+    documents.cloud_manager.provider_for = lambda _organization_id: provider
+
+    documents.cloud_sync_service.process_next(organization_id)
+
+    mapping = documents.cloud_sync_service.folder_mappings.find(
+        organization_id, folder.id, "ONEDRIVE"
+    )
+    assert provider.upload_requests[0].remote_parent_id == mapping.remote_id
+    assert documents.get_document(document.id).cloud_status == "SYNCED"
+
+
+def test_folder_rename_move_and_delete_are_reconciled(tmp_path: Path):
+    source = tmp_path / "contrato.pdf"
+    source.write_bytes(b"contrato")
+    documents = DocumentService(db_path=str(tmp_path / "smartfile.db"))
+    organization_id = documents.active_organization_id
+    first = documents.folder_service.create(organization_id, "Primeira")
+    second = documents.folder_service.create(organization_id, "Segunda")
+    child = documents.folder_service.create(organization_id, "Filha", first.id)
+    account = _account(documents.cloud_manager)
+    documents.cloud_manager.configure(organization_id, "ONEDRIVE", account.id)
+    document = documents.import_document(str(source), folder_id=child.id)
+    provider = FakeProvider()
+    documents.cloud_manager.provider_for = lambda _organization_id: provider
+    documents.cloud_sync_service.process_next(organization_id)
+
+    documents.folder_service.rename(organization_id, child.id, "Renomeada")
+    documents.folder_service.move(organization_id, child.id, second.id)
+    documents.cloud_sync_service.sync_changes(organization_id)
+    mapping = documents.cloud_sync_service.folder_mappings.find(
+        organization_id, child.id, "ONEDRIVE"
+    )
+    second_mapping = documents.cloud_sync_service.folder_mappings.find(
+        organization_id, second.id, "ONEDRIVE"
+    )
+    assert mapping.remote_name == "Renomeada"
+    assert mapping.remote_parent_id == second_mapping.remote_id
+    assert provider.items[mapping.remote_id].name == "Renomeada"
+
+    documents.delete_folder(child.id)
+    documents.cloud_sync_service.sync_changes(organization_id)
+    updated_document = documents.get_document(document.id)
+    assert updated_document.folder_id is None
+    assert provider.items[updated_document.remote_id].parent_id == (
+        documents.cloud_manager.settings(organization_id).remote_root_id
+    )
+    assert documents.cloud_sync_service.folder_mappings.find(
+        organization_id, child.id, "ONEDRIVE"
+    ) is None
+
+
+def test_changing_cloud_account_resets_remote_structure_mapping(tmp_path: Path):
+    documents = DocumentService(db_path=str(tmp_path / "smartfile.db"))
+    organization_id = documents.active_organization_id
+    folder = documents.folder_service.create(organization_id, "Documentos")
+    first = _account(documents.cloud_manager, "ONEDRIVE")
+    documents.cloud_manager.configure(organization_id, "ONEDRIVE", first.id)
+    provider = FakeProvider()
+    documents.cloud_manager.provider_for = lambda _organization_id: provider
+    documents.cloud_sync_service.synchronize_structure(organization_id)
+    assert documents.cloud_sync_service.folder_mappings.find_all(organization_id, "ONEDRIVE")
+
+    second = _account(documents.cloud_manager, "GOOGLE_DRIVE")
+    documents.cloud_manager.configure(organization_id, "GOOGLE_DRIVE", second.id)
+
+    assert documents.cloud_manager.settings(organization_id).remote_root_id is None
+    assert documents.cloud_sync_service.folder_mappings.find_all(organization_id, "ONEDRIVE") == []
+    assert folder.id is not None
+
+
+@pytest.mark.parametrize("provider_class", [OneDriveProvider, GoogleDriveProvider])
+def test_provider_ensure_folder_is_idempotent(provider_class):
+    remote = {"id": "folder-1", "name": "SmartFile", "size": 0, "folder": {}, "parents": []}
+    created = []
+
+    def transport(method, url, headers, data):
+        if method == "GET":
+            payload = {"value": [remote]} if provider_class is OneDriveProvider and created else (
+                {"value": []} if provider_class is OneDriveProvider else
+                ({"files": [remote]} if created else {"files": []})
+            )
+            return 200, {}, json.dumps(payload).encode()
+        created.append(True)
+        return 200, {}, json.dumps(remote).encode()
+
+    provider = provider_class("access", transport)
+    first = provider.ensure_folder("SmartFile")
+    second = provider.ensure_folder("SmartFile")
+
+    assert first.remote_id == second.remote_id == "folder-1"
+    assert len(created) == 1
