@@ -41,7 +41,7 @@ VersionInfoVersion=0.9.0.0
 VersionInfoCompany={#AppPublisher}
 VersionInfoDescription=Instalador beta do SmartFile
 VersionInfoProductName={#AppName}
-VersionInfoProductVersion={#AppVersion}
+VersionInfoProductVersion=0.9.0.0
 
 [Languages]
 Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
