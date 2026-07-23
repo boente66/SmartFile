@@ -26,6 +26,16 @@ independentes.
 - backup completo em ZIP para administradores;
 - sincronização opcional com Microsoft OneDrive ou Google Drive.
 
+## Capturas de tela
+
+### Login
+
+![Tela de login do SmartFile](assets/screenshots/smartfile-login.png)
+
+### Cadastro de conta e organização
+
+![Tela de cadastro de conta e organização do SmartFile](assets/screenshots/smartfile-cadastro.png)
+
 ## Camada de Nuvem
 
 A Cloud Layer mantém os módulos do SmartFile desacoplados das APIs externas:

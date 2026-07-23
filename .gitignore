@@ -19,6 +19,8 @@ assets/screenshots/*.png
 assets/screenshots/*.jpg
 assets/screenshots/*.jpeg
 assets/screenshots/*.webp
+!assets/screenshots/smartfile-login.png
+!assets/screenshots/smartfile-cadastro.png
 tokens/
 storage/
 temp/
