@@ -110,6 +110,7 @@ class PDFViewerController:
         self._render_current()
 
     def _connect_signals(self):
+        self.view.back_requested.connect(self.return_to_documents)
         self.view.open_requested.connect(self.open_document)
         self.view.page_requested.connect(self.go_to_page)
         self.view.first_requested.connect(lambda: self.go_to_page(1))
@@ -127,6 +128,13 @@ class PDFViewerController:
         self.view.print_requested.connect(self._print_document)
         self.view.fullscreen_requested.connect(self._toggle_fullscreen)
         self.view.escape_requested.connect(self._exit_fullscreen)
+
+    def return_to_documents(self):
+        """Fecha o PDF atual e retorna ao módulo oficial de Documentos."""
+
+        self._exit_fullscreen()
+        self.close_document()
+        self.workspace.show_view("documents")
 
     def _render_current(self):
         if self._path is None or self._info is None:

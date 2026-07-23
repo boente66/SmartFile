@@ -7,7 +7,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import fitz
 import pytest
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QWidget
 
 from app.controllers.pdf_viewer_controller import PDFViewerController
 from app.errors.pdf_viewer_exceptions import (
@@ -163,3 +163,23 @@ def test_toolbar_uses_icons_without_clipping_at_workspace_width():
     assert view._compact_toolbar is False
     assert view.btn_sign.text() == "Assinar digitalmente"
     view.close()
+
+
+def test_back_button_returns_to_documents_and_remains_available():
+    app = _app()
+    workspace = WorkspaceView()
+    documents = QWidget()
+    workspace.register_view("documents", documents)
+    controller = PDFViewerController(workspace)
+    controller.activate()
+    controller.view.set_document_loaded(False)
+
+    assert controller.view.btn_back.isEnabled()
+    assert controller.view.btn_open.isEnabled()
+    assert not controller.view.btn_back.icon().isNull()
+
+    controller.view.btn_back.click()
+    app.processEvents()
+
+    assert workspace.current_view() == "documents"
+    workspace.close()

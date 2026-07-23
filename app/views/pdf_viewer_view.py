@@ -16,6 +16,7 @@ from app.views.widgets.preview_widget import PreviewWidget
 
 
 class PDFViewerView(QWidget):
+    back_requested = pyqtSignal()
     open_requested = pyqtSignal(str)
     page_requested = pyqtSignal(int)
     first_requested = pyqtSignal()
@@ -118,7 +119,11 @@ class PDFViewerView(QWidget):
             self.buttons.append(widget)
             return widget
 
-        button("Abrir", self._choose_pdf, "viewer_open")
+        self.btn_back = button(
+            "Voltar para Documentos", self.back_requested.emit, "pdf_back"
+        )
+        self.btn_open = button("Abrir", self._choose_pdf, "viewer_open")
+        layout.addSpacing(10)
         button("Imprimir", self.print_requested.emit, "viewer_print")
         button("Pesquisar", self.search_bar_open, "viewer_search")
         layout.addSpacing(10)
@@ -224,8 +229,9 @@ class PDFViewerView(QWidget):
         self.loading_label.setText(message if loading else "Pronto")
 
     def set_document_loaded(self, loaded: bool) -> None:
-        for button in self.buttons[1:]:
-            button.setEnabled(loaded)
+        always_enabled = {self.btn_back, self.btn_open}
+        for button in self.buttons:
+            button.setEnabled(loaded or button in always_enabled)
         self.page_edit.setEnabled(loaded)
         self.zoom_combo.setEnabled(loaded)
         self.btn_sign.setEnabled(loaded)
