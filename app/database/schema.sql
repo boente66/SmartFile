@@ -80,6 +80,17 @@ CREATE TABLE IF NOT EXISTS sessions (
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
+CREATE TABLE IF NOT EXISTS password_recovery_codes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    code_lookup TEXT NOT NULL,
+    code_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    used_at TEXT,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS organization_members (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     organization_id INTEGER NOT NULL,
@@ -275,6 +286,10 @@ CREATE INDEX IF NOT EXISTS idx_cloud_folder_remote
     ON cloud_folder_mappings(organization_id, provider, remote_id);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id, revoked_at);
+CREATE INDEX IF NOT EXISTS idx_password_recovery_user
+    ON password_recovery_codes(user_id, used_at, expires_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_password_recovery_lookup
+    ON password_recovery_codes(user_id, code_lookup);
 CREATE INDEX IF NOT EXISTS idx_members_user ON organization_members(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_members_organization ON organization_members(organization_id, status);
 CREATE INDEX IF NOT EXISTS idx_audit_organization ON audit_log(organization_id, created_at DESC);

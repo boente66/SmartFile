@@ -15,13 +15,14 @@ from app.views.member_management_view import MemberManagementView
 from app.views.organization_dialog import OrganizationDialog
 from app.views.organization_management_view import OrganizationManagementView
 from app.views.profile_dialog import ProfileDialog
+from app.views.recovery_codes_dialog import RecoveryCodesDialog
 from app.workers.backup_worker import BackupWorker
 
 
 class AccountController:
     def __init__(self,main_view,auth_service,app_controller,logout_callback):
         self.main_view=main_view; self.auth=auth_service; self.app_controller=app_controller; self.logout_callback=logout_callback; self.organizations=OrganizationAdminService(auth_service.database,auth_service.session_context); self.members=MemberService(auth_service.database,auth_service.session_context); self.profile=ProfileService(auth_service.database,auth_service.session_context)
-        self._backup_worker=None; self.menu=AccountMenu(main_view); self.menu.profile_action.triggered.connect(self.edit_profile); self.menu.change_password_action.triggered.connect(self.change_password); self.menu.manage_organizations_action.triggered.connect(self.manage_organizations); self.menu.members_action.triggered.connect(lambda:self.manage_members(self.auth.session_context.active_organization.id)); self.menu.sessions_action.triggered.connect(self.show_sessions); self.menu.provider_settings_action.triggered.connect(self.configure_provider); self.menu.backup_action.triggered.connect(self.create_backup); self.menu.delete_account_action.triggered.connect(self.delete_account); self.menu.logout_action.triggered.connect(self.logout_callback); self.menu.aboutToShow.connect(self.refresh); self.refresh()
+        self._backup_worker=None; self.menu=AccountMenu(main_view); self.menu.profile_action.triggered.connect(self.edit_profile); self.menu.change_password_action.triggered.connect(self.change_password); self.menu.recovery_codes_action.triggered.connect(self.regenerate_recovery_codes); self.menu.manage_organizations_action.triggered.connect(self.manage_organizations); self.menu.members_action.triggered.connect(lambda:self.manage_members(self.auth.session_context.active_organization.id)); self.menu.sessions_action.triggered.connect(self.show_sessions); self.menu.provider_settings_action.triggered.connect(self.configure_provider); self.menu.backup_action.triggered.connect(self.create_backup); self.menu.delete_account_action.triggered.connect(self.delete_account); self.menu.logout_action.triggered.connect(self.logout_callback); self.menu.aboutToShow.connect(self.refresh); self.refresh()
 
     def refresh(self):
         context=self.auth.session_context; user=context.current_user; organizations=[o for o,_,_ in self.organizations.list_for_current_user()]; self.menu.set_organizations(organizations,getattr(context.active_organization,"id",None),self.switch_organization); self.menu.apply_permissions(context); self.main_view.set_account(user.display_name if user else "Conta",self.menu)
@@ -38,6 +39,30 @@ class AccountController:
         if dialog.exec()!=QDialog.DialogCode.Accepted:return
         try: self.auth.change_password(dialog.current.text(),dialog.new.text(),dialog.confirmation.text()); QMessageBox.information(self.main_view,"Senha","Senha alterada com sucesso.")
         except Exception as exc: QMessageBox.warning(self.main_view,"Senha",str(exc))
+
+    def regenerate_recovery_codes(self):
+        answer = QMessageBox.question(
+            self.main_view,
+            "Códigos de recuperação",
+            "Gerar novos códigos invalidará todos os códigos anteriores. Continuar?",
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        password, accepted = QInputDialog.getText(
+            self.main_view,
+            "Confirmar identidade",
+            "Informe sua senha atual:",
+            QLineEdit.EchoMode.Password,
+        )
+        if not accepted:
+            return
+        try:
+            codes = self.auth.regenerate_recovery_codes(password)
+            RecoveryCodesDialog(codes, self.main_view).exec()
+        except Exception as exc:
+            QMessageBox.warning(
+                self.main_view, "Códigos de recuperação", str(exc)
+            )
 
     def edit_profile(self):
         dialog=ProfileDialog(self.auth.session_context.current_user,self.main_view)

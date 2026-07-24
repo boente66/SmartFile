@@ -75,14 +75,35 @@ independentemente do modelo.
 Após cinco tentativas inválidas consecutivas, a conta é bloqueada temporariamente
 por segurança. O SmartFile não cria contas ou senhas padrão.
 
+Ao concluir um cadastro — ou no primeiro login após a atualização — o SmartFile
+exibe cinco códigos de recuperação. Guarde-os fora do aplicativo. Cada código é
+válido por um ano, pode ser usado uma única vez e não será exibido novamente.
+
 No menu da conta é possível:
 
 - trocar a organização ativa;
 - alterar a senha;
+- gerar novos códigos de recuperação;
 - excluir a própria conta;
 - encerrar a sessão.
 
 Ao sair, a sessão atual é revogada e o SmartFile retorna à tela de login.
+
+### Recuperar a senha
+
+1. Na tela de login, selecione **Esqueci minha senha**.
+2. Informe o username ou e-mail da conta.
+3. Informe um dos códigos salvos no formato `SF-XXXX-XXXX-XXXX-XXXX`.
+4. Defina e confirme a nova senha.
+5. Selecione **Redefinir senha**.
+
+O código utilizado é invalidado e todas as sessões anteriores são revogadas.
+Após cinco tentativas inválidas, a conta é bloqueada por 15 minutos. O fluxo é
+local e não envia mensagens por e-mail.
+
+Para substituir os códigos restantes, entre normalmente e use **Conta → Gerar
+novos códigos de recuperação**. A senha atual será solicitada e todos os códigos
+anteriores serão invalidados.
 
 ### Excluir a própria conta
 
@@ -400,6 +421,30 @@ da conta. Tokens não são exibidos pela interface.
 
 **Resultado:** sessão autenticada e acesso somente às organizações vinculadas.
 
+### UC-02A — Recuperar senha com código de uso único
+
+**Ator principal:** usuário cadastrado.
+
+**Pré-condição:** usuário ativo com pelo menos um código de recuperação válido.
+
+**Fluxo principal:**
+
+1. O usuário seleciona **Esqueci minha senha** na tela de login.
+2. Informa username ou e-mail, código de recuperação e nova senha.
+3. O sistema localiza o hash do código sem expor o segredo armazenado.
+4. O sistema valida o código com Argon2id e aplica a política de senha.
+5. O sistema consome o código, redefine a senha e revoga as sessões existentes.
+6. O usuário entra novamente com a nova senha.
+
+**Fluxos alternativos:**
+
+- Dados inválidos: o sistema retorna uma mensagem genérica, sem confirmar se a
+  conta existe.
+- Código já utilizado ou expirado: a recuperação é recusada.
+- Cinco falhas consecutivas: a conta fica bloqueada por 15 minutos.
+
+**Resultado:** senha redefinida localmente e sessões anteriores invalidadas.
+
 ### UC-03 — Criar uma conta local adicional
 
 **Ator principal:** novo usuário local.
@@ -614,6 +659,7 @@ o banco SQLite.
 ## 13. Boas práticas
 
 - Use uma senha exclusiva para o SmartFile.
+- Guarde os códigos de recuperação fora do computador principal.
 - Não compartilhe a senha do certificado digital.
 - Não altere manualmente arquivos dentro do storage interno.
 - Revise a organização ativa antes de importar documentos.
@@ -627,6 +673,8 @@ o banco SQLite.
 | Situação | Orientação |
 |---|---|
 | Usuário ou senha inválidos | Verifique o identificador, o teclado e a senha cadastrada |
+| Código de recuperação recusado | Confirme o código, a validade e se ele ainda não foi utilizado |
+| Códigos de recuperação perdidos | Se ainda conseguir entrar, gere novos códigos no menu da conta |
 | Conta temporariamente bloqueada | Aguarde 15 minutos antes de tentar novamente |
 | Scanner sem documentos | Coloque papel no ADF ou selecione Flatbed/Mesa |
 | PDF não abre | Confirme se o arquivo é PDF válido e se exige senha |
@@ -640,7 +688,7 @@ o banco SQLite.
 
 Nesta versão não estão incluídos:
 
-- recuperação de senha por e-mail;
+- recuperação de senha por e-mail; a recuperação offline por código já está disponível;
 - login Google ou Microsoft como autenticação do SmartFile;
 - autenticação em dois fatores;
 - certificado A3;

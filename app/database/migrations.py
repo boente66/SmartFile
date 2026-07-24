@@ -7,7 +7,7 @@ from pathlib import Path
 from app.errors.persistence_exceptions import DatabaseError
 
 logger = logging.getLogger(__name__)
-CURRENT_SCHEMA_VERSION = 12
+CURRENT_SCHEMA_VERSION = 13
 GIB = 1024 ** 3
 
 
@@ -325,6 +325,28 @@ def _upgrade_system_administrator(connection: sqlite3.Connection) -> None:
     )
 
 
+def _upgrade_password_recovery(connection: sqlite3.Connection) -> None:
+    """Adiciona códigos de recuperação de uso único sem persistir o segredo."""
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS password_recovery_codes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            code_lookup TEXT NOT NULL,
+            code_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            used_at TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_password_recovery_user
+            ON password_recovery_codes(user_id, used_at, expires_at);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_password_recovery_lookup
+            ON password_recovery_codes(user_id, code_lookup);
+        """
+    )
+
+
 def _upgrade_storage_quotas(connection: sqlite3.Connection) -> None:
     """Adiciona cotas lógicas em GB e migra o uso dos arquivos gerenciados."""
     organization_columns = _columns(connection, "organizations")
@@ -443,6 +465,7 @@ def migrate(connection: sqlite3.Connection, schema_path: Path) -> int:
             _upgrade_auth(connection)
             _upgrade_administration(connection)
             _upgrade_system_administrator(connection)
+            _upgrade_password_recovery(connection)
             _upgrade_storage_quotas(connection)
             _upgrade_cloud_organization_structure(connection)
             connection.execute(

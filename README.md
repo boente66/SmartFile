@@ -18,6 +18,7 @@ independentes.
 - organizações independentes e pastas lógicas;
 - importação, pesquisa, filtros, favoritos, recentes, histórico e lixeira;
 - armazenamento interno gerenciado com SQLite e checksums SHA-256;
+- recuperação offline de senha com códigos de uso único protegidos por Argon2id;
 - visualizador interno de PDF com navegação, zoom, miniaturas e pesquisa;
 - PDF Tools para operações estruturais;
 - assinatura digital e assinatura manuscrita;

@@ -8,7 +8,7 @@ from app.database.database import Database
 from app.database.migrations import CURRENT_SCHEMA_VERSION
 from app.errors.auth_exceptions import (
     AccountDeletionError, EmailAlreadyExistsError, InvalidCredentialsError, PasswordPolicyError,
-    RegistrationError, UserAlreadyExistsError, UserInactiveError,
+    PasswordRecoveryError, RegistrationError, UserAlreadyExistsError, UserInactiveError,
 )
 from app.models.registration_request import RegistrationRequest
 from app.entities.organization_entity import OrganizationEntity
@@ -136,10 +136,103 @@ def test_additional_registration_rolls_back_all_records(tmp_path: Path, monkeypa
 def test_auth_migration_is_idempotent(tmp_path: Path):
     database = Database(str(tmp_path / "smartfile.db")); Database(str(tmp_path / "smartfile.db"))
     tables = {row["name"] for row in database.fetch_all("SELECT name FROM sqlite_master WHERE type='table'")}
-    assert {"users", "sessions", "organization_members"} <= tables
+    assert {
+        "users", "sessions", "organization_members", "password_recovery_codes"
+    } <= tables
     assert (
         database.connect().execute("PRAGMA user_version").fetchone()[0]
         == CURRENT_SCHEMA_VERSION
+    )
+
+
+def test_recovery_codes_are_hashed_and_generated_only_when_needed(tmp_path: Path):
+    database = Database(str(tmp_path / "smartfile.db"))
+    auth = AuthService(database)
+    user = auth.register_first_user(_request())
+
+    codes = auth.ensure_recovery_codes()
+    stored = database.fetch_all(
+        "SELECT code_hash FROM password_recovery_codes WHERE user_id=?",
+        (user.id,),
+    )
+
+    assert len(codes) == len(stored) == 5
+    assert len(set(codes)) == 5
+    assert all(code.startswith("SF-") for code in codes)
+    assert all(row["code_hash"].startswith("$argon2id$") for row in stored)
+    assert not any(
+        code.replace("-", "") in row["code_hash"]
+        for code in codes
+        for row in stored
+    )
+    assert auth.ensure_recovery_codes() == ()
+
+
+def test_recovery_code_resets_password_once_and_revokes_sessions(tmp_path: Path):
+    database = Database(str(tmp_path / "smartfile.db"))
+    setup = AuthService(database)
+    user = setup.register_first_user(_request())
+    code = setup.ensure_recovery_codes()[0]
+    setup.logout()
+
+    active = AuthService(database, SessionContext())
+    active.login("pessoa", "senha-segura")
+    active_session_id = active.session_context.session_id
+
+    recovery = AuthService(database, SessionContext())
+    recovery.reset_password_with_recovery_code(
+        "pessoa@example.com", code, "nova-senha-123", "nova-senha-123"
+    )
+
+    assert database.fetch_one(
+        "SELECT revoked_at FROM sessions WHERE id=?", (active_session_id,)
+    )["revoked_at"]
+    with pytest.raises(InvalidCredentialsError):
+        AuthService(database).login("pessoa", "senha-segura")
+    assert AuthService(database).login("pessoa", "nova-senha-123").id == user.id
+    with pytest.raises(PasswordRecoveryError):
+        recovery.reset_password_with_recovery_code(
+            "pessoa", code, "outra-senha-123", "outra-senha-123"
+        )
+
+
+def test_invalid_recovery_data_is_generic_and_does_not_change_password(tmp_path: Path):
+    database = Database(str(tmp_path / "smartfile.db"))
+    auth = AuthService(database)
+    auth.register_first_user(_request())
+    auth.ensure_recovery_codes()
+    auth.logout()
+
+    with pytest.raises(
+        PasswordRecoveryError,
+        match="Não foi possível validar os dados de recuperação",
+    ):
+        auth.reset_password_with_recovery_code(
+            "pessoa", "SF-AAAA-AAAA-AAAA-AAAA", "nova-senha-123", "nova-senha-123"
+        )
+    with pytest.raises(PasswordRecoveryError) as missing:
+        auth.reset_password_with_recovery_code(
+            "inexistente", "SF-AAAA-AAAA-AAAA-AAAA", "nova-senha-123", "nova-senha-123"
+        )
+    assert "validar os dados" in str(missing.value)
+    assert auth.login("pessoa", "senha-segura").username == "pessoa"
+
+
+def test_regenerating_recovery_codes_invalidates_previous_codes(tmp_path: Path):
+    database = Database(str(tmp_path / "smartfile.db"))
+    auth = AuthService(database)
+    auth.register_first_user(_request())
+    previous = auth.ensure_recovery_codes()
+    current = auth.regenerate_recovery_codes("senha-segura")
+    auth.logout()
+
+    assert set(previous).isdisjoint(current)
+    with pytest.raises(PasswordRecoveryError):
+        auth.reset_password_with_recovery_code(
+            "pessoa", previous[0], "nova-senha-123", "nova-senha-123"
+        )
+    auth.reset_password_with_recovery_code(
+        "pessoa", current[0], "nova-senha-123", "nova-senha-123"
     )
 
 

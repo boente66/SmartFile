@@ -14,7 +14,8 @@ from app.entities.organization_member_entity import OrganizationMemberEntity
 from app.entities.user_entity import UserEntity
 from app.errors.auth_exceptions import (
     AccountDeletionError, EmailAlreadyExistsError, InvalidCredentialsError, PasswordPolicyError,
-    RegistrationError, UserAlreadyExistsError, UserInactiveError, UserLockedError,
+    PasswordRecoveryError, RegistrationError, UserAlreadyExistsError, UserInactiveError,
+    UserLockedError,
 )
 from app.models.registration_request import RegistrationRequest
 from app.models.user_model import UserModel
@@ -26,6 +27,7 @@ from app.services.folder_template_service import FolderTemplateService
 from app.services.organization_service import OrganizationService
 from app.services.avatar_service import AvatarService
 from app.services.audit_service import AuditService
+from app.services.password_recovery_service import PasswordRecoveryService
 
 logger = logging.getLogger(__name__)
 USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -42,6 +44,7 @@ class AuthService:
         self.templates = FolderTemplateService(FolderService(database))
         self.avatars = AvatarService(database)
         self.audit = AuditService(database)
+        self.recovery = PasswordRecoveryService(database)
 
     def has_users(self) -> bool:
         return self.users.count_active() > 0
@@ -183,6 +186,110 @@ class AuthService:
         user.password_hash = self.passwords.hash_password(new_password); user.updated_at = self._now()
         self.users.update(user); logger.info("Senha alterada user_id=%s", user.id)
 
+    def ensure_recovery_codes(self) -> tuple[str, ...]:
+        """Cria os códigos uma única vez para contas novas ou migradas."""
+        if not self.session_context.is_authenticated():
+            raise InvalidCredentialsError("Sessão não autenticada.")
+        user_id = self.session_context.current_user.id
+        if self.recovery.has_active_codes(user_id):
+            return ()
+        codes = self.recovery.generate_codes(user_id)
+        self.audit.record(
+            "PASSWORD_RECOVERY_CODES_CREATED",
+            user_id=user_id,
+            organization_id=getattr(
+                self.session_context.active_organization, "id", None
+            ),
+            target_type="user",
+            target_id=user_id,
+            description="Códigos de recuperação criados",
+        )
+        logger.info("Códigos de recuperação criados user_id=%s", user_id)
+        return codes
+
+    def regenerate_recovery_codes(
+        self, current_password: str
+    ) -> tuple[str, ...]:
+        if not self.session_context.is_authenticated():
+            raise InvalidCredentialsError("Sessão não autenticada.")
+        user = self.users.find_by_id(self.session_context.current_user.id)
+        if user is None or not self.passwords.verify_password(
+            current_password, user.password_hash
+        ):
+            raise InvalidCredentialsError("Senha atual inválida.")
+        codes = self.recovery.generate_codes(user.id)
+        self.audit.record(
+            "PASSWORD_RECOVERY_CODES_REGENERATED",
+            user_id=user.id,
+            organization_id=getattr(
+                self.session_context.active_organization, "id", None
+            ),
+            target_type="user",
+            target_id=user.id,
+            description="Códigos de recuperação substituídos",
+        )
+        logger.info("Códigos de recuperação regenerados user_id=%s", user.id)
+        return codes
+
+    def reset_password_with_recovery_code(
+        self,
+        login: str,
+        recovery_code: str,
+        new_password: str,
+        confirmation: str,
+    ) -> None:
+        """Redefine a senha offline sem revelar se a conta existe."""
+        generic = PasswordRecoveryError(
+            "Não foi possível validar os dados de recuperação."
+        )
+        normalized = login.strip().lower()
+        user = self.users.find_by_login(normalized) if normalized else None
+        if user is None or not user.is_active:
+            logger.warning("Tentativa de recuperação de senha inválida")
+            raise generic
+        now = datetime.now(timezone.utc)
+        if user.locked_until and datetime.fromisoformat(user.locked_until) > now:
+            raise PasswordRecoveryError(
+                "Conta temporariamente bloqueada. Tente novamente mais tarde."
+            )
+        self._validate_password(user.username, new_password, confirmation)
+        recovered = False
+        with self.database.transaction():
+            recovered = self.recovery.verify_and_consume(user.id, recovery_code)
+            if not recovered:
+                user.failed_login_attempts += 1
+                if user.failed_login_attempts >= 5:
+                    user.locked_until = (now + timedelta(minutes=15)).isoformat()
+                    user.failed_login_attempts = 0
+                user.updated_at = now.isoformat()
+                self.users.update(user)
+            else:
+                user.password_hash = self.passwords.hash_password(new_password)
+                user.failed_login_attempts = 0
+                user.locked_until = None
+                user.must_change_password = False
+                user.updated_at = now.isoformat()
+                self.users.update(user)
+                self.sessions.revoke_all(user.id)
+                memberships = self.members.find_by_user(user.id)
+                self.audit.record(
+                    "PASSWORD_RECOVERED",
+                    user_id=user.id,
+                    organization_id=(
+                        memberships[0].organization_id if memberships else None
+                    ),
+                    target_type="user",
+                    target_id=user.id,
+                    description="Senha redefinida com código de recuperação",
+                )
+        if not recovered:
+            logger.warning(
+                "Tentativa de recuperação de senha inválida user_id=%s",
+                user.id,
+            )
+            raise generic
+        logger.info("Senha recuperada e sessões revogadas user_id=%s", user.id)
+
     def delete_current_account(self, current_password: str, confirmation: str) -> None:
         """Desativa e anonimiza a conta local sem apagar documentos ou auditoria."""
         if not self.session_context.is_authenticated():
@@ -270,6 +377,7 @@ class AuthService:
             user.must_change_password = False
             user.updated_at = now
             self.users.update(user)
+            self.recovery.invalidate_codes(user.id)
 
         from app.cloud.cloud_oauth_config_service import CloudOAuthConfigService
         try:

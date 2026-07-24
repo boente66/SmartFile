@@ -22,3 +22,8 @@ class SessionService:
 
     def revoke(self, session_id: int) -> bool:
         return self.repository.revoke(session_id, datetime.now(timezone.utc).isoformat())
+
+    def revoke_all(self, user_id: int) -> int:
+        return self.repository.revoke_all(
+            user_id, datetime.now(timezone.utc).isoformat()
+        )

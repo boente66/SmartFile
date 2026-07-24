@@ -292,6 +292,7 @@ class FirstUserSetupView(QWidget):
         self.summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.completion = QLabel(); self.completion.setObjectName("registrationCompletion")
         self.completion.setAlignment(Qt.AlignmentFlag.AlignCenter); self.completion.setWordWrap(True); self.completion.hide()
+        self.completion.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         root.addWidget(self.summary_title); root.addWidget(self.summary); root.addWidget(self.completion); root.addStretch()
         return page
 
@@ -359,15 +360,24 @@ class FirstUserSetupView(QWidget):
             organization_color=self.organization_color.currentText(), avatar_path=self.avatar_path,
         )
 
-    def show_completion(self) -> None:
+    def show_completion(self, recovery_codes: tuple[str, ...] = ()) -> None:
         count = len(FolderTemplateService.TEMPLATES[self.request().template_code])
         self._registration_complete = True
         self.stack.setCurrentIndex(3)
         self.summary.hide()
         self.summary_title.setText("✓ Cadastro concluído")
+        recovery = ""
+        if recovery_codes:
+            formatted_codes = "<br>".join(recovery_codes)
+            recovery = (
+                "<br><br><b>Guarde seus códigos de recuperação:</b><br>"
+                f"{formatted_codes}<br><small>Cada código é de uso único e "
+                "não poderá ser exibido novamente.</small>"
+            )
         self.completion.setText(
             f"Sua conta e a organização <b>{self.organization_name.text().strip()}</b> foram criadas.<br>"
             f"{count} pasta(s) inicial(is) configurada(s) · Papel inicial: OWNER"
+            f"{recovery}"
         )
         self.completion.show()
         self._update_navigation()

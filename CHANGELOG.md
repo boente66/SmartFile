@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Added offline password recovery with expiring, one-time Argon2id-protected codes
+- Added recovery-code regeneration and session revocation after password reset
 - Added organization-scoped remote roots and logical-folder mapping
 - Added idempotent folder creation to the common OneDrive/Google Drive contract
 - Added remote reconciliation for folder create, rename, move, and delete

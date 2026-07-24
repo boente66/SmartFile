@@ -14,6 +14,8 @@ from app.views.login_view import LoginView
 from app.views.main_view import MainView
 from app.views.account_menu import AccountMenu
 from app.views.delete_account_dialog import DeleteAccountDialog
+from app.views.password_recovery_dialog import PasswordRecoveryDialog
+from app.views.recovery_codes_dialog import RecoveryCodesDialog
 
 _APPLICATION = None
 
@@ -61,6 +63,51 @@ def test_login_exposes_local_registration_and_registration_can_return():
     back_button.click(); app.processEvents()
     assert returned == [True]
     login.close(); setup.close()
+
+
+def test_login_exposes_password_recovery_and_protects_sensitive_fields():
+    app = _app()
+    login = LoginView()
+    requested = []
+    login.recovery_requested.connect(lambda: requested.append(True))
+    button = next(
+        item
+        for item in login.findChildren(QPushButton)
+        if item.text() == "Esqueci minha senha"
+    )
+    button.click()
+    app.processEvents()
+    assert requested == [True]
+
+    dialog = PasswordRecoveryDialog("pessoa")
+    assert dialog.code.echoMode() == QLineEdit.EchoMode.Password
+    assert dialog.new_password.echoMode() == QLineEdit.EchoMode.Password
+    assert dialog.confirmation.echoMode() == QLineEdit.EchoMode.Password
+    dialog.code.setText("SF-ABCD-EFGH-JKLM-NPQR")
+    dialog.new_password.setText("nova-senha-123")
+    dialog.confirmation.setText("nova-senha-123")
+    assert dialog.values() == (
+        "pessoa", "SF-ABCD-EFGH-JKLM-NPQR", "nova-senha-123", "nova-senha-123"
+    )
+    dialog.close()
+    login.close()
+
+
+def test_registration_completion_displays_new_recovery_codes_once():
+    _app()
+    wizard = FirstUserSetupView()
+    wizard.display_name.setText("Pessoa Teste")
+    wizard.username.setText("pessoa")
+    wizard.password.setText("senha-segura")
+    wizard.confirmation.setText("senha-segura")
+    wizard.show_completion(("SF-ABCD-EFGH-JKLM-NPQR", "SF-RQPN-MLKJ-HGFE-DCBA"))
+    assert "SF-ABCD-EFGH-JKLM-NPQR" in wizard.completion.text()
+    assert "uso único" in wizard.completion.text()
+
+    codes = RecoveryCodesDialog(("SF-ABCD-EFGH-JKLM-NPQR",))
+    assert "SF-ABCD-EFGH-JKLM-NPQR" in codes.codes.toPlainText()
+    codes.close()
+    wizard.close()
 
 
 def test_auth_controller_opens_additional_registration_from_login(tmp_path: Path):

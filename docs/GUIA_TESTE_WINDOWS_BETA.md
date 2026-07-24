@@ -33,17 +33,19 @@ Os dois valores devem ser iguais. Interrompa o teste se forem diferentes.
 6. Inicie o SmartFile pelo Menu Iniciar.
 7. Crie o primeiro usuário e uma organização de teste.
 8. Saia e teste o login novamente.
-9. Importe uma cópia descartável de um documento.
-10. Abra o PDF Viewer e teste navegação, zoom e retorno a Documentos.
-11. Abra o mesmo PDF em PDF Tools e salve uma cópia.
-12. Teste assinatura manuscrita em uma cópia.
-13. Teste assinatura digital somente com certificado de teste.
-14. Se houver scanner com driver TWAIN x64, teste detecção e captura.
-15. Sem scanner, confirme que o módulo informa a indisponibilidade sem fechar o
+9. Guarde um código de recuperação, saia e teste **Esqueci minha senha**.
+10. Confirme que o código utilizado não pode ser reutilizado.
+11. Importe uma cópia descartável de um documento.
+12. Abra o PDF Viewer e teste navegação, zoom e retorno a Documentos.
+13. Abra o mesmo PDF em PDF Tools e salve uma cópia.
+14. Teste assinatura manuscrita em uma cópia.
+15. Teste assinatura digital somente com certificado de teste.
+16. Se houver scanner com driver TWAIN x64, teste detecção e captura.
+17. Sem scanner, confirme que o módulo informa a indisponibilidade sem fechar o
     restante do aplicativo.
-16. Teste logout, fechamento e nova abertura.
-17. Desinstale em **Configurações > Aplicativos instalados**.
-18. Confirme que os dados permanecem em `%LOCALAPPDATA%\SmartFile` e a
+18. Teste logout, fechamento e nova abertura.
+19. Desinstale em **Configurações > Aplicativos instalados**.
+20. Confirme que os dados permanecem em `%LOCALAPPDATA%\SmartFile` e a
     configuração em `%APPDATA%\SmartFile`.
 
 ## Roteiro da versão portátil

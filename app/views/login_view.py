@@ -9,6 +9,7 @@ from app.ui.icon_provider import IconProvider
 class LoginView(QWidget):
     login_requested = pyqtSignal(str, str, bool)
     create_account_requested = pyqtSignal()
+    recovery_requested = pyqtSignal()
 
     def __init__(self, allow_registration: bool = True):
         super().__init__(); self.allow_registration = allow_registration; self.setObjectName("authWindow"); self.setWindowTitle("SmartFile — Login")
@@ -33,7 +34,8 @@ class LoginView(QWidget):
         form.addSpacing(20); form.addWidget(QLabel("Usuário ou e-mail")); self.login_edit=QLineEdit(); self.login_edit.setPlaceholderText("Digite seu usuário ou e-mail"); form.addWidget(self.login_edit)
         form.addWidget(QLabel("Senha")); self.password_edit=QLineEdit(); self.password_edit.setEchoMode(QLineEdit.EchoMode.Password); self.password_edit.setPlaceholderText("Digite sua senha"); self.password_edit.returnPressed.connect(self._submit); form.addWidget(self.password_edit)
         toggle=self.password_edit.addAction(IconProvider.icon("visualize"),QLineEdit.ActionPosition.TrailingPosition); toggle.setToolTip("Mostrar ou ocultar senha"); toggle.triggered.connect(lambda: self.password_edit.setEchoMode(QLineEdit.EchoMode.Normal if self.password_edit.echoMode()==QLineEdit.EchoMode.Password else QLineEdit.EchoMode.Password))
-        row=QHBoxLayout(); self.remember=QCheckBox("Lembrar de mim neste dispositivo"); row.addWidget(self.remember); row.addStretch(); form.addLayout(row)
+        row=QHBoxLayout(); self.remember=QCheckBox("Lembrar de mim neste dispositivo"); row.addWidget(self.remember); row.addStretch()
+        recovery_button=QPushButton("Esqueci minha senha"); recovery_button.setObjectName("authLinkButton"); recovery_button.setFlat(True); recovery_button.clicked.connect(self.recovery_requested.emit); row.addWidget(recovery_button); form.addLayout(row)
         self.remember.hide()
         self.error_label=QLabel(""); self.error_label.setObjectName("authError"); self.error_label.setWordWrap(True); form.addWidget(self.error_label)
         button=QPushButton("Entrar"); button.setObjectName("authPrimary"); IconProvider.apply(button,"login"); button.clicked.connect(self._submit); form.addWidget(button)

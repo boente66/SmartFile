@@ -17,6 +17,7 @@ devem relatar os problemas encontrados pelo rastreador de issues do projeto.
 - sincronização opcional com OneDrive e Google Drive;
 - espelhamento remoto isolado por organização e pastas lógicas;
 - backup ZIP completo restrito ao administrador do sistema;
+- recuperação offline de senha com códigos de uso único protegidos por Argon2id;
 - dados mutáveis mantidos fora de `/opt/smartfile`.
 
 ## Windows 10/11 x64
