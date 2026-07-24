@@ -23,7 +23,15 @@ jobs:
       - name: Install Linux build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y desktop-file-utils fakeroot libsane-dev dpkg-dev
+          sudo apt-get install -y \
+            desktop-file-utils \
+            dpkg-dev \
+            fakeroot \
+            libegl1 \
+            libgl1 \
+            libsane-dev \
+            libxkbcommon-x11-0 \
+            libxcb-cursor0
       - name: Build and validate package
         run: ./scripts/build_linux_deb.sh
       - name: Upload temporary build artifact
