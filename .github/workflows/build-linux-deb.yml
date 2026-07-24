@@ -31,7 +31,10 @@ jobs:
             libgl1 \
             libsane-dev \
             libxkbcommon-x11-0 \
-            libxcb-cursor0
+            libxcb-cursor0 \
+            libxcb-icccm4 \
+            libxcb-keysyms1 \
+            libxcb-shape0
       - name: Build and validate package
         run: ./scripts/build_linux_deb.sh
       - name: Upload temporary build artifact
