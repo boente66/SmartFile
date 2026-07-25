@@ -1,26 +1,58 @@
-# app/services/convert_service.py
-
 from app.services.pdf_service import PDFService
 from app.services.doc_service import DOCService
 from app.services.xlsx_service import XLSXService
 from app.services.csv_service import CSVService
 from app.services.txt_service import TXTService
 from app.services.image_service import ImageService
+from app.errors.conversion_exceptions import ConversionCancelledError
 
 
 class ConvertService:
 
+    SUPPORTED_CONVERSIONS: dict[str, tuple[str, ...]] = {
+        "PDF": ("DOCX", "JPG"),
+        "DOCX": ("PDF", "JPG"),
+        "JPG": ("PDF",),
+        "JPEG": ("PDF",),
+        "PNG": ("PDF", "JPG"),
+        "TIFF": ("PDF", "JPG"),
+        "TIF": ("PDF", "JPG"),
+        "XLSX": ("CSV",),
+        "CSV": ("XLSX",),
+        "TXT": ("PDF",),
+    }
+
+    @classmethod
+    def available_targets(cls, source_format: str) -> tuple[str, ...]:
+        """Retorna somente destinos realmente implementados para a origem."""
+
+        source = cls._canonical_format(source_format)
+        return cls.SUPPORTED_CONVERSIONS.get(source, ())
+
+    @classmethod
+    def supports(cls, source_format: str, target_format: str) -> bool:
+        source = cls._canonical_format(source_format)
+        target = cls._canonical_format(target_format)
+        return target in cls.available_targets(source)
+
     @staticmethod
-    def execute(job, progress_callback=None):
+    def execute(job, progress_callback=None, cancellation_callback=None):
         """
         Executa conversão com progresso opcional.
         """
 
         def progress(value: int, message: str):
+            if cancellation_callback and cancellation_callback():
+                raise ConversionCancelledError("Conversão cancelada pelo usuário.")
             if progress_callback:
                 progress_callback(value, message)
 
-        key = job.conversion_key
+        source = ConvertService._canonical_format(job.source_format)
+        target = ConvertService._canonical_format(job.target_format)
+        key = f"{source}->{target}"
+
+        if not ConvertService.supports(source, target):
+            raise ValueError(f"Conversão não suportada: {key}")
 
         progress(0, "Iniciando conversão")
 
@@ -96,7 +128,9 @@ class ConvertService:
         # NÃO SUPORTADO
         # -------------------------
 
-        else:
-            raise ValueError(f"Conversão não suportada: {key}")
-
         progress(100, "Conversão finalizada")
+
+    @staticmethod
+    def _canonical_format(value: str) -> str:
+        normalized = value.strip().lstrip(".").upper()
+        return {"JPEG": "JPG", "TIF": "TIFF"}.get(normalized, normalized)

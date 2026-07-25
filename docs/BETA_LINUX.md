@@ -56,8 +56,8 @@ demais recursos. Impressão depende da configuração de impressão do sistema.
 ## Limitações conhecidas
 
 - somente arquitetura amd64 nesta receita;
-- o fluxo `docx2pdf` não oferece suporte Linux nativo; conversões DOCX devem ser
-  validadas com LibreOffice antes de serem consideradas suportadas no pacote;
+- conversões DOCX para PDF/JPG utilizam o LibreOffice em modo headless e exibem
+  orientação clara quando o programa não estiver instalado;
 - scanner com hardware depende do dispositivo, driver e permissões locais;
 - assinatura digital requer certificado de teste/usuário e dependências válidas;
 - OAuth não inclui Client IDs, segredos, tokens ou configurações pessoais;

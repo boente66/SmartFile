@@ -64,7 +64,9 @@ class SidebarView(QWidget):
 
         button = QPushButton(text)
         button.setObjectName("sidebarButton")
-        IconProvider.apply(button, tool_name, QSize(20, 20))
+        IconProvider.apply(
+            button, tool_name, QSize(20, 20), color="#475569"
+        )
 
         button.setSizePolicy(
             QSizePolicy.Policy.Expanding,
@@ -94,8 +96,14 @@ class SidebarView(QWidget):
 
             if name == tool_name:
                 button.setProperty("selected", True)
+                IconProvider.apply(
+                    button, name, QSize(20, 20), color="#1769e8"
+                )
             else:
                 button.setProperty("selected", False)
+                IconProvider.apply(
+                    button, name, QSize(20, 20), color="#475569"
+                )
 
         for button in self._buttons.values():
             button.style().unpolish(button)

@@ -23,7 +23,8 @@ independentes.
 - PDF Tools para operações estruturais;
 - assinatura digital e assinatura manuscrita;
 - scanner SANE no Linux e TWAIN no Windows;
-- conversão de documentos;
+- conversor responsivo com formatos compatíveis, progresso, cancelamento,
+  histórico da sessão e abertura do resultado;
 - backup completo em ZIP para administradores;
 - sincronização opcional com Microsoft OneDrive ou Google Drive.
 

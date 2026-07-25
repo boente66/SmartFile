@@ -653,7 +653,7 @@ class DocumentController:
             QMessageBox.warning(self.view, "Mini GED", "Módulo de conversão não está disponível.")
             return
 
-        self.convert_controller.open_document(document.path)
+        self.convert_controller.open_document(document.path, document.name)
         self.view.set_status(f"Arquivo enviado para conversão: {document.name}")
 
     def on_pdf_tools_document(self, document_id: int):

@@ -1,6 +1,6 @@
 # SmartFile — Manual do Usuário
 
-**Versão do manual:** 1.4
+**Versão do manual:** 1.5
 
 **Aplicação:** SmartFile — Mini GED Local
 
@@ -206,6 +206,26 @@ arquivo. Use **Gerenciar armazenamento** para abrir a lixeira, recalcular o uso 
 consultar os maiores arquivos, alterar o plano, iniciar a sincronização ou ver erros
 da nuvem. Um plano menor não pode ser aplicado quando o uso e as reservas atuais
 ultrapassarem o novo limite.
+
+## 6A. Conversor de arquivos
+
+O módulo **Converter** aceita arquivos selecionados diretamente no computador ou
+enviados pela ação **Converter** do módulo Documentos. Quando a origem pertence ao
+storage gerenciado, a saída é sugerida na pasta Documentos do usuário para evitar
+gravações não catalogadas dentro do armazenamento interno.
+
+1. Selecione o arquivo de entrada.
+2. Escolha um dos formatos realmente compatíveis apresentados pelo SmartFile.
+3. Confira ou altere o destino sugerido.
+4. Selecione **Converter arquivo**.
+5. Acompanhe percentual, mensagem da etapa e tempo decorrido.
+6. Ao concluir, use **Abrir resultado** ou consulte o histórico da sessão.
+
+O SmartFile não sobrescreve um resultado existente: escolha outro nome para
+preservar o arquivo anterior. O cancelamento é cooperativo; componentes externos
+podem precisar concluir a etapa corrente antes da limpeza segura da saída parcial.
+No Linux, DOCX para PDF/JPG utiliza LibreOffice em modo headless. PDF para imagem
+gera o primeiro arquivo no destino escolhido e numera páginas adicionais.
 
 ## 7. Visualizador de PDF
 
@@ -488,6 +508,32 @@ da conta. Tokens não são exibidos pela interface.
 - Disco local insuficiente: a mensagem diferencia espaço físico de cota lógica.
 
 **Resultado:** documento disponível na organização e pasta selecionadas.
+
+### UC-04A — Converter um arquivo
+
+**Ator principal:** usuário autenticado.
+
+**Pré-condições:** arquivo regular em formato compatível e pasta de saída gravável.
+
+**Fluxo principal:**
+
+1. O usuário abre o Conversor ou envia um documento pelo Mini GED.
+2. O sistema detecta a extensão e apresenta somente destinos implementados.
+3. O sistema sugere um nome de saída sem sobrescrever a origem.
+4. O usuário inicia a conversão e acompanha o progresso fora da thread gráfica.
+5. O worker valida que o arquivo de saída foi realmente criado.
+6. O resultado é incluído no histórico da sessão e pode ser aberto imediatamente.
+
+**Fluxos alternativos:**
+
+- formato ou extensão incompatível: a operação não é iniciada;
+- saída existente: o usuário deve escolher outro nome;
+- dependência externa ausente: a mensagem identifica o componente necessário;
+- cancelamento: o worker interrompe em ponto seguro e remove saídas parciais;
+- erro técnico: a interface é liberada e o arquivo de entrada permanece intacto.
+
+**Resultado:** novo arquivo convertido fora do storage interno, preservando a
+origem. O usuário pode importá-lo posteriormente ao GED.
 
 ### UC-05 — Localizar e visualizar um PDF
 

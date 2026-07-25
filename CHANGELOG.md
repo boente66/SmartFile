@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Redesigned the converter workflow with compatible-format filtering, output
+  validation, cooperative cancellation, session history, and Linux
+  LibreOffice support
 - Added offline password recovery with expiring, one-time Argon2id-protected codes
 - Added recovery-code regeneration and session revocation after password reset
 - Added organization-scoped remote roots and logical-folder mapping

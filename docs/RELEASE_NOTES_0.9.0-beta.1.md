@@ -13,6 +13,8 @@ devem relatar os problemas encontrados pelo rastreador de issues do projeto.
 - visualizador e ferramentas de PDF;
 - scanner opcional via SANE;
 - conversões documentais;
+- conversor redesenhado com seleção de formatos compatíveis, sugestão segura de
+  saída, progresso interno, cancelamento cooperativo e histórico da sessão;
 - assinaturas digital e manuscrita;
 - sincronização opcional com OneDrive e Google Drive;
 - espelhamento remoto isolado por organização e pastas lógicas;

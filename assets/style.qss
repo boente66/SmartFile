@@ -5,18 +5,20 @@ QMainWindow {
 }
 
 QWidget#sidebar {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0f1720, stop:1 #15232b);
-    color: #ffffff;
+    background: #ffffff;
+    color: #172033;
+    border-right: 1px solid #dce3ec;
 }
 
 QLabel#sidebarTitle {
+    color: #172033;
     font-size: 18px;
     font-weight: 700;
     padding-bottom: 4px;
 }
 
 QLabel#sidebarSubtitle {
-    color: #cbd5e1;
+    color: #94a3b8;
     font-size: 12px;
     padding-bottom: 18px;
 }
@@ -32,23 +34,162 @@ QLabel#sidebarSection {
 QPushButton#sidebarButton {
     background: transparent;
     border: none;
-    color: #cbd5e1;
+    color: #334155;
     text-align: left;
     padding: 10px 12px;
     border-radius: 10px;
 }
 
 QPushButton#sidebarButton[selected="true"] {
-    background: rgba(255, 255, 255, 0.12);
-    color: #ffffff;
+    background: #e8f0ff;
+    color: #1769e8;
+    font-weight: 650;
 }
 
 QPushButton#sidebarButton:hover {
-    background: rgba(255, 255, 255, 0.08);
+    background: #f1f5f9;
 }
 
 QWidget#workspace {
     background: transparent;
+}
+
+/* Conversor */
+QWidget#convertView,
+QScrollArea#convertScrollArea,
+QWidget#convertContent,
+QScrollArea#convertScrollArea QWidget#qt_scrollarea_viewport {
+    background: #f4f7fb;
+    border: none;
+}
+
+QLabel#convertTitle {
+    color: #142033;
+    font-size: 27px;
+    font-weight: 800;
+}
+
+QLabel#convertSubtitle,
+QLabel#convertHint {
+    color: #64748b;
+}
+
+QFrame#convertCard {
+    background: #ffffff;
+    border: 1px solid #dce3ec;
+    border-radius: 12px;
+}
+
+QLabel#convertSectionTitle {
+    color: #172033;
+    font-size: 17px;
+    font-weight: 750;
+    padding-bottom: 3px;
+}
+
+QLabel#convertFieldLabel {
+    color: #263448;
+    font-size: 13px;
+    font-weight: 650;
+    padding-top: 3px;
+}
+
+QWidget#convertView QLineEdit,
+QWidget#convertView QComboBox {
+    background: #ffffff;
+    color: #172033;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    min-height: 38px;
+    padding: 4px 10px;
+}
+
+QWidget#convertView QLineEdit:focus,
+QWidget#convertView QComboBox:focus {
+    border: 2px solid #2563eb;
+}
+
+QPushButton#convertPrimary {
+    background: #1769e8;
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+QPushButton#convertPrimary:hover {
+    background: #0f5aca;
+}
+
+QPushButton#convertPrimary:disabled {
+    background: #a9c5ed;
+    color: #edf4ff;
+}
+
+QPushButton#convertCancel {
+    background: #ffffff;
+    color: #b42318;
+    border-color: #fecaca;
+}
+
+QLabel#convertProgressFile {
+    color: #172033;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+QLabel#convertProgressPercent {
+    color: #1769e8;
+    font-size: 15px;
+    font-weight: 800;
+    min-width: 42px;
+}
+
+QWidget#convertView QProgressBar {
+    background: #e8edf4;
+    border: none;
+    border-radius: 4px;
+    max-height: 8px;
+}
+
+QWidget#convertView QProgressBar::chunk {
+    background: #2878e8;
+    border-radius: 4px;
+}
+
+QFrame#convertHistoryRow {
+    background: #fbfcfe;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+}
+
+QLabel#convertHistorySuccess {
+    color: #149447;
+    font-size: 18px;
+    font-weight: 800;
+}
+
+QLabel#convertHistoryText {
+    color: #263448;
+}
+
+QScrollArea#convertScrollArea QScrollBar:vertical {
+    background: #e5eaf1;
+    width: 11px;
+    margin: 2px;
+    border-radius: 5px;
+}
+
+QScrollArea#convertScrollArea QScrollBar::handle:vertical {
+    background: #8c9bad;
+    min-height: 32px;
+    border-radius: 4px;
+}
+
+QScrollArea#convertScrollArea QScrollBar::add-line:vertical,
+QScrollArea#convertScrollArea QScrollBar::sub-line:vertical {
+    height: 0px;
 }
 
 QScrollArea#documentsScrollArea,
