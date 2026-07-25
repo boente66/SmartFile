@@ -48,6 +48,7 @@ class DocumentController:
         self._current_scope = "documents"
         self._cloud_worker = None
         self._cloud_auth_worker = None
+        self._retry_sync_after_reauthentication: tuple[str, int] | None = None
         self._copied_document_id = None
         self._cloud_timer = QTimer(self.view)
         self._cloud_timer.setInterval(60_000)
@@ -379,26 +380,45 @@ class DocumentController:
                 )
             settings = self.service.cloud_manager.settings(self.service.active_organization_id)
             self.view.set_cloud_settings(settings, None, CloudOAuthState.AUTHENTICATING)
+            organization_id = self.service.active_organization_id
             service=CloudPythonAuthService(self.service.database); worker=CloudAuthWorker(service,provider); self._cloud_auth_worker=worker
             worker.progress.connect(lambda _value,message:self.view.set_status(message))
-            worker.succeeded.connect(lambda result,p=provider,w=worker:self._on_cloud_auth_succeeded(p,result,w))
-            worker.failed.connect(lambda message,p=provider,w=worker:self._on_cloud_auth_failed(p,message,w))
+            worker.succeeded.connect(lambda result,p=provider,w=worker,o=organization_id:self._on_cloud_auth_succeeded(p,result,w,o))
+            worker.failed.connect(lambda message,p=provider,w=worker,o=organization_id:self._on_cloud_auth_failed(p,message,w,o))
             worker.finished.connect(lambda w=worker:self._cleanup_cloud_auth_worker(w)); worker.start()
         except Exception as exc: QMessageBox.warning(self.view,"Adicionar conta",str(exc))
 
-    def _on_cloud_auth_succeeded(self,provider,result,worker):
+    def _on_cloud_auth_succeeded(
+        self, provider, result, worker, organization_id,
+    ):
         if worker is not self._cloud_auth_worker:return
         try:
-            self.service.cloud_manager.save_authentication_result(self.service.active_organization_id,provider,result); self._refresh_cloud(); self.view.set_status(f"{CloudOAuthConfigService.display_name(provider)} conectado com sucesso.")
+            self.service.cloud_manager.save_authentication_result(organization_id,provider,result)
+            if self.service.active_organization_id == organization_id:
+                self._refresh_cloud()
+            self.view.set_status(f"{CloudOAuthConfigService.display_name(provider)} conectado com sucesso.")
+            if self._retry_sync_after_reauthentication == (
+                provider, organization_id
+            ):
+                self._retry_sync_after_reauthentication = None
+                if self.service.active_organization_id == organization_id:
+                    QTimer.singleShot(250, self.on_sync_now)
         except Exception as exc:QMessageBox.warning(self.view,"Adicionar conta",str(exc))
 
-    def _on_cloud_auth_failed(self,provider,message,worker):
+    def _on_cloud_auth_failed(
+        self, provider, message, worker, organization_id,
+    ):
         if worker is self._cloud_auth_worker:
+            if self._retry_sync_after_reauthentication == (
+                provider, organization_id
+            ):
+                self._retry_sync_after_reauthentication = None
             self.service.cloud_manager._audit(
-                "CLOUD_CONNECT_FAILED", self.service.active_organization_id, None,
+                "CLOUD_CONNECT_FAILED", organization_id, None,
                 f"Autorização {provider} não concluída",
             )
-            self._refresh_cloud(provider)
+            if self.service.active_organization_id == organization_id:
+                self._refresh_cloud(provider)
             QMessageBox.warning(self.view,"Autenticação da nuvem",message)
             self.view.set_status("Autenticação da nuvem não concluída")
 
@@ -455,6 +475,9 @@ class DocumentController:
         worker.progress.connect(lambda value, message: self.main_view.progress.update(value, message))
         worker.succeeded.connect(self._on_cloud_sync_succeeded)
         worker.failed.connect(self._on_cloud_sync_failed)
+        worker.reauthentication_required.connect(
+            self._on_cloud_sync_reauthentication_required
+        )
         worker.finished.connect(lambda worker=worker: self._cleanup_cloud_worker(worker))
         worker.finished.connect(worker.deleteLater)
         self.main_view.progress.start("Sincronizando documentos")
@@ -509,6 +532,34 @@ class DocumentController:
         self._refresh_documents()
         self.view.set_status("Falha na sincronização")
         QMessageBox.warning(self.view, "Sincronização", message)
+
+    def _on_cloud_sync_reauthentication_required(
+        self, provider: str, message: str,
+    ):
+        logger.warning(
+            "cloud.sync.ui.reauthentication_required provider=%s",
+            provider,
+        )
+        self.main_view.progress.finish("Reconexão necessária")
+        self._refresh_cloud(provider)
+        self._refresh_documents()
+        self.view.set_status("A conta da nuvem precisa ser reconectada")
+        display_name = CloudOAuthConfigService.display_name(provider)
+        answer = QMessageBox.question(
+            self.view,
+            f"Reconectar {display_name}",
+            (
+                f"{message}\n\n"
+                f"Deseja entrar novamente no {display_name} agora?"
+            ),
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self._retry_sync_after_reauthentication = (
+                provider, self.service.active_organization_id
+            )
+            QTimer.singleShot(
+                0, lambda provider=provider: self.on_add_cloud_account(provider)
+            )
 
     def _cleanup_cloud_worker(self, worker):
         if self._cloud_worker is worker:

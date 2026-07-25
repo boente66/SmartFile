@@ -102,7 +102,20 @@ class CloudManager:
         self._require("cloud.connect")
         if not result.access_token:
             raise ValueError("O provedor não retornou um token de acesso.")
-        account = self._save_account(provider, result)
+        settings = self.settings(organization_id)
+        account = None
+        if settings.cloud_account_id is not None:
+            current = self.account(settings.cloud_account_id)
+            same_identity = (
+                not current.email
+                or not result.email
+                or current.email.strip().casefold()
+                == result.email.strip().casefold()
+            )
+            if current.provider == provider and same_identity:
+                account = self._replace_authentication(current, result)
+        if account is None:
+            account = self._save_account(provider, result)
         self.configure(organization_id, provider, account.id)
         self._audit("CLOUD_CONNECTED", organization_id, account.id, f"Conta {provider} conectada")
         return account
@@ -291,6 +304,36 @@ class CloudManager:
             """,
             (
                 token_ref, result.expires_at.isoformat() if result.expires_at else None, account.id,
+            ),
+        )
+        return self.account(account.id)
+
+    def _replace_authentication(
+        self, account: CloudAccount, result: CloudAuthResult,
+    ) -> CloudAccount:
+        """Atualiza a conta vinculada sem perder raiz, cursor ou mapeamentos."""
+
+        refresh = result.refresh_token or account.refresh_token
+        token_ref = self.token_store.save(
+            result.access_token, refresh, account.token_ref
+        )
+        self.database.execute_query(
+            """
+            UPDATE cloud_accounts SET
+                email=?,display_name=?,access_token='TOKEN_STORE',
+                refresh_token='TOKEN_STORE',token_ref=?,expires_at=?,
+                status='ACTIVE'
+            WHERE id=?
+            """,
+            (
+                result.email or account.email,
+                result.display_name or account.display_name,
+                token_ref,
+                (
+                    result.expires_at.isoformat()
+                    if result.expires_at else None
+                ),
+                account.id,
             ),
         )
         return self.account(account.id)

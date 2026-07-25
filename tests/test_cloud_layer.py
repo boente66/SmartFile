@@ -663,3 +663,122 @@ def test_sync_worker_propagates_delta_error_and_marks_pending_document(tmp_path:
     assert progress[-1] == (100, "Falha na sincronização")
     assert refreshed.cloud_status == CloudSyncState.SYNC_ERROR
     assert job.last_error == "Microsoft Graph indisponível"
+
+
+def test_sync_worker_requests_reauthentication_for_expired_authorization(
+    tmp_path: Path,
+):
+    source = tmp_path / "reauth.pdf"
+    source.write_bytes(b"reauth")
+    documents = DocumentService(db_path=str(tmp_path / "smartfile.db"))
+    organization_id = documents.active_organization_id
+    account = _account(documents.cloud_manager)
+    documents.cloud_manager.configure(
+        organization_id, "ONEDRIVE", account.id
+    )
+    document = documents.import_document(str(source))
+    provider = FakeProvider()
+    provider.list_changes = lambda *_args: (
+        (_ for _ in ()).throw(
+            CloudAuthenticationError(
+                "A autorização da nuvem expirou ou foi removida."
+            )
+        )
+    )
+    documents.cloud_manager.provider_for = lambda _organization_id: provider
+    reauthentication = []
+    failed = []
+    worker = CloudSyncWorker(
+        documents.cloud_sync_service, organization_id
+    )
+    worker.reauthentication_required.connect(
+        lambda provider_name, message: reauthentication.append(
+            (provider_name, message)
+        )
+    )
+    worker.failed.connect(failed.append)
+
+    worker.run()
+
+    refreshed = documents.get_document(document.id)
+    linked_account = documents.cloud_manager.account(account.id)
+    assert failed == []
+    assert reauthentication == [(
+        "ONEDRIVE",
+        "A autorização da nuvem expirou ou foi removida.",
+    )]
+    assert linked_account.status == "REAUTH_REQUIRED"
+    assert refreshed.cloud_status == CloudSyncState.SYNC_ERROR
+
+
+def test_reauthentication_reuses_linked_account_and_sync_cursor(tmp_path: Path):
+    documents = DocumentService(db_path=str(tmp_path / "smartfile.db"))
+    manager = documents.cloud_manager
+    organization_id = documents.active_organization_id
+    account = _account(manager)
+    manager.configure(organization_id, "ONEDRIVE", account.id)
+    documents.database.execute_query(
+        """
+        UPDATE cloud_settings
+        SET remote_root_id='organization-root',delta_token='delta-cursor'
+        WHERE organization_id=?
+        """,
+        (organization_id,),
+    )
+    manager.mark_reauthentication_required(organization_id)
+
+    updated = manager.save_authentication_result(
+        organization_id,
+        "ONEDRIVE",
+        CloudAuthResult(
+            access_token="new-access",
+            refresh_token="new-refresh",
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            email="teste@example.com",
+            display_name="Conta reconectada",
+        ),
+    )
+    settings = manager.settings(organization_id)
+
+    assert updated.id == account.id
+    assert updated.status == "ACTIVE"
+    assert updated.email == "teste@example.com"
+    assert settings.cloud_account_id == account.id
+    assert settings.remote_root_id == "organization-root"
+    assert settings.delta_token == "delta-cursor"
+
+
+def test_reauthentication_with_different_identity_resets_remote_scope(
+    tmp_path: Path,
+):
+    documents = DocumentService(db_path=str(tmp_path / "smartfile.db"))
+    manager = documents.cloud_manager
+    organization_id = documents.active_organization_id
+    account = _account(manager)
+    manager.configure(organization_id, "ONEDRIVE", account.id)
+    documents.database.execute_query(
+        """
+        UPDATE cloud_settings
+        SET remote_root_id='old-root',delta_token='old-cursor'
+        WHERE organization_id=?
+        """,
+        (organization_id,),
+    )
+
+    replacement = manager.save_authentication_result(
+        organization_id,
+        "ONEDRIVE",
+        CloudAuthResult(
+            access_token="replacement-access",
+            refresh_token="replacement-refresh",
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            email="different@example.com",
+            display_name="Outra conta",
+        ),
+    )
+    settings = manager.settings(organization_id)
+
+    assert replacement.id != account.id
+    assert settings.cloud_account_id == replacement.id
+    assert settings.remote_root_id is None
+    assert settings.delta_token is None
