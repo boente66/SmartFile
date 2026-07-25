@@ -30,6 +30,8 @@ logger = logging.getLogger(__name__)
 
 
 class DocumentController:
+    _active_cloud_workers: dict[tuple[str, int], CloudSyncWorker] = {}
+
     def __init__(self, workspace, main_view, convert_controller: Optional[ConvertController] = None, pdf_controller: Optional[PDFController] = None, pdf_viewer_controller: Optional[PDFViewerController] = None, session_context=None, document_service=None):
         self.workspace = workspace
         self.main_view = main_view
@@ -425,19 +427,31 @@ class DocumentController:
         except CloudPermissionError as exc:
             QMessageBox.warning(self.view, "Sincronização", str(exc))
             return
-        if self._cloud_worker is not None:
+        organization_id = self.service.active_organization_id
+        worker_key = self._cloud_worker_key(organization_id)
+        active_worker = self._active_cloud_workers.get(worker_key)
+        if (
+            self._cloud_worker is not None
+            or (
+                active_worker is not None
+                and active_worker.isRunning()
+            )
+        ):
             QMessageBox.information(self.view, "Sincronização", "Já existe uma sincronização em andamento.")
             return
-        settings = self.service.cloud_manager.settings(self.service.active_organization_id)
+        if active_worker is not None:
+            self._active_cloud_workers.pop(worker_key, None)
+        settings = self.service.cloud_manager.settings(organization_id)
         if settings.sync_mode == "LOCAL":
             QMessageBox.information(self.view, "Sincronização", "Esta organização utiliza somente armazenamento local.")
             return
-        worker = CloudSyncWorker(self.service.cloud_sync_service, self.service.active_organization_id)
+        worker = CloudSyncWorker(self.service.cloud_sync_service, organization_id)
         logger.info(
             "cloud.sync.ui.start organization_id=%s",
-            self.service.active_organization_id,
+            organization_id,
         )
         self._cloud_worker = worker
+        self._active_cloud_workers[worker_key] = worker
         worker.progress.connect(lambda value, message: self.main_view.progress.update(value, message))
         worker.succeeded.connect(self._on_cloud_sync_succeeded)
         worker.failed.connect(self._on_cloud_sync_failed)
@@ -499,7 +513,19 @@ class DocumentController:
     def _cleanup_cloud_worker(self, worker):
         if self._cloud_worker is worker:
             self._cloud_worker = None
-            logger.info("cloud.sync.ui.worker_cleanup")
+        worker_key = self._cloud_worker_key(worker.organization_id)
+        if self._active_cloud_workers.get(worker_key) is worker:
+            self._active_cloud_workers.pop(worker_key, None)
+        logger.info(
+            "cloud.sync.ui.worker_cleanup organization_id=%s",
+            worker.organization_id,
+        )
+
+    def _cloud_worker_key(self, organization_id: int) -> tuple[str, int]:
+        database_name = str(
+            Path(self.service.database.db_name).expanduser().resolve()
+        )
+        return database_name, organization_id
 
     def on_copy_document(self,document_id): self._copied_document_id=document_id; self.view.set_status("Documento copiado. Escolha a pasta e use Colar.")
     def on_paste_document(self):

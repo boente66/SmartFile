@@ -540,6 +540,46 @@ def test_onedrive_delta_repeated_next_link_is_stopped():
     assert calls == [delta_url]
 
 
+def test_onedrive_large_initial_delta_is_resumed_in_batches():
+    delta_url = f"{OneDriveProvider.GRAPH}/me/drive/root/delta"
+    page_2 = f"{delta_url}?page=2"
+    page_3 = f"{delta_url}?page=3"
+    final_url = f"{delta_url}?token=final"
+    responses = {
+        delta_url: {
+            "value": [{"id": "remote-1", "name": "one.pdf"}],
+            "@odata.nextLink": page_2,
+        },
+        page_2: {
+            "value": [{"id": "remote-2", "name": "two.pdf"}],
+            "@odata.nextLink": page_3,
+        },
+        page_3: {
+            "value": [{"id": "remote-3", "name": "three.pdf"}],
+            "@odata.deltaLink": final_url,
+        },
+    }
+    calls = []
+
+    def transport(method, url, headers, data):
+        calls.append(url)
+        return 200, {}, json.dumps(responses[url]).encode()
+
+    provider = OneDriveProvider("access", transport)
+    provider.MAX_DELTA_PAGES = 2
+
+    first_changes, continuation = provider.list_changes()
+    second_changes, cursor = provider.list_changes(continuation)
+
+    assert [item.remote_id for item in first_changes] == [
+        "remote-1", "remote-2",
+    ]
+    assert continuation == page_3
+    assert [item.remote_id for item in second_changes] == ["remote-3"]
+    assert cursor == final_url
+    assert calls == [delta_url, page_2, page_3]
+
+
 def test_onedrive_delta_http_error_is_propagated():
     provider = OneDriveProvider(
         "access",

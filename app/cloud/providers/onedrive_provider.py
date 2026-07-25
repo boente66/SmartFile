@@ -24,7 +24,10 @@ class OneDriveProvider(CloudProvider):
     GRAPH = "https://graph.microsoft.com/v1.0"
     AUTH = "https://login.microsoftonline.com/common/oauth2/v2.0"
     SCOPES = "offline_access User.Read Files.ReadWrite"
-    MAX_DELTA_PAGES = 100
+    # Processa a carga inicial em lotes. Um OneDrive com muitos itens pode
+    # possuir centenas de páginas; guardar o nextLink permite liberar a fila
+    # local sem transformar uma enumeração válida em erro.
+    MAX_DELTA_PAGES = 25
     DELTA_DEADLINE_SECONDS = 120
 
     def authenticate(self, credentials: dict[str, str]) -> CloudAuthResult:
@@ -113,9 +116,19 @@ class OneDriveProvider(CloudProvider):
                     "A sincronização foi interrompida com segurança."
                 )
             if page >= self.MAX_DELTA_PAGES or time.monotonic() >= deadline:
-                raise CloudError(
-                    "A consulta de alterações do OneDrive excedeu o limite seguro."
+                final_cursor = url
+                logger.info(
+                    "cloud.onedrive.delta.partial pages=%s changes=%s "
+                    "reason=%s",
+                    page,
+                    len(changes),
+                    (
+                        "page_limit"
+                        if page >= self.MAX_DELTA_PAGES
+                        else "deadline"
+                    ),
                 )
+                break
             visited_urls.add(url)
             page += 1
             logger.info("cloud.onedrive.delta.page page=%s", page)
