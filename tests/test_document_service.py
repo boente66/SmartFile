@@ -128,3 +128,38 @@ def test_empty_trash_removes_only_trashed_documents(tmp_path: Path):
     a=service.import_document(str(first)); b=service.import_document(str(second)); service.delete_document(a.id)
     assert service.empty_trash()==1
     assert service.get_document(a.id) is None and service.get_document(b.id) is not None
+
+
+@pytest.mark.parametrize("job_status", ["PENDING", "ERROR", "COMPLETED"])
+def test_permanent_delete_discards_cloud_jobs(tmp_path: Path, job_status: str):
+    service = DocumentService(db_path=str(tmp_path / "smartfile.db"))
+    source = tmp_path / "pending.pdf"
+    source.write_bytes(b"pending-cloud-content")
+    document = service.import_document(str(source), sync_cloud=False)
+    job = service.cloud_sync_service.queue.enqueue(document.id, "UPLOAD", "ONEDRIVE")
+    service.database.execute_query(
+        "UPDATE sync_jobs SET status=? WHERE id=?", (job_status, job.id)
+    )
+    service.delete_document(document.id)
+
+    assert service.permanently_delete_document(document.id) is True
+    assert service.get_document(document.id) is None
+    assert service.database.fetch_one(
+        "SELECT id FROM sync_jobs WHERE document_id=?", (document.id,)
+    ) is None
+
+
+def test_empty_trash_discards_cloud_jobs_for_every_deleted_document(tmp_path: Path):
+    service = DocumentService(db_path=str(tmp_path / "smartfile.db"))
+    documents = []
+    for name in ("first.pdf", "second.pdf"):
+        source = tmp_path / name
+        source.write_bytes(name.encode())
+        document = service.import_document(str(source), sync_cloud=False)
+        service.cloud_sync_service.queue.enqueue(document.id, "UPLOAD", "ONEDRIVE")
+        service.delete_document(document.id)
+        documents.append(document)
+
+    assert service.empty_trash() == 2
+    assert service.database.fetch_one("SELECT id FROM sync_jobs LIMIT 1") is None
+    assert all(service.get_document(document.id) is None for document in documents)

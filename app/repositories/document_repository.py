@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 
 from app.database.database import Database
 from app.entities.document_entity import DocumentEntity
 from app.repositories.base_repository import BaseRepository
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentRepository(BaseRepository):
@@ -62,7 +65,23 @@ class DocumentRepository(BaseRepository):
         if organization_id is not None:
             query += " AND organization_id = ?"
             params += (organization_id,)
-        return self._write(query, params).rowcount > 0
+        lookup = "SELECT id FROM documents WHERE id = ?"
+        lookup_params: tuple[object, ...] = (document_id,)
+        if organization_id is not None:
+            lookup += " AND organization_id = ?"
+            lookup_params += (organization_id,)
+        with self.database.transaction():
+            if self._fetch_one(lookup, lookup_params) is None:
+                return False
+            discarded_jobs = self._discard_sync_jobs(document_id)
+            deleted = self._write(query, params).rowcount > 0
+        if discarded_jobs:
+            logger.info(
+                "document.delete.sync_jobs_discarded document_id=%s count=%s",
+                document_id,
+                discarded_jobs,
+            )
+        return deleted
 
     def find_by_id(self, document_id: int, organization_id: int | None = None) -> Optional[DocumentEntity]:
         query = "SELECT * FROM documents WHERE id = ?"
@@ -213,15 +232,40 @@ class DocumentRepository(BaseRepository):
 
     def permanently_delete(self, document_id: int, organization_id: int) -> bool:
         with self.database.transaction():
-            self._write("DELETE FROM history WHERE document_id=?",(document_id,))
-            return self._write("DELETE FROM documents WHERE id=? AND organization_id=? AND status='TRASHED'",(document_id,organization_id)).rowcount>0
+            row = self._fetch_one(
+                "SELECT id FROM documents WHERE id=? AND organization_id=? AND status='TRASHED'",
+                (document_id, organization_id),
+            )
+            if row is None:
+                return False
+            self._discard_sync_jobs(document_id)
+            self._write("DELETE FROM history WHERE document_id=?", (document_id,))
+            return self._write(
+                "DELETE FROM documents WHERE id=? AND organization_id=? AND status='TRASHED'",
+                (document_id, organization_id),
+            ).rowcount > 0
 
     def empty_trash(self, organization_id: int) -> int:
-        rows=self._fetch_all("SELECT id FROM documents WHERE organization_id=? AND status='TRASHED'",(organization_id,))
+        rows = self._fetch_all(
+            "SELECT id FROM documents WHERE organization_id=? AND status='TRASHED'",
+            (organization_id,),
+        )
         with self.database.transaction():
-            for row in rows: self._write("DELETE FROM history WHERE document_id=?",(row["id"],))
-            self._write("DELETE FROM documents WHERE organization_id=? AND status='TRASHED'",(organization_id,))
+            for row in rows:
+                self._discard_sync_jobs(row["id"])
+                self._write("DELETE FROM history WHERE document_id=?", (row["id"],))
+            self._write(
+                "DELETE FROM documents WHERE organization_id=? AND status='TRASHED'",
+                (organization_id,),
+            )
         return len(rows)
+
+    def _discard_sync_jobs(self, document_id: int) -> int:
+        """Descarta jobs que não podem sobreviver à exclusão do documento pai."""
+        return self._write(
+            "DELETE FROM sync_jobs WHERE document_id=?",
+            (document_id,),
+        ).rowcount
 
     def move_to_folder(self, document_id: int, organization_id: int, folder_id: int | None) -> bool:
         return self._write(
