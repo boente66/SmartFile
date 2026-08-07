@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QBoxLayout,
     QComboBox,
@@ -240,6 +241,17 @@ class DocumentView(QWidget):
             IconProvider.icon("action_trash"), "Mover para lixeira",
             lambda: self._emit_for_selected(self.delete_requested),
         )
+        self.more_copy_action.setShortcut(QKeySequence.StandardKey.Copy)
+        self.more_paste_action.setShortcut(QKeySequence.StandardKey.Paste)
+        self.more_rename_action.setShortcut(QKeySequence(Qt.Key.Key_F2))
+        self.more_trash_action.setShortcut(QKeySequence(Qt.Key.Key_Delete))
+        for action in (
+            self.more_copy_action,
+            self.more_paste_action,
+            self.more_rename_action,
+            self.more_trash_action,
+        ):
+            action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
         self.more_menu.addSeparator()
         self.enterprise_menu = self.more_menu.addMenu("Recursos empresariais")
         self.enterprise_menu.setIcon(IconProvider.icon("business"))
@@ -257,6 +269,7 @@ class DocumentView(QWidget):
         )
         self.more_menu.aboutToShow.connect(self._update_more_menu)
         self.btn_more.setMenu(self.more_menu)
+        self.btn_more.setToolTip("Mais ações — clique para abrir o menu contextual")
         sync_menu = QMenu(self.btn_sync)
         sync_menu.addAction("Sincronizar Agora", self.sync_now_requested.emit)
         sync_menu.addAction("Pausar", self.pause_sync_requested.emit)
@@ -340,6 +353,7 @@ class DocumentView(QWidget):
         self.documents_table.itemSelectionChanged.connect(self._on_selection_changed)
         self.documents_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.documents_table.customContextMenuRequested.connect(self._show_document_context_menu)
+        self._setup_document_shortcuts()
         browser = QSplitter(Qt.Orientation.Horizontal)
         browser.setObjectName("documentBrowserSplitter")
         folders_panel = QFrame()
@@ -405,6 +419,7 @@ class DocumentView(QWidget):
         self.main_layout.addWidget(left, 3)
         self.main_layout.addWidget(self.details, 1)
         self._set_document_actions_enabled(False)
+        self._update_more_menu()
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -557,6 +572,7 @@ class DocumentView(QWidget):
         self.audit_action.setEnabled(
             context is None or context.has_permission("audit.view")
         )
+        self._update_more_menu()
 
     def apply_profile_features(self, feature_set) -> None:
         self._feature_set = feature_set
@@ -599,6 +615,7 @@ class DocumentView(QWidget):
             button.setChecked(name == scope)
         self.folder_tree.setVisible(scope in {"documents", "folders"})
         self.btn_empty_trash.setVisible(scope=="trash")
+        self._update_more_menu()
         self.scope_changed.emit(scope)
 
     def show_document_details(self, document: DocumentModel | None):
@@ -629,6 +646,7 @@ class DocumentView(QWidget):
     def _on_selection_changed(self):
         document_id = self.selected_document_id()
         self._set_document_actions_enabled(document_id is not None)
+        self._update_more_menu()
         if document_id is not None:
             self.document_selected.emit(document_id)
 
@@ -672,16 +690,73 @@ class DocumentView(QWidget):
         can_update = self._context is None or self._context.has_permission("document.update")
         can_create = self._context is None or self._context.has_permission("document.create")
         if document_id is not None:
-            menu.addAction(IconProvider.icon("copy"),"Copiar",lambda:self.copy_requested.emit(document_id))
+            copy_action = menu.addAction(IconProvider.icon("copy"),"Copiar",lambda:self.copy_requested.emit(document_id))
+            copy_action.setShortcut(QKeySequence.StandardKey.Copy)
             if trash:
                 menu.addAction(IconProvider.icon("restore"),"Restaurar",lambda:self.restore_requested.emit(document_id)).setEnabled(can_update)
-                menu.addAction(IconProvider.icon("action_trash"),"Excluir definitivamente",lambda:self.permanent_delete_requested.emit(document_id)).setEnabled(can_update)
+                delete_action = menu.addAction(IconProvider.icon("action_trash"),"Excluir definitivamente",lambda:self.permanent_delete_requested.emit(document_id))
+                delete_action.setShortcut(QKeySequence(Qt.Key.Key_Delete))
+                delete_action.setEnabled(can_update)
             else:
-                menu.addAction(IconProvider.icon("edit"),"Renomear",lambda:self.rename_document_requested.emit(document_id)).setEnabled(can_update)
-                menu.addAction(IconProvider.icon("action_trash"),"Mover para lixeira",lambda:self.delete_requested.emit(document_id)).setEnabled(can_update)
-        menu.addAction(IconProvider.icon("paste"),"Colar",self.paste_requested.emit).setEnabled(can_create)
+                rename_action = menu.addAction(IconProvider.icon("edit"),"Renomear",lambda:self.rename_document_requested.emit(document_id))
+                rename_action.setShortcut(QKeySequence(Qt.Key.Key_F2))
+                rename_action.setEnabled(can_update)
+                delete_action = menu.addAction(IconProvider.icon("action_trash"),"Mover para lixeira",lambda:self.delete_requested.emit(document_id))
+                delete_action.setShortcut(QKeySequence(Qt.Key.Key_Delete))
+                delete_action.setEnabled(can_update)
+        paste_action = menu.addAction(IconProvider.icon("paste"),"Colar",self.paste_requested.emit)
+        paste_action.setShortcut(QKeySequence.StandardKey.Paste)
+        paste_action.setEnabled(can_create)
         if trash: menu.addSeparator(); menu.addAction(IconProvider.icon("action_trash"),"Esvaziar lixeira",self.empty_trash_requested.emit).setEnabled(can_update)
         menu.exec(self.documents_table.viewport().mapToGlobal(position))
+
+    def _setup_document_shortcuts(self) -> None:
+        """Instala atalhos somente na tabela para não capturar edição em campos de texto."""
+        bindings = (
+            ("copy", QKeySequence.StandardKey.Copy, self._copy_selected),
+            ("paste", QKeySequence.StandardKey.Paste, self._paste_from_keyboard),
+            ("rename", QKeySequence(Qt.Key.Key_F2), self._rename_from_keyboard),
+            ("delete", QKeySequence(Qt.Key.Key_Delete), self._delete_from_keyboard),
+            ("context", QKeySequence("Shift+F10"), self._show_keyboard_context_menu),
+            ("menu", QKeySequence(Qt.Key.Key_Menu), self._show_keyboard_context_menu),
+        )
+        self.document_shortcuts = {}
+        for name, sequence, callback in bindings:
+            shortcut = QShortcut(sequence, self.documents_table)
+            shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(callback)
+            self.document_shortcuts[name] = shortcut
+
+    def _copy_selected(self) -> None:
+        self._emit_for_selected(self.copy_requested)
+
+    def _paste_from_keyboard(self) -> None:
+        if self._context is None or self._context.has_permission("document.create"):
+            self.paste_requested.emit()
+
+    def _rename_from_keyboard(self) -> None:
+        can_update = self._context is None or self._context.has_permission("document.update")
+        if can_update and getattr(self, "_current_scope", "documents") != "trash":
+            self._emit_for_selected(self.rename_document_requested)
+
+    def _delete_from_keyboard(self) -> None:
+        document_id = self.selected_document_id()
+        can_update = self._context is None or self._context.has_permission("document.update")
+        if document_id is None or not can_update:
+            return
+        if getattr(self, "_current_scope", "documents") == "trash":
+            self.permanent_delete_requested.emit(document_id)
+        else:
+            self.delete_requested.emit(document_id)
+
+    def _show_keyboard_context_menu(self) -> None:
+        index = self.documents_table.currentIndex()
+        position = (
+            self.documents_table.visualRect(index).center()
+            if index.isValid()
+            else self.documents_table.viewport().rect().center()
+        )
+        self._show_document_context_menu(position)
 
     def _update_more_menu(self) -> None:
         selected = self.selected_document_id() is not None

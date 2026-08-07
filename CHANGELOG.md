@@ -6,6 +6,7 @@
 - Added PERSONAL, STUDENT, BUSINESS, and EMPTY capability policies
 - Added indexed document filters, multi-term metadata search, and safe rename
 - Added left-click contextual actions through the More menu
+- Added keyboard access with Ctrl+C, Ctrl+V, F2, Delete, Shift+F10 and Menu
 - Added a logical-folder explorer for multi-file document imports
 - Added audited BUSINESS transport configuration for NAS, HTTPS, and LAN
 - Added BUSINESS document requests with deadlines and status tracking

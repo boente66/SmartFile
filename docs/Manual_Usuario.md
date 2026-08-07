@@ -201,6 +201,17 @@ o menu oferece **Copiar**, **Colar**, **Restaurar**, **Excluir definitivamente**
 **Esvaziar lixeira**. Exclusões definitivas removem também o arquivo gerenciado e
 não podem ser desfeitas.
 
+Com o foco na tabela de documentos, também estão disponíveis os atalhos:
+
+- **Ctrl+C:** copiar o documento selecionado;
+- **Ctrl+V:** colar na pasta lógica atual;
+- **F2:** renomear;
+- **Delete:** mover para a lixeira ou, quando já estiver na Lixeira, solicitar a
+  exclusão definitiva;
+- **Shift+F10** ou a tecla **Menu:** abrir o menu contextual pelo teclado.
+
+Os atalhos são limitados à tabela e não interferem na edição dos campos de busca.
+
 ### Recursos empresariais
 
 No perfil Empresarial, o menu **Mais → Recursos empresariais** oferece:
