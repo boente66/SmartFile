@@ -83,7 +83,10 @@ class AccountController:
     def _edit_organization(self,view,oid):
         organization=self.auth.organizations.repository.find_by_id(oid); dialog=OrganizationDialog(view,organization,False)
         if dialog.exec()!=QDialog.DialogCode.Accepted:return
-        try: values=dialog.values(); self.organizations.update(oid,values["name"],values["description"],values["icon"],values["color"]); self._reload_organizations(view); self.refresh()
+        try:
+            values=dialog.values(); updated=self.organizations.update(oid,values["name"],values["description"],values["icon"],values["color"]); updated.profile_code=values["profile_code"]; self.auth.organizations.repository.update(updated); self.organizations.audit.record("ORGANIZATION_PROFILE_UPDATED",user_id=self.auth.session_context.current_user.id,organization_id=oid,target_type="organization",target_id=oid,description=f"Perfil de recursos alterado para {updated.profile_code}")
+            if oid==getattr(self.auth.session_context.active_organization,"id",None): self.auth.session_context.set_active_organization(updated)
+            self._reload_organizations(view); self.refresh()
         except Exception as exc: QMessageBox.warning(view,"Organização",str(exc))
     def _duplicate_organization(self,view,oid):
         name,ok=QInputDialog.getText(view,"Duplicar estrutura","Nome da nova organização:")

@@ -62,6 +62,17 @@ class CloudSyncService:
             return self.enqueue_upload(document_id, organization_id)
         return self.queue.enqueue(document_id, CloudOperation.MOVE, settings.sync_mode)
 
+    def enqueue_rename(self, document_id: int, organization_id: int) -> SyncJob | None:
+        settings = self.manager.settings(organization_id)
+        if settings.sync_mode == "LOCAL" or settings.paused or settings.cloud_account_id is None:
+            return None
+        document = self.documents.find_by_id(document_id, organization_id)
+        if document is None:
+            return None
+        if not document.remote_id:
+            return self.enqueue_upload(document_id, organization_id)
+        return self.queue.enqueue(document_id, CloudOperation.RENAME, settings.sync_mode)
+
     def process_next(self, organization_id: int | None = None) -> SyncJob | None:
         job = self.queue.next_pending(organization_id)
         if job is None:

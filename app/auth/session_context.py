@@ -11,9 +11,9 @@ from app.models.user_model import UserModel
 
 ROLE_PERMISSIONS = {
     "OWNER": {"*"},
-    "ADMIN": {"document.*", "folder.*", "tools.use", "organization.view", "organization.create", "organization.update", "member.view", "member.add", "member.create_user", "member.change_role", "member.deactivate", "member.remove", "profile.view", "profile.update", "session.view", "session.revoke", "cloud.view", "cloud.connect", "cloud.disconnect", "cloud.sync"},
-    "EDITOR": {"document.create", "document.import", "document.update", "document.open", "document.view", "document.search", "folder.*", "tools.use", "organization.view", "organization.create", "profile.view", "profile.update", "session.view", "session.revoke", "cloud.view", "cloud.sync"},
-    "VIEWER": {"document.view", "document.open", "document.search", "organization.view", "profile.view", "profile.update", "session.view", "session.revoke", "cloud.view"},
+    "ADMIN": {"document.*", "folder.*", "tools.use", "organization.view", "organization.create", "organization.update", "member.view", "member.add", "member.create_user", "member.change_role", "member.deactivate", "member.remove", "profile.view", "profile.update", "session.view", "session.revoke", "cloud.view", "cloud.connect", "cloud.disconnect", "cloud.sync", "transport.configure", "document.request.*", "audit.view"},
+    "EDITOR": {"document.create", "document.import", "document.update", "document.open", "document.view", "document.search", "folder.*", "tools.use", "organization.view", "organization.create", "profile.view", "profile.update", "session.view", "session.revoke", "cloud.view", "cloud.sync", "document.request.view", "document.request.create", "document.request.update"},
+    "VIEWER": {"document.view", "document.open", "document.search", "organization.view", "profile.view", "profile.update", "session.view", "session.revoke", "cloud.view", "document.request.view"},
 }
 
 

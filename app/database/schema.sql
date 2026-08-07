@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS organizations (
     updated_at TEXT NOT NULL,
     archived_at TEXT,
     template_code TEXT NOT NULL DEFAULT 'EMPTY',
+    profile_code TEXT NOT NULL DEFAULT 'EMPTY',
     storage_plan_code TEXT NOT NULL DEFAULT 'PERSONAL_10GB',
     is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
     status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'DELETED'))
@@ -118,6 +119,36 @@ CREATE TABLE IF NOT EXISTS audit_log (
     created_at TEXT NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (organization_id) REFERENCES organizations(id)
+);
+
+CREATE TABLE IF NOT EXISTS organization_transport_settings (
+    organization_id INTEGER PRIMARY KEY,
+    mode TEXT NOT NULL DEFAULT 'LOCAL' CHECK (mode IN ('LOCAL','NAS','HTTPS','LAN')),
+    endpoint TEXT,
+    enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0,1)),
+    verify_tls INTEGER NOT NULL DEFAULT 1 CHECK (verify_tls IN (0,1)),
+    updated_by_user_id INTEGER,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (organization_id) REFERENCES organizations(id),
+    FOREIGN KEY (updated_by_user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS document_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    organization_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    requested_by_user_id INTEGER,
+    assigned_to_user_id INTEGER,
+    status TEXT NOT NULL DEFAULT 'OPEN'
+        CHECK (status IN ('OPEN','IN_PROGRESS','COMPLETED','CANCELLED','OVERDUE')),
+    due_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    completed_at TEXT,
+    FOREIGN KEY (organization_id) REFERENCES organizations(id),
+    FOREIGN KEY (requested_by_user_id) REFERENCES users(id),
+    FOREIGN KEY (assigned_to_user_id) REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS cloud_settings (
@@ -297,3 +328,11 @@ CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id, created_at DESC)
 CREATE INDEX IF NOT EXISTS idx_storage_reservations_status ON storage_reservations(status, expires_at);
 CREATE INDEX IF NOT EXISTS idx_storage_reservations_organization ON storage_reservations(organization_id, status);
 CREATE INDEX IF NOT EXISTS idx_documents_source_type ON documents(source_type);
+CREATE INDEX IF NOT EXISTS idx_document_requests_org_status_due
+    ON document_requests(organization_id, status, due_at);
+CREATE INDEX IF NOT EXISTS idx_documents_smart_search
+    ON documents(organization_id, status, file_type, source_type, created_at);
+CREATE INDEX IF NOT EXISTS idx_documents_org_category
+    ON documents(organization_id, category COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_documents_org_favorite
+    ON documents(organization_id, favorite, status);

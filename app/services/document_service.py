@@ -16,6 +16,7 @@ from app.errors.persistence_exceptions import (
     StorageError,
 )
 from app.models.document_model import DocumentModel
+from app.models.document_search import DocumentSearchFilters
 from app.repositories.document_repository import DocumentRepository
 from app.services.history_service import HistoryService
 from app.services.document_storage_service import DocumentStorageService
@@ -163,14 +164,46 @@ class DocumentService:
         term: str,
         file_type: str | None = None,
         folder_id: int | None = None,
+        filters: DocumentSearchFilters | None = None,
     ) -> list[DocumentModel]:
-        if not term.strip():
+        if filters is not None:
+            file_type = filters.file_type or file_type
+        if not term.strip() and not (filters and filters.active):
             return self.filter_by_type(file_type or "Todos", folder_id)
         return self._models(
-            self.document_repository.search(
-                term, file_type, self.active_organization_id, folder_id
+            self.document_repository.smart_search(
+                [item for item in term.strip().split() if item],
+                organization_id=self.active_organization_id,
+                folder_id=folder_id,
+                filters=filters or DocumentSearchFilters(file_type=file_type),
             )
         )
+
+    def rename_document(self, document_id: int, new_name: str) -> DocumentModel:
+        entity = self.document_repository.find_by_id(document_id, self.active_organization_id)
+        if entity is None or entity.status != "ACTIVE":
+            raise InvalidDocumentError("Documento não encontrado.")
+        clean = " ".join(new_name.split())
+        if not clean or len(clean) > 255 or Path(clean).name != clean:
+            raise InvalidDocumentError("Informe um nome de documento válido.")
+        original_suffix = Path(entity.name).suffix.casefold() or entity.extension.casefold()
+        supplied_suffix = Path(clean).suffix.casefold()
+        if not supplied_suffix:
+            clean += original_suffix
+        elif supplied_suffix != original_suffix:
+            raise InvalidDocumentError("A extensão do documento não pode ser alterada ao renomear.")
+        if clean == entity.name:
+            return DocumentModel.from_entity(entity)
+        previous = entity.name
+        entity.name = clean
+        entity.updated_at = self._now()
+        updated = self.document_repository.update(entity)
+        self._record_history(document_id, "RENAME", f"Documento renomeado de {previous} para {clean}")
+        try:
+            self.cloud_sync_service.enqueue_rename(document_id, self.active_organization_id)
+        except Exception:
+            logger.exception("Documento renomeado localmente, mas a nuvem não foi enfileirada")
+        return DocumentModel.from_entity(updated)
 
     def filter_by_type(self, file_type: str, folder_id: int | None = None) -> list[DocumentModel]:
         if not file_type or file_type.lower() == "todos":

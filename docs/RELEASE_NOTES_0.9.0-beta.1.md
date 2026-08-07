@@ -20,7 +20,11 @@ devem relatar os problemas encontrados pelo rastreador de issues do projeto.
 - espelhamento remoto isolado por organização e pastas lógicas;
 - backup ZIP completo restrito ao administrador do sistema;
 - recuperação offline de senha com códigos de uso único protegidos por Argon2id;
-- dados mutáveis mantidos fora de `/opt/smartfile`.
+- dados mutáveis mantidos fora de `/opt/smartfile`;
+- perfis de recursos separados dos templates de pastas;
+- busca combinada com filtros indexados e importação por explorador lógico;
+- ações de copiar, colar, renomear e lixeira no menu Mais e no menu contextual;
+- fundações empresariais para transporte administrado, solicitações e prazos.
 
 ## Windows 10/11 x64
 
@@ -72,6 +76,8 @@ artefato SHA-256 detecta alterações acidentais, mas ainda não possui assinatu
 de código no Windows nem assinatura GPG no Linux. A sincronização de nuvem não
 substitui o backup do SQLite e do storage. OAuth inicia como `NOT_CONFIGURED`
 quando o administrador não forneceu a configuração pública do provedor.
+Configurar NAS, HTTPS ou LAN somente valida e persiste o destino administrativo;
+o conector de transporte real depende do protocolo de produção da organização.
 
 Reporte bugs pelo template **Windows beta bug**, sem anexar tokens, senhas,
 certificados ou documentos confidenciais.

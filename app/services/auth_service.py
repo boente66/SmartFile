@@ -108,6 +108,8 @@ class AuthService:
                         request.template_code,
                     )
                 organization.icon=request.organization_icon; organization.color=request.organization_color
+                organization.template_code=request.template_code.upper()
+                organization.profile_code=request.template_code.upper()
                 self.organizations.repository.update(organization)
                 membership = self.members.create(OrganizationMemberEntity(
                     organization_id=organization.id, user_id=user.id, role="OWNER",

@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
 
 from app.models.registration_request import RegistrationRequest
 from app.services.folder_template_service import FolderTemplateService
+from app.services.organization_feature_service import OrganizationFeatureService
 from app.ui.icon_provider import IconProvider
 
 
@@ -257,7 +258,10 @@ class FirstUserSetupView(QWidget):
         root = QVBoxLayout(page); root.setContentsMargins(38, 6, 38, 18); root.setSpacing(14)
         heading = QLabel("Escolha uma estrutura inicial")
         heading.setObjectName("registrationSectionTitle"); root.addWidget(heading)
-        hint = QLabel("O template cria pastas iniciais. O plano de armazenamento é independente.")
+        hint = QLabel(
+            "O template cria as pastas iniciais e também sugere o perfil de recursos. "
+            "O perfil poderá ser alterado depois nas configurações da organização."
+        )
         hint.setObjectName("registrationHint"); root.addWidget(hint)
         self.storage_plan = QComboBox()
         self.storage_plan.addItem("Pessoal — 10 GB", "PERSONAL_10GB")
@@ -266,10 +270,10 @@ class FirstUserSetupView(QWidget):
         cards = QGridLayout(); cards.setSpacing(14)
         self.templates = QButtonGroup(self); self.templates.setExclusive(True)
         descriptions = {
-            "PERSONAL": "Documentos pessoais, contas, garantias, saúde e comprovantes.",
-            "STUDENT": "Disciplinas, trabalhos, projetos, certificados e materiais.",
-            "BUSINESS": "Financeiro, fiscal, RH, contratos, clientes e projetos.",
-            "EMPTY": "Não cria pastas iniciais. Comece sua estrutura do zero.",
+            "PERSONAL": "Pastas pessoais, busca inteligente e sincronização protegida.",
+            "STUDENT": "Estrutura acadêmica, filtros indexados e ferramentas de PDF.",
+            "BUSINESS": "Controle de acesso, auditoria, solicitações, prazos e transporte de TI.",
+            "EMPTY": "Estrutura vazia com recursos essenciais de documentos e busca.",
         }
         for index, (code, name) in enumerate((("PERSONAL", "Pessoal"), ("STUDENT", "Estudante"), ("BUSINESS", "Empresarial"), ("EMPTY", "Começar vazio"))):
             radio = QRadioButton(f"{name}\n{descriptions[code]}")
@@ -401,7 +405,9 @@ class FirstUserSetupView(QWidget):
         self.summary.setText(
             f"<div style='line-height:150%'><b>Usuário:</b> {request.display_name}<br>"
             f"<b>Nome de usuário:</b> {request.username}<br><b>Organização:</b> {request.organization_name}<br>"
-            f"<b>Template:</b> {request.template_code}<br><b>Plano:</b> {self.storage_plan.currentText()}<br>"
+            f"<b>Template inicial:</b> {request.template_code}<br><b>Perfil de recursos:</b> "
+            f"{OrganizationFeatureService().for_profile(request.template_code).profile_name}<br>"
+            f"<b>Plano:</b> {self.storage_plan.currentText()}<br>"
             f"<b>Papel:</b> OWNER<br><b>Pastas:</b> {', '.join(folders) if folders else 'Nenhuma pasta automática'}</div>"
         )
 

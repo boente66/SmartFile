@@ -149,8 +149,18 @@ temporária, alterar papéis, desativar vínculos, remover membros e transferir 
 propriedade. A organização deve manter pelo menos um `OWNER`. A transferência é
 uma ação separada e exige a senha atual do proprietário.
 
-Ao criar uma organização, pode-se escolher novamente um modelo de pastas. Essa
-escolha não altera as permissões do usuário.
+Ao criar uma organização, pode-se escolher novamente um modelo de pastas. O
+modelo é usado somente para a estrutura inicial. O **perfil de recursos** é uma
+configuração independente e controla as capacidades disponíveis:
+
+- **Pessoal:** ações contextuais, busca inteligente, filtros, histórico e nuvem;
+- **Estudante:** recursos normais, filtros indexados e assinatura digital;
+- **Empresarial:** controle de acesso, assinatura digital, auditoria, solicitações,
+  prazos e configuração administrativa NAS, HTTPS ou LAN;
+- **Essencial:** documentos, pastas, histórico e busca local.
+
+Somente usuários autorizados podem alterar o perfil. Mudar o perfil não apaga
+pastas, documentos ou configurações já existentes.
 
 ## 6. Documentos
 
@@ -158,9 +168,9 @@ escolha não altera as permissões do usuário.
 
 1. Abra o módulo **Documentos**.
 2. Selecione **Importar** ou **Adicionar documento**.
-3. Escolha um arquivo regular do computador.
-4. Selecione a organização e a pasta lógica de destino, quando solicitado.
-5. Confirme a importação.
+3. No explorador simplificado, escolha um ou mais arquivos regulares.
+4. Selecione a pasta lógica de destino na árvore da organização.
+5. Informe categoria e etiquetas opcionais e confirme **Adicionar ao GED**.
 
 O SmartFile calcula o checksum SHA-256, cria um nome interno seguro e registra o
 documento no SQLite. O arquivo de origem não deve ser editado diretamente dentro
@@ -168,8 +178,10 @@ do storage gerenciado.
 
 ### Pesquisar e filtrar
 
-Utilize o campo de busca para pesquisar por nome, categoria ou etiqueta. Também é
-possível consultar favoritos, documentos recentes, pastas e lixeira.
+Utilize o campo de busca para combinar palavras presentes no nome, nome original,
+categoria, descrição, etiquetas ou observações. Os filtros rápidos usam índices
+do SQLite para restringir tipo, origem, período e favorito. Também é possível
+consultar favoritos, documentos recentes, pastas e lixeira.
 
 ### Favoritos
 
@@ -182,11 +194,27 @@ A exclusão normal move o documento para a lixeira. Ela não deve ser confundida
 remoção permanente. Confirme sempre a organização e o documento selecionados antes
 de excluir.
 
-Clique com o botão direito sobre um documento para abrir o menu contextual. Na lista
-normal estão disponíveis **Copiar**, **Colar** e **Mover para lixeira**. Na Lixeira,
+Clique com o botão direito sobre um documento ou use **Mais** com o botão esquerdo
+para abrir as ações contextuais. Na lista normal estão disponíveis **Copiar**,
+**Colar**, **Renomear** e **Mover para lixeira**. Na Lixeira,
 o menu oferece **Copiar**, **Colar**, **Restaurar**, **Excluir definitivamente** e
 **Esvaziar lixeira**. Exclusões definitivas removem também o arquivo gerenciado e
 não podem ser desfeitas.
+
+### Recursos empresariais
+
+No perfil Empresarial, o menu **Mais → Recursos empresariais** oferece:
+
+- configuração de destino NAS, servidor HTTPS ou servidor LAN, exclusiva de
+  OWNER/ADMIN autorizado;
+- solicitações de documentos com descrição, prazo e estados Aberta, Em andamento,
+  Concluída, Cancelada ou Atrasada;
+- consulta ao histórico auditável da organização.
+
+O SmartFile rejeita credenciais incluídas em URLs e exige HTTPS válido para esse
+modo. A configuração armazenada prepara a camada de transporte; a comunicação
+real com o servidor depende de contrato, autenticação e protocolo definidos pela
+TI e não deve ser considerada ativa apenas por salvar o endereço.
 
 ### Armazenamento da organização
 
@@ -701,6 +729,44 @@ o banco SQLite.
 - Se a nuvem estiver cheia, o documento local é preservado e a sincronização recebe erro.
 
 **Resultado:** uso coerente por organização sem ultrapassagem por operações simultâneas.
+
+### UC-12 — Importar documentos pelo explorador lógico
+
+**Ator principal:** OWNER, ADMIN ou EDITOR.
+
+1. O usuário seleciona **Importar**.
+2. O sistema apresenta arquivos locais e a árvore lógica da organização ativa.
+3. O usuário escolhe um ou mais arquivos, pasta, categoria e etiquetas.
+4. Cada arquivo é validado, copiado para o storage e registrado no SQLite.
+5. Operações válidas são enfileiradas para a nuvem, quando configurada.
+
+Falhas em um arquivo são apresentadas sem desfazer as importações válidas do
+mesmo lote. Arquivos duplicados continuam protegidos pelo checksum SHA-256.
+
+### UC-13 — Configurar transporte empresarial
+
+**Ator principal:** OWNER ou ADMIN autorizado de uma organização Empresarial.
+
+1. O administrador abre **Mais → Recursos empresariais → Configurar transporte**.
+2. Seleciona Local, NAS, HTTPS ou LAN e informa o destino.
+3. O sistema rejeita URL sem HTTPS, credenciais embutidas e caminhos inválidos.
+4. A configuração é persistida por organização e registrada na auditoria.
+
+**Resultado:** destino administrativo preparado, sem modificar o storage interno.
+A transferência real exige um conector de produção definido pela TI.
+
+### UC-14 — Gerenciar solicitação e prazo documental
+
+**Ator principal:** membro autorizado de uma organização Empresarial.
+
+1. O membro cria uma solicitação, descrição e prazo futuro.
+2. O sistema registra solicitante, organização e estado inicial `OPEN`.
+3. A solicitação pode avançar para Em andamento, Concluída ou Cancelada.
+4. Solicitações abertas após o prazo passam para `OVERDUE`.
+5. Criação e mudanças de estado são registradas na auditoria.
+
+**Resultado:** a organização acompanha pendências documentais sem misturar dados
+de outras organizações.
 
 ## 13. Boas práticas
 

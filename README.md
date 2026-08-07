@@ -16,7 +16,10 @@ independentes.
 
 - cadastro local, login e perfis administrativos;
 - organizações independentes e pastas lógicas;
-- importação, pesquisa, filtros, favoritos, recentes, histórico e lixeira;
+- perfis de recursos Pessoal, Estudante, Empresarial e Essencial, separados dos
+  templates de pastas;
+- explorador simplificado de importação, busca combinada com filtros indexados,
+  ações contextuais, favoritos, recentes, histórico e lixeira;
 - armazenamento interno gerenciado com SQLite e checksums SHA-256;
 - recuperação offline de senha com códigos de uso único protegidos por Argon2id;
 - visualizador interno de PDF com navegação, zoom, miniaturas e pesquisa;
@@ -26,7 +29,24 @@ independentes.
 - conversor responsivo com formatos compatíveis, progresso, cancelamento,
   histórico da sessão e abertura do resultado;
 - backup completo em ZIP para administradores;
-- sincronização opcional com Microsoft OneDrive ou Google Drive.
+- sincronização opcional com Microsoft OneDrive ou Google Drive;
+- para organizações empresariais: controle de acesso, solicitações com prazo,
+  auditoria e configuração administrativa de transporte NAS, HTTPS ou LAN.
+
+## Perfis de recursos
+
+O template cria somente as pastas iniciais. O perfil determina os recursos
+disponíveis e pode ser alterado nas configurações da organização:
+
+- **Pessoal:** ações contextuais, busca inteligente, filtros, histórico e nuvem;
+- **Estudante:** recursos normais, filtros indexados e assinatura digital;
+- **Empresarial:** todos os anteriores, controle de acesso, solicitações,
+  temporizadores, auditoria e configuração da camada de transporte;
+- **Essencial:** documentos e busca sem ativação automática de nuvem.
+
+A configuração NAS/HTTPS/LAN persiste e valida o destino informado pela TI, mas
+não representa por si só um conector de produção. A transferência real depende
+do protocolo e das credenciais definidos para o servidor da organização.
 
 ## Capturas de tela
 

@@ -13,6 +13,7 @@ class OrganizationEntity:
     updated_at: str = ""
     archived_at: str | None = None
     template_code: str = "EMPTY"
+    profile_code: str = "EMPTY"
     storage_plan_code: str = "PERSONAL_10GB"
     is_default: bool = False
     status: str = "ACTIVE"

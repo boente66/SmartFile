@@ -240,6 +240,15 @@ QWidget#documentsView QLabel#cloudStatusLabel {
     color: #7dd3fc;
 }
 
+QWidget#documentsView QLabel#organizationProfileBadge {
+    background: #123524;
+    color: #86efac;
+    border: 1px solid #1f6a42;
+    border-radius: 10px;
+    padding: 4px 10px;
+    font-weight: 600;
+}
+
 QWidget#documentsView QPushButton#documentToolbarButton {
     background: #17212a;
     border: 1px solid #27343f;

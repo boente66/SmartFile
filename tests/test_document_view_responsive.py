@@ -40,6 +40,7 @@ def test_document_view_keeps_side_by_side_layout_on_large_screen():
     assert view.main_layout.direction() == QBoxLayout.Direction.LeftToRight
     assert view.details.geometry().left() >= view.list_panel.geometry().right()
     assert view.search_edit.geometry().right() <= view.list_panel.width()
+    assert view.scroll_content.width() >= view.scroll_area.viewport().width() - 2
     view.close()
 
 

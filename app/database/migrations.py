@@ -7,7 +7,7 @@ from pathlib import Path
 from app.errors.persistence_exceptions import DatabaseError
 
 logger = logging.getLogger(__name__)
-CURRENT_SCHEMA_VERSION = 13
+CURRENT_SCHEMA_VERSION = 14
 GIB = 1024 ** 3
 
 
@@ -441,6 +441,58 @@ def _upgrade_storage_quotas(connection: sqlite3.Connection) -> None:
     )
 
 
+def _upgrade_profile_resources(connection: sqlite3.Connection) -> None:
+    """Separa perfil de recursos do template e cria fundações empresariais."""
+    if "profile_code" not in _columns(connection, "organizations"):
+        connection.execute(
+            "ALTER TABLE organizations ADD COLUMN profile_code TEXT NOT NULL DEFAULT 'EMPTY'"
+        )
+        connection.execute(
+            "UPDATE organizations SET profile_code=COALESCE(NULLIF(template_code,''),'EMPTY')"
+        )
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS organization_transport_settings (
+            organization_id INTEGER PRIMARY KEY,
+            mode TEXT NOT NULL DEFAULT 'LOCAL'
+                CHECK (mode IN ('LOCAL','NAS','HTTPS','LAN')),
+            endpoint TEXT,
+            enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0,1)),
+            verify_tls INTEGER NOT NULL DEFAULT 1 CHECK (verify_tls IN (0,1)),
+            updated_by_user_id INTEGER,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (organization_id) REFERENCES organizations(id),
+            FOREIGN KEY (updated_by_user_id) REFERENCES users(id)
+        );
+        CREATE TABLE IF NOT EXISTS document_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            requested_by_user_id INTEGER,
+            assigned_to_user_id INTEGER,
+            status TEXT NOT NULL DEFAULT 'OPEN'
+                CHECK (status IN ('OPEN','IN_PROGRESS','COMPLETED','CANCELLED','OVERDUE')),
+            due_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            completed_at TEXT,
+            FOREIGN KEY (organization_id) REFERENCES organizations(id),
+            FOREIGN KEY (requested_by_user_id) REFERENCES users(id),
+            FOREIGN KEY (assigned_to_user_id) REFERENCES users(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_document_requests_org_status_due
+            ON document_requests(organization_id, status, due_at);
+        CREATE INDEX IF NOT EXISTS idx_documents_smart_search
+            ON documents(organization_id, status, file_type, source_type, created_at);
+        CREATE INDEX IF NOT EXISTS idx_documents_org_category
+            ON documents(organization_id, category COLLATE NOCASE);
+        CREATE INDEX IF NOT EXISTS idx_documents_org_favorite
+            ON documents(organization_id, favorite, status);
+        """
+    )
+
+
 def migrate(connection: sqlite3.Connection, schema_path: Path) -> int:
     """Cria o schema mínimo ou atualiza bancos legados sem perder documentos."""
     try:
@@ -468,6 +520,7 @@ def migrate(connection: sqlite3.Connection, schema_path: Path) -> int:
             _upgrade_password_recovery(connection)
             _upgrade_storage_quotas(connection)
             _upgrade_cloud_organization_structure(connection)
+            _upgrade_profile_resources(connection)
             connection.execute(
                 "UPDATE documents SET source_path = path WHERE source_path IS NULL"
             )

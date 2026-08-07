@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QFileDialog, QInputDialog, QMessageBox
+from PyQt6.QtWidgets import QDialog, QInputDialog, QMessageBox
 
 from app.controllers.convert_controller import ConvertController
 from app.controllers.pdf_controller import PDFController
@@ -25,6 +25,16 @@ from app.repositories.organization_member_repository import OrganizationMemberRe
 from app.services.folder_template_service import FolderTemplateService
 from app.cloud.cloud_models import CloudOAuthState
 from app.errors.cloud_exceptions import CloudConfigurationMissingError, CloudPermissionError
+from app.models.document_search import DocumentSearchFilters
+from app.services.audit_service import AuditService
+from app.services.document_request_service import DocumentRequestService
+from app.services.organization_feature_service import OrganizationFeatureService
+from app.services.organization_transport_service import OrganizationTransportService
+from app.views.document_import_dialog import DocumentImportDialog
+from app.views.document_requests_dialog import DocumentRequestsDialog
+from app.views.organization_transport_dialog import OrganizationTransportDialog
+from app.views.organization_dialog import OrganizationDialog
+from app.views.organization_audit_dialog import OrganizationAuditDialog
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +56,8 @@ class DocumentController:
         self._current_type = "Todos"
         self._current_folder_id: int | None = None
         self._current_scope = "documents"
+        self._search_filters = DocumentSearchFilters()
+        self.feature_service = OrganizationFeatureService()
         self._cloud_worker = None
         self._cloud_auth_worker = None
         self._retry_sync_after_reauthentication: tuple[str, int] | None = None
@@ -98,6 +110,11 @@ class DocumentController:
         self.view.recalculate_storage_requested.connect(self.on_recalculate_storage)
         self.view.largest_files_requested.connect(self.on_largest_files)
         self.view.change_storage_plan_requested.connect(self.on_change_storage_plan)
+        self.view.rename_document_requested.connect(self.on_rename_document)
+        self.view.smart_filters_changed.connect(self.on_smart_filters_changed)
+        self.view.configure_transport_requested.connect(self.on_configure_transport)
+        self.view.document_requests_requested.connect(self.on_document_requests)
+        self.view.audit_history_requested.connect(self.on_audit_history)
 
     def _register_view(self):
         self.workspace.register_view("documents", self.view)
@@ -107,27 +124,43 @@ class DocumentController:
         self.workspace.show_view("documents")
         self._refresh_organizations()
         self.view.apply_cloud_permissions(self.session_context)
+        self._apply_profile_features()
         self._refresh_folders()
         self._refresh_cloud()
         self.on_refresh_documents()
 
     def on_import_document(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self.view,
-            "Importar documento",
-            "",
-            "Todos os arquivos (*)",
-        )
-        if not path:
-            return
-
         try:
-            self.service.import_document(path, self._current_folder_id)
-            self.view.set_status("Documento importado com sucesso")
-            self.on_refresh_documents()
-            self._auto_sync()
+            if self.session_context:
+                self.session_context.require_permission("document.import")
         except Exception as exc:
-            QMessageBox.warning(self.view, "Mini GED", str(exc))
+            QMessageBox.warning(self.view, "Importar", str(exc)); return
+        organization = self.service.organization_service.active()
+        folders = self.service.folder_service.list_folders(organization.id)
+        dialog = DocumentImportDialog(
+            organization.name, folders, self._current_folder_id, self.view,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        values = dialog.values(); imported = 0; errors = []
+        for path in values["paths"]:
+            try:
+                self.service.import_document(
+                    str(path), values["folder_id"], category=values["category"],
+                    tags=values["tags"],
+                )
+                imported += 1
+            except Exception as exc:
+                errors.append(f"{path.name}: {exc}")
+        if imported:
+            self._current_folder_id = values["folder_id"]
+            self.view.set_status(f"{imported} documento(s) adicionado(s) com sucesso")
+            self._refresh_folders(); self.on_refresh_documents()
+            self._auto_sync()
+        if errors:
+            QMessageBox.warning(
+                self.view, "Importação concluída com avisos", "\n".join(errors[:10]),
+            )
 
     def on_search_documents(self, term: str):
         self._current_search = term
@@ -135,6 +168,10 @@ class DocumentController:
 
     def on_filter_documents(self, file_type: str):
         self._current_type = file_type
+        self._refresh_documents()
+
+    def on_smart_filters_changed(self, values: dict):
+        self._search_filters = DocumentSearchFilters(**values)
         self._refresh_documents()
 
     def on_refresh_documents(self):
@@ -165,6 +202,7 @@ class DocumentController:
             self._current_folder_id = None
             self._refresh_folders()
             self._refresh_cloud()
+            self._apply_profile_features()
             self._refresh_documents()
             self.view.set_status(f"Organização ativa: {organization.name}")
         except Exception as exc:
@@ -226,15 +264,32 @@ class DocumentController:
 
     def on_edit_organization(self):
         organization = self.service.organization_service.active()
-        name, accepted = QInputDialog.getText(
-            self.view, "Editar organização", "Nome:", text=organization.name
-        )
-        if not accepted:
+        dialog = OrganizationDialog(self.view, organization, show_template=False)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
             return
+        values = dialog.values()
         try:
-            self.service.organization_service.update(organization.id, name, organization.description)
+            if self.session_context:
+                self.session_context.require_permission("organization.update")
+            updated = self.service.organization_service.update(
+                organization.id, values["name"], values["description"]
+            )
+            updated.icon = values["icon"]; updated.color = values["color"]
+            updated.profile_code = values["profile_code"]
+            self.service.organization_service.repository.update(updated)
+            AuditService(self.service.database).record(
+                "ORGANIZATION_PROFILE_UPDATED",
+                user_id=getattr(getattr(self.session_context, "current_user", None), "id", None),
+                organization_id=updated.id, target_type="organization",
+                target_id=updated.id,
+                description=f"Perfil de recursos alterado para {updated.profile_code}",
+            )
+            if self.session_context:
+                self.session_context.set_active_organization(updated)
             self._refresh_organizations()
             self._refresh_folders()
+            self._apply_profile_features()
+            self.view.set_status(f"Perfil de recursos atualizado: {updated.profile_code}")
         except Exception as exc:
             QMessageBox.warning(self.view, "Organizações", str(exc))
 
@@ -333,6 +388,7 @@ class DocumentController:
 
     def on_cloud_provider_changed(self, provider: str):
         try:
+            self._require_cloud_permission("cloud.connect")
             if provider == "LOCAL":
                 self.service.cloud_manager.configure(self.service.active_organization_id, "LOCAL")
             else:
@@ -578,11 +634,71 @@ class DocumentController:
         )
         return database_name, organization_id
 
-    def on_copy_document(self,document_id): self._copied_document_id=document_id; self.view.set_status("Documento copiado. Escolha a pasta e use Colar.")
+    def on_copy_document(self,document_id):
+        try:
+            if self.session_context:self.session_context.require_permission("document.view")
+            self._copied_document_id=document_id; self.view.set_status("Documento copiado. Escolha a pasta e use Colar.")
+        except Exception as exc:QMessageBox.warning(self.view,"Copiar",str(exc))
     def on_paste_document(self):
         if self._copied_document_id is None: QMessageBox.information(self.view,"Colar","Nenhum documento foi copiado."); return
-        try:self.service.copy_document(self._copied_document_id,self._current_folder_id); self._refresh_documents(); self.view.set_status("Cópia criada com sucesso")
+        try:
+            if self.session_context:self.session_context.require_permission("document.create")
+            self.service.copy_document(self._copied_document_id,self._current_folder_id); self._refresh_documents(); self.view.set_status("Cópia criada com sucesso")
         except Exception as exc:QMessageBox.warning(self.view,"Colar",str(exc))
+    def on_rename_document(self, document_id: int):
+        document = self.service.get_document(document_id)
+        if document is None:
+            return
+        name, accepted = QInputDialog.getText(
+            self.view, "Renomear documento", "Novo nome:", text=document.name,
+        )
+        if not accepted:
+            return
+        try:
+            if self.session_context:
+                self.session_context.require_permission("document.update")
+            renamed = self.service.rename_document(document_id, name)
+            self._refresh_documents(); self.view.set_status(f"Documento renomeado: {renamed.name}")
+            self._auto_sync()
+        except Exception as exc:
+            QMessageBox.warning(self.view, "Renomear documento", str(exc))
+
+    def on_configure_transport(self):
+        if self.session_context is None:
+            QMessageBox.warning(self.view, "Transporte", "Sessão de usuário indisponível.")
+            return
+        try:
+            organization_id = self.service.active_organization_id
+            service = OrganizationTransportService(self.service.database, self.session_context)
+            dialog = OrganizationTransportDialog(service.get(organization_id), self.view)
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                service.configure(organization_id, **dialog.values())
+                self.view.set_status("Configuração de transporte atualizada")
+        except Exception as exc:
+            QMessageBox.warning(self.view, "Transporte empresarial", str(exc))
+
+    def on_document_requests(self):
+        if self.session_context is None:
+            QMessageBox.warning(self.view, "Solicitações", "Sessão de usuário indisponível.")
+            return
+        try:
+            service = DocumentRequestService(self.service.database, self.session_context)
+            DocumentRequestsDialog(
+                service, self.service.active_organization_id, self.view,
+            ).exec()
+        except Exception as exc:
+            QMessageBox.warning(self.view, "Solicitações", str(exc))
+
+    def on_audit_history(self):
+        try:
+            if self.session_context:
+                self.session_context.require_permission("audit.view")
+            rows = AuditService(self.service.database).list_for_organization(
+                self.service.active_organization_id, 50,
+            )
+            OrganizationAuditDialog(rows, self.view).exec()
+        except Exception as exc:
+            QMessageBox.warning(self.view, "Histórico", str(exc))
     def on_restore_document(self,document_id):
         try:self.service.restore_document(document_id); self._refresh_documents(); self.view.set_status("Documento restaurado")
         except Exception as exc:QMessageBox.warning(self.view,"Lixeira",str(exc))
@@ -684,6 +800,8 @@ class DocumentController:
             return
 
         try:
+            if self.session_context:
+                self.session_context.require_permission("document.update")
             deleted = self.service.delete_document(document_id)
             if deleted:
                 self.view.set_status("Documento movido para a lixeira")
@@ -713,6 +831,7 @@ class DocumentController:
                 self._current_search,
                 self._current_type,
                 self._current_folder_id,
+                self._search_filters,
             )
 
         self.view.set_documents(documents)
@@ -753,6 +872,14 @@ class DocumentController:
         self.view.set_cloud_settings(settings, account, state)
 
     def _require_cloud_permission(self, permission: str) -> None:
+        try:
+            self.feature_service.require(
+                self.service.organization_service.active(), "cloud_sync"
+            )
+        except PermissionError as exc:
+            raise CloudPermissionError(
+                "A sincronização em nuvem não está habilitada para este perfil."
+            ) from exc
         if self.session_context is None:
             return
         try:
@@ -764,6 +891,11 @@ class DocumentController:
 
     def _refresh_storage(self):
         self.view.set_storage_usage(self.service.get_storage_usage())
+
+    def _apply_profile_features(self):
+        organization = self.service.organization_service.active()
+        self.view.apply_cloud_permissions(self.session_context)
+        self.view.apply_profile_features(self.feature_service.for_organization(organization))
 
     def _open_file(self, path: str):
         document_path = Path(path)

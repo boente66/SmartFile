@@ -68,11 +68,18 @@ class DocumentView(QWidget):
     recalculate_storage_requested = pyqtSignal()
     largest_files_requested = pyqtSignal()
     change_storage_plan_requested = pyqtSignal()
+    rename_document_requested = pyqtSignal(int)
+    smart_filters_changed = pyqtSignal(object)
+    configure_transport_requested = pyqtSignal()
+    document_requests_requested = pyqtSignal()
+    audit_history_requested = pyqtSignal()
 
     def __init__(self):
         super().__init__()
         self.setObjectName("documentsView")
         self._compact = False
+        self._context = None
+        self._feature_set = None
         self._setup_ui()
 
     def _setup_ui(self):
@@ -110,6 +117,9 @@ class DocumentView(QWidget):
         self.organization_combo.setFixedWidth(360)
         self.organization_combo.currentIndexChanged.connect(self._emit_organization)
         organization_row.addWidget(self.organization_combo)
+        self.profile_badge = QLabel("Perfil: Essencial")
+        self.profile_badge.setObjectName("organizationProfileBadge")
+        organization_row.addWidget(self.profile_badge)
         self.btn_new_organization = self._icon_button("Nova organização", "organization_add")
         self.btn_edit_organization = self._icon_button("Editar organização", "edit")
         self.btn_delete_organization = self._icon_button("Excluir organização", "action_trash")
@@ -178,6 +188,7 @@ class DocumentView(QWidget):
         actions = QHBoxLayout()
         actions.setSpacing(4)
         self.document_toolbar_buttons = []
+        self.action_buttons = {}
         action_specs = (
             ("Novo", "new", self.create_folder_requested.emit),
             ("Importar", "import", self.import_requested.emit),
@@ -202,10 +213,46 @@ class DocumentView(QWidget):
             widget.clicked.connect(callback)
             actions.addWidget(widget)
             self.document_toolbar_buttons.append(widget)
+            self.action_buttons[text] = widget
             if text == "Importar":
                 self.btn_import = widget
             if text == "Sincronizar":
                 self.btn_sync = widget
+            if text == "Mais":
+                self.btn_more = widget
+        self.more_menu = QMenu(self.btn_more)
+        self.more_copy_action = self.more_menu.addAction(
+            IconProvider.icon("copy"), "Copiar",
+            lambda: self._emit_for_selected(self.copy_requested),
+        )
+        self.more_paste_action = self.more_menu.addAction(
+            IconProvider.icon("paste"), "Colar", self.paste_requested.emit,
+        )
+        self.more_rename_action = self.more_menu.addAction(
+            IconProvider.icon("edit"), "Renomear",
+            lambda: self._emit_for_selected(self.rename_document_requested),
+        )
+        self.more_trash_action = self.more_menu.addAction(
+            IconProvider.icon("action_trash"), "Mover para lixeira",
+            lambda: self._emit_for_selected(self.delete_requested),
+        )
+        self.more_menu.addSeparator()
+        self.enterprise_menu = self.more_menu.addMenu("Recursos empresariais")
+        self.enterprise_menu.setIcon(IconProvider.icon("business"))
+        self.transport_action = self.enterprise_menu.addAction(
+            IconProvider.icon("provider_settings"), "Configurar transporte",
+            self.configure_transport_requested.emit,
+        )
+        self.requests_action = self.enterprise_menu.addAction(
+            IconProvider.icon("documents"), "Solicitações e prazos",
+            self.document_requests_requested.emit,
+        )
+        self.audit_action = self.enterprise_menu.addAction(
+            IconProvider.icon("history"), "Histórico auditável",
+            self.audit_history_requested.emit,
+        )
+        self.more_menu.aboutToShow.connect(self._update_more_menu)
+        self.btn_more.setMenu(self.more_menu)
         sync_menu = QMenu(self.btn_sync)
         sync_menu.addAction("Sincronizar Agora", self.sync_now_requested.emit)
         sync_menu.addAction("Pausar", self.pause_sync_requested.emit)
@@ -236,6 +283,35 @@ class DocumentView(QWidget):
         self.type_combo.setFixedWidth(140)
         search_row.addWidget(self.type_combo)
         left_layout.addLayout(search_row)
+        self.smart_filters_widget = QWidget()
+        smart_filters = QHBoxLayout(self.smart_filters_widget)
+        smart_filters.setContentsMargins(0, 0, 0, 0)
+        smart_filters.addWidget(QLabel("Filtros rápidos"))
+        self.source_combo = QComboBox()
+        self.source_combo.addItem("Todas as origens", None)
+        for label, value in (
+            ("Importação", "IMPORT"), ("Scanner", "SCANNER"),
+            ("Conversor", "CONVERTER"), ("Nuvem", "CLOUD_DOWNLOAD"),
+            ("Assinatura", "DIGITAL_SIGNATURE"),
+        ):
+            self.source_combo.addItem(label, value)
+        self.source_combo.currentIndexChanged.connect(self._emit_smart_filters)
+        smart_filters.addWidget(self.source_combo)
+        self.period_combo = QComboBox()
+        self.period_combo.addItem("Qualquer período", None)
+        self.period_combo.addItem("Últimos 7 dias", 7)
+        self.period_combo.addItem("Últimos 30 dias", 30)
+        self.period_combo.addItem("Últimos 90 dias", 90)
+        self.period_combo.currentIndexChanged.connect(self._emit_smart_filters)
+        smart_filters.addWidget(self.period_combo)
+        self.favorite_combo = QComboBox()
+        self.favorite_combo.addItem("Todos", None)
+        self.favorite_combo.addItem("Somente favoritos", True)
+        self.favorite_combo.addItem("Sem favorito", False)
+        self.favorite_combo.currentIndexChanged.connect(self._emit_smart_filters)
+        smart_filters.addWidget(self.favorite_combo)
+        smart_filters.addStretch(1)
+        left_layout.addWidget(self.smart_filters_widget)
 
         self.status_label = QLabel("Nenhum documento importado")
         self.status_label.setObjectName("documentCount")
@@ -326,12 +402,14 @@ class DocumentView(QWidget):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        self._apply_compact_layout(event.size().width() < 1500)
-        viewport_width = self.scroll_area.viewport().width()
-        if viewport_width > 0:
-            # O conteúdo deve se reorganizar verticalmente, nunca criar uma
-            # rolagem horizontal por diferenças de métricas entre plataformas.
-            self.scroll_content.setFixedWidth(viewport_width)
+        # Mantém lista e detalhes lado a lado em notebooks comuns; o empilhamento
+        # é reservado a janelas realmente estreitas.
+        self._apply_compact_layout(event.size().width() < 1050)
+        # O QScrollArea com widgetResizable acompanha o viewport. Um fixedWidth
+        # calculado durante o primeiro layout congelava o conteúdo em ~640 px
+        # mesmo depois de maximizar a janela.
+        self.scroll_content.setMinimumWidth(0)
+        self.scroll_content.setMaximumWidth(16777215)
 
     def _apply_compact_layout(self, compact: bool) -> None:
         if compact == self._compact:
@@ -437,6 +515,7 @@ class DocumentView(QWidget):
         self.cloud_status_label.setText(text)
 
     def apply_cloud_permissions(self, context) -> None:
+        self._context = context
         can_view = context is None or context.has_permission("cloud.view")
         can_connect = context is None or context.has_permission("cloud.connect")
         can_sync = context is None or context.has_permission("cloud.sync")
@@ -447,6 +526,41 @@ class DocumentView(QWidget):
         self.btn_sync.setVisible(can_view and can_sync)
         self.oauth_settings_action.setVisible(can_configure)
         self.btn_configure_provider.setVisible(can_configure)
+        can_import = context is None or context.has_permission("document.import")
+        can_update = context is None or context.has_permission("document.update")
+        can_folder = context is None or context.has_permission("folder.create")
+        can_organization = context is None or context.has_permission("organization.update")
+        self.btn_import.setEnabled(can_import)
+        self.action_buttons["Excluir"].setEnabled(can_update)
+        self.btn_new_folder.setEnabled(can_folder)
+        self.btn_rename_folder.setEnabled(can_folder)
+        self.btn_delete_folder.setEnabled(can_folder)
+        self.btn_edit_organization.setEnabled(can_organization)
+        self.btn_delete_organization.setEnabled(can_organization)
+        self.transport_action.setEnabled(
+            context is None or context.has_permission("transport.configure")
+        )
+        self.requests_action.setEnabled(
+            context is None or context.has_permission("document.request.view")
+        )
+        self.audit_action.setEnabled(
+            context is None or context.has_permission("audit.view")
+        )
+
+    def apply_profile_features(self, feature_set) -> None:
+        self._feature_set = feature_set
+        self.profile_badge.setText(f"Perfil: {feature_set.profile_name}")
+        indexed = feature_set.has("indexed_filters")
+        self.smart_filters_widget.setVisible(indexed)
+        self.enterprise_menu.menuAction().setVisible(feature_set.profile_code == "BUSINESS")
+        self.action_buttons["Assinar"].setVisible(feature_set.has("digital_signature"))
+        if not feature_set.has("cloud_sync"):
+            self.cloud_combo.setCurrentIndex(0)
+            self.cloud_combo.setEnabled(False)
+            self.btn_add_cloud.setVisible(False)
+            self.btn_sync.setVisible(False)
+        else:
+            self.cloud_combo.setEnabled(True)
 
     def set_storage_usage(self, summary) -> None:
         used = self._format_gb(summary.used_bytes)
@@ -512,6 +626,15 @@ class DocumentView(QWidget):
 
     def _emit_filter(self, value: str):
         self.filter_requested.emit(value)
+        self._emit_smart_filters()
+
+    def _emit_smart_filters(self, *_args) -> None:
+        self.smart_filters_changed.emit({
+            "file_type": self.type_combo.currentText(),
+            "source_type": self.source_combo.currentData(),
+            "period_days": self.period_combo.currentData(),
+            "favorite": self.favorite_combo.currentData(),
+        })
 
     def _emit_organization(self, index: int) -> None:
         organization_id = self.organization_combo.itemData(index)
@@ -535,14 +658,29 @@ class DocumentView(QWidget):
 
     def _show_document_context_menu(self,position):
         menu=QMenu(self); document_id=self.selected_document_id(); trash=getattr(self,"_current_scope","documents")=="trash"
+        can_update = self._context is None or self._context.has_permission("document.update")
+        can_create = self._context is None or self._context.has_permission("document.create")
         if document_id is not None:
-            menu.addAction("Copiar",lambda:self.copy_requested.emit(document_id))
+            menu.addAction(IconProvider.icon("copy"),"Copiar",lambda:self.copy_requested.emit(document_id))
             if trash:
-                menu.addAction("Restaurar",lambda:self.restore_requested.emit(document_id)); menu.addAction("Excluir definitivamente",lambda:self.permanent_delete_requested.emit(document_id))
-            else: menu.addAction("Mover para lixeira",lambda:self.delete_requested.emit(document_id))
-        menu.addAction("Colar",self.paste_requested.emit)
-        if trash: menu.addSeparator(); menu.addAction("Esvaziar lixeira",self.empty_trash_requested.emit)
+                menu.addAction(IconProvider.icon("restore"),"Restaurar",lambda:self.restore_requested.emit(document_id)).setEnabled(can_update)
+                menu.addAction(IconProvider.icon("action_trash"),"Excluir definitivamente",lambda:self.permanent_delete_requested.emit(document_id)).setEnabled(can_update)
+            else:
+                menu.addAction(IconProvider.icon("edit"),"Renomear",lambda:self.rename_document_requested.emit(document_id)).setEnabled(can_update)
+                menu.addAction(IconProvider.icon("action_trash"),"Mover para lixeira",lambda:self.delete_requested.emit(document_id)).setEnabled(can_update)
+        menu.addAction(IconProvider.icon("paste"),"Colar",self.paste_requested.emit).setEnabled(can_create)
+        if trash: menu.addSeparator(); menu.addAction(IconProvider.icon("action_trash"),"Esvaziar lixeira",self.empty_trash_requested.emit).setEnabled(can_update)
         menu.exec(self.documents_table.viewport().mapToGlobal(position))
+
+    def _update_more_menu(self) -> None:
+        selected = self.selected_document_id() is not None
+        can_update = self._context is None or self._context.has_permission("document.update")
+        can_create = self._context is None or self._context.has_permission("document.create")
+        trash = getattr(self, "_current_scope", "documents") == "trash"
+        self.more_copy_action.setEnabled(selected)
+        self.more_paste_action.setEnabled(can_create)
+        self.more_rename_action.setEnabled(selected and can_update and not trash)
+        self.more_trash_action.setEnabled(selected and can_update and not trash)
 
     @staticmethod
     def _icon_button(text: str, icon: str) -> QPushButton:

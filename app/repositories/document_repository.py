@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from app.database.database import Database
@@ -126,6 +126,46 @@ class DocumentRepository(BaseRepository):
             query += " AND file_type = ?"
             params.append(file_type)
         query += " ORDER BY created_at DESC, id DESC"
+        return self._entities(query, params)
+
+    def smart_search(
+        self, terms: list[str], *, organization_id: int,
+        folder_id: int | None = None, filters=None,
+    ) -> list[DocumentEntity]:
+        query = "SELECT * FROM documents WHERE status='ACTIVE' AND organization_id=?"
+        params: list[object] = [organization_id]
+        if folder_id is not None:
+            query += " AND folder_id=?"
+            params.append(folder_id)
+        for term in terms:
+            pattern = f"%{term.casefold()}%"
+            query += """
+                AND (lower(name) LIKE ? OR lower(original_name) LIKE ?
+                     OR lower(category) LIKE ? OR lower(description) LIKE ?
+                     OR lower(tags) LIKE ? OR lower(notes) LIKE ?)
+            """
+            params.extend([pattern] * 6)
+        if filters is not None:
+            if filters.file_type and filters.file_type.casefold() != "todos":
+                query += " AND file_type=?"
+                params.append(filters.file_type)
+            if filters.category and filters.category.casefold() != "todas":
+                query += " AND category=? COLLATE NOCASE"
+                params.append(filters.category)
+            if filters.source_type and filters.source_type.casefold() != "todas":
+                query += " AND source_type=?"
+                params.append(filters.source_type)
+            if filters.period_days:
+                cutoff = datetime.now(timezone.utc) - timedelta(days=int(filters.period_days))
+                query += " AND created_at>=?"
+                params.append(cutoff.strftime("%Y-%m-%d %H:%M:%S"))
+            if filters.favorite is not None:
+                query += " AND favorite=?"
+                params.append(int(filters.favorite))
+            if filters.cloud_status and filters.cloud_status.casefold() != "todos":
+                query += " AND cloud_status=?"
+                params.append(filters.cloud_status)
+        query += " ORDER BY updated_at DESC, created_at DESC, id DESC"
         return self._entities(query, params)
 
     def find_by_type(self, file_type: str, organization_id: int | None = None, folder_id: int | None = None) -> list[DocumentEntity]:

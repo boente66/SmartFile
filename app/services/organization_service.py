@@ -54,7 +54,8 @@ class OrganizationService:
         created = self.repository.create(
             OrganizationEntity(
                 name=clean_name, description=description or None, slug=slug,
-                created_at=now, updated_at=now, template_code=template, storage_plan_code=plan,
+                created_at=now, updated_at=now, template_code=template,
+                profile_code=template, storage_plan_code=plan,
             )
         )
         StorageQuotaService(self.database).assign_plan(created.id, plan, template)
@@ -65,6 +66,15 @@ class OrganizationService:
         entity.name = self._name(name)
         entity.description = description or None
         entity.slug = self._unique_slug(entity.name, entity.id)
+        entity.updated_at = self._now()
+        return self.repository.update(entity)
+
+    def set_feature_profile(self, organization_id: int, profile_code: str) -> OrganizationEntity:
+        entity = self._active_entity(organization_id)
+        code = profile_code.strip().upper()
+        if code not in {"PERSONAL", "STUDENT", "BUSINESS", "EMPTY"}:
+            raise ValueError("Perfil de recursos inválido.")
+        entity.profile_code = code
         entity.updated_at = self._now()
         return self.repository.update(entity)
 
