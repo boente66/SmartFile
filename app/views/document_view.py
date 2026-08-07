@@ -80,6 +80,7 @@ class DocumentView(QWidget):
         self._compact = False
         self._context = None
         self._feature_set = None
+        self._responsive_rows: list[QBoxLayout] = []
         self._setup_ui()
 
     def _setup_ui(self):
@@ -131,6 +132,7 @@ class DocumentView(QWidget):
         organization_row.addWidget(self.btn_delete_organization)
         organization_row.addStretch(1)
         left_layout.addLayout(organization_row)
+        self._responsive_rows.append(organization_row)
 
         cloud_row = QHBoxLayout()
         cloud_row.addWidget(QLabel("Camada de Nuvem"))
@@ -160,6 +162,7 @@ class DocumentView(QWidget):
         cloud_row.addWidget(self.cloud_status_label)
         cloud_row.addStretch(1)
         left_layout.addLayout(cloud_row)
+        self._responsive_rows.append(cloud_row)
 
         storage_row = QHBoxLayout()
         self.storage_label = QLabel("Armazenamento: carregando…")
@@ -184,6 +187,7 @@ class DocumentView(QWidget):
         storage_row.addWidget(self.btn_manage_storage)
         storage_row.addStretch(1)
         left_layout.addLayout(storage_row)
+        self._responsive_rows.append(storage_row)
 
         actions = QHBoxLayout()
         actions.setSpacing(4)
@@ -283,6 +287,7 @@ class DocumentView(QWidget):
         self.type_combo.setFixedWidth(140)
         search_row.addWidget(self.type_combo)
         left_layout.addLayout(search_row)
+        self._responsive_rows.append(search_row)
         self.smart_filters_widget = QWidget()
         smart_filters = QHBoxLayout(self.smart_filters_widget)
         smart_filters.setContentsMargins(0, 0, 0, 0)
@@ -312,6 +317,7 @@ class DocumentView(QWidget):
         smart_filters.addWidget(self.favorite_combo)
         smart_filters.addStretch(1)
         left_layout.addWidget(self.smart_filters_widget)
+        self._responsive_rows.append(smart_filters)
 
         self.status_label = QLabel("Nenhum documento importado")
         self.status_label.setObjectName("documentCount")
@@ -418,6 +424,11 @@ class DocumentView(QWidget):
         self.main_layout.setDirection(
             QBoxLayout.Direction.TopToBottom if compact else QBoxLayout.Direction.LeftToRight
         )
+        row_direction = (
+            QBoxLayout.Direction.TopToBottom if compact else QBoxLayout.Direction.LeftToRight
+        )
+        for row in self._responsive_rows:
+            row.setDirection(row_direction)
         if compact:
             self.details.setMinimumHeight(460)
             self.main_layout.setStretch(0, 0)
