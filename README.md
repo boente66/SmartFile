@@ -31,7 +31,8 @@ independentes.
 - backup completo em ZIP para administradores;
 - sincronização opcional com Microsoft OneDrive ou Google Drive;
 - para organizações empresariais: controle de acesso, solicitações com prazo,
-  auditoria e configuração administrativa de transporte NAS, HTTPS ou LAN.
+  auditoria e transporte NAS resiliente; HTTPS e LAN permanecem preparados para
+  conectores futuros.
 
 ## Perfis de recursos
 
@@ -45,15 +46,30 @@ capacidades; cada organização ativa somente os recursos que realmente utiliza:
 - **Essencial:** documentos e busca sem ativação automática de nuvem.
 
 No perfil Empresarial, controle de acesso e auditoria são sugeridos como padrão.
-Nuvem, transporte corporativo, solicitações e prazos começam desativados. A
-configuração NAS/HTTPS/LAN persiste e valida o destino informado pela TI, mas
-não representa por si só um conector de produção. A transferência real depende
-do protocolo e das credenciais definidos para o servidor da organização.
+Nuvem, transporte corporativo, solicitações e prazos começam desativados. O modo
+NAS possui transferência real para um caminho que já esteja acessível pelo
+sistema operacional. O SmartFile não monta compartilhamentos nem persiste senha
+de rede. HTTPS e LAN continuam configuráveis, mas não executam transferência.
 
 Cloud Layer e transporte corporativo são camadas independentes. OneDrive e
 Google Drive usam OAuth e fila de sincronização. NAS, LAN e HTTPS são destinos
 administrativos da organização e não exigem conta de nuvem nem alteram seu modo
 de sincronização.
+
+### Transporte NAS
+
+Quando uma organização Empresarial habilita `server_transport` e configura um
+NAS ativo, a importação continua sendo concluída primeiro no storage local. Um
+job separado é então processado em background:
+
+```text
+Storage local → Transport Queue → NAS → SHA-256 → COMPLETED
+```
+
+Em caso de indisponibilidade, o job permanece em `RETRY` e o documento local
+continua utilizável. O destino deve estar montado no Linux ou acessível como UNC
+no Windows. A ação **Testar conexão** verifica diretório, acesso e escrita sem
+sobrescrever arquivos existentes.
 
 ## Capturas de tela
 

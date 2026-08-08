@@ -11,6 +11,7 @@ from app.repositories.organization_transport_repository import OrganizationTrans
 from app.services.audit_service import AuditService
 from app.services.organization_feature_service import OrganizationFeatureService
 from app.services.organization_service import OrganizationService
+from app.services.corporate_transport_service import CorporateTransportService
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ class OrganizationTransportService:
         self.repository = OrganizationTransportRepository(database=database)
         self.features = OrganizationFeatureService(database)
         self.audit = AuditService(database)
+        self.corporate = CorporateTransportService(database)
 
     def get(self, organization_id: int) -> OrganizationTransportEntity:
         self._require(organization_id)
@@ -66,6 +68,23 @@ class OrganizationTransportService:
             organization_id, mode, saved.enabled,
         )
         return saved
+
+    def test_connection(
+        self, organization_id: int, mode: str, endpoint: str | None,
+    ):
+        self._require(organization_id)
+        selected_mode = mode.strip().upper()
+        if selected_mode not in self.MODES:
+            raise ValueError("Modo de transporte inválido.")
+        normalized = self._validate_endpoint(selected_mode, endpoint)
+        return self.corporate.test_connection(
+            organization_id, mode=selected_mode, endpoint=normalized,
+            actor_user_id=self.context.current_user.id,
+        )
+
+    def summary(self, organization_id: int) -> dict:
+        self._require(organization_id)
+        return self.corporate.summary(organization_id)
 
     def _require(self, organization_id: int) -> None:
         if organization_id != getattr(self.context.active_organization, "id", None):

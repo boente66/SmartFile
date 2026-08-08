@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Added real filesystem-based NAS transport with a dedicated persistent queue
+- Added atomic chunked uploads, SHA-256 verification, cooperative cancellation,
+  bounded retry, recovery, and organization-isolated remote roots
+- Added background processing and administrative NAS connection testing
+- Added transport audit events and durable delete jobs after permanent trash removal
+- Added incremental database migration 16 without changing the public beta version
+
 ## [0.9.0-beta.2] - 2026-08-07
 
 - Separated profile capabilities from organization-enabled features

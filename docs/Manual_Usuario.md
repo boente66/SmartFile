@@ -228,10 +228,20 @@ Quando habilitados no perfil Empresarial, o menu **Mais → Recursos empresariai
 
 Solicitações documentais não são um sistema de chamados de TI. O prazo é outro
 recurso e pode permanecer desligado. O SmartFile rejeita credenciais incluídas
-em URLs e exige HTTPS válido para esse
-modo. A configuração armazenada prepara a camada de transporte; a comunicação
-real com o servidor depende de contrato, autenticação e protocolo definidos pela
-TI e não deve ser considerada ativa apenas por salvar o endereço.
+em URLs e exige HTTPS válido para esse modo.
+
+O modo NAS realiza transferência para um caminho já montado pelo Linux ou para
+um compartilhamento UNC acessível pelo Windows. O SmartFile não monta o volume e
+não solicita senha de rede. Use **Testar conexão** para verificar se o destino
+existe, é um diretório e permite escrita. Os modos HTTPS e LAN continuam
+configuráveis, mas ainda não possuem transferência física nesta fase.
+
+Após uma importação, o arquivo permanece primeiro no storage interno. O SmartFile
+cria um job NAS e copia em background, usando arquivo temporário, conclusão
+atômica e comparação SHA-256. Se o NAS estiver offline, o job aguarda nova
+tentativa e o documento local continua disponível. Mover para a lixeira não
+remove a cópia NAS; a exclusão remota é enfileirada somente após a exclusão
+definitiva.
 
 O transporte corporativo é independente da Cloud Layer. Ele não exige OneDrive,
 Google Drive, OAuth ou mudança do modo Local. O campo interno de referência de

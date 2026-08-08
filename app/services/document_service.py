@@ -23,6 +23,7 @@ from app.services.document_storage_service import DocumentStorageService
 from app.services.folder_service import FolderService
 from app.services.organization_service import OrganizationService
 from app.services.storage_quota_service import StorageQuotaService
+from app.services.corporate_transport_service import CorporateTransportService
 from app.cloud.cloud_manager import CloudManager
 from app.cloud.cloud_sync_service import CloudSyncService
 
@@ -47,6 +48,9 @@ class DocumentService:
         self.storage_service = storage_service or DocumentStorageService(self.database.paths)
         self.storage_quota_service = StorageQuotaService(
             self.database, self.storage_service.paths.storage
+        )
+        self.corporate_transport_service = CorporateTransportService(
+            self.database, self.storage_service,
         )
         # Histórico básico preexistente é preservado, sem ampliar seu domínio.
         self.history_service = HistoryService(database=self.database)
@@ -140,6 +144,7 @@ class DocumentService:
                     self.cloud_sync_service.enqueue_upload(created.id, organization_id)
                 except Exception:
                     logger.exception("Documento salvo localmente, mas a sincronização não foi enfileirada")
+            self._enqueue_transport_upload(created.id, organization_id)
             refreshed = self.document_repository.find_by_id(created.id, organization_id)
             return DocumentModel.from_entity(refreshed or created)
         except Exception:
@@ -267,6 +272,7 @@ class DocumentService:
             committed=True
             try:self.cloud_sync_service.enqueue_upload(created.id,self.active_organization_id)
             except Exception:logger.exception("Cópia local criada, mas a sincronização não foi enfileirada")
+            self._enqueue_transport_upload(created.id, self.active_organization_id)
             return DocumentModel.from_entity(created)
         except Exception:
             if not committed:self.storage_quota_service.release_reservation(operation_id)
@@ -309,6 +315,9 @@ class DocumentService:
                 original_storage.replace(quarantine)
         try:
             with self.database.transaction():
+                self.corporate_transport_service.prepare_document_delete(
+                    document_id, self.active_organization_id,
+                )
                 self._record_history(
                     document_id,
                     "PERMANENT_DELETE",
@@ -384,6 +393,18 @@ class DocumentService:
 
     def _record_history(self, document_id: Optional[int], action: str, description: str) -> None:
         self.history_service.record_action(document_id, action, description)
+
+    def _enqueue_transport_upload(self, document_id: int, organization_id: int) -> None:
+        try:
+            self.corporate_transport_service.enqueue_upload(
+                document_id, organization_id,
+            )
+        except Exception:
+            logger.exception(
+                "Documento salvo localmente, mas o transporte corporativo não foi enfileirado "
+                "organization_id=%s document_id=%s",
+                organization_id, document_id,
+            )
 
     @staticmethod
     def _validated_path(file_path: str) -> Path:

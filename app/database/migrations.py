@@ -7,7 +7,7 @@ from pathlib import Path
 from app.errors.persistence_exceptions import DatabaseError
 
 logger = logging.getLogger(__name__)
-CURRENT_SCHEMA_VERSION = 15
+CURRENT_SCHEMA_VERSION = 16
 GIB = 1024 ** 3
 
 
@@ -585,6 +585,41 @@ def _upgrade_business_feature_policy(connection: sqlite3.Connection) -> None:
         )
 
 
+def _upgrade_corporate_transport_jobs(connection: sqlite3.Connection) -> None:
+    """Cria a fila NAS sem compartilhar estado ou chaves com a Cloud Layer."""
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS transport_jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL,
+            document_id INTEGER NOT NULL,
+            operation TEXT NOT NULL CHECK (operation IN ('UPLOAD','DELETE')),
+            transport_mode TEXT NOT NULL CHECK (transport_mode IN ('NAS','HTTPS','LAN')),
+            status TEXT NOT NULL DEFAULT 'PENDING'
+                CHECK (status IN ('PENDING','RUNNING','RETRY','COMPLETED','FAILED','CANCELLED')),
+            attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+            last_error TEXT,
+            remote_path TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            completed_at TEXT,
+            FOREIGN KEY (organization_id) REFERENCES organizations(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_transport_jobs_status
+            ON transport_jobs(status, attempts, created_at, id);
+        CREATE INDEX IF NOT EXISTS idx_transport_jobs_organization
+            ON transport_jobs(organization_id, status, created_at);
+        CREATE INDEX IF NOT EXISTS idx_transport_jobs_document
+            ON transport_jobs(document_id, operation, status);
+        CREATE INDEX IF NOT EXISTS idx_transport_jobs_created
+            ON transport_jobs(created_at, id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_transport_jobs_active_operation
+            ON transport_jobs(organization_id, document_id, operation)
+            WHERE status IN ('PENDING','RUNNING','RETRY');
+        """
+    )
+
+
 def migrate(connection: sqlite3.Connection, schema_path: Path) -> int:
     """Cria o schema mínimo ou atualiza bancos legados sem perder documentos."""
     try:
@@ -614,6 +649,7 @@ def migrate(connection: sqlite3.Connection, schema_path: Path) -> int:
             _upgrade_cloud_organization_structure(connection)
             _upgrade_profile_resources(connection)
             _upgrade_business_feature_policy(connection)
+            _upgrade_corporate_transport_jobs(connection)
             connection.execute(
                 "UPDATE documents SET source_path = path WHERE source_path IS NULL"
             )

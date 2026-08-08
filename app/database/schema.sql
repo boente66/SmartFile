@@ -145,6 +145,23 @@ CREATE TABLE IF NOT EXISTS organization_feature_settings (
     FOREIGN KEY (updated_by_user_id) REFERENCES users(id)
 );
 
+CREATE TABLE IF NOT EXISTS transport_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    organization_id INTEGER NOT NULL,
+    document_id INTEGER NOT NULL,
+    operation TEXT NOT NULL CHECK (operation IN ('UPLOAD','DELETE')),
+    transport_mode TEXT NOT NULL CHECK (transport_mode IN ('NAS','HTTPS','LAN')),
+    status TEXT NOT NULL DEFAULT 'PENDING'
+        CHECK (status IN ('PENDING','RUNNING','RETRY','COMPLETED','FAILED','CANCELLED')),
+    attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    last_error TEXT,
+    remote_path TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    completed_at TEXT,
+    FOREIGN KEY (organization_id) REFERENCES organizations(id)
+);
+
 CREATE TABLE IF NOT EXISTS document_requests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     organization_id INTEGER NOT NULL,
@@ -344,6 +361,17 @@ CREATE INDEX IF NOT EXISTS idx_document_requests_org_status_due
     ON document_requests(organization_id, status, due_at);
 CREATE INDEX IF NOT EXISTS idx_organization_features_enabled
     ON organization_feature_settings(organization_id, enabled, feature_code);
+CREATE INDEX IF NOT EXISTS idx_transport_jobs_status
+    ON transport_jobs(status, attempts, created_at, id);
+CREATE INDEX IF NOT EXISTS idx_transport_jobs_organization
+    ON transport_jobs(organization_id, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_transport_jobs_document
+    ON transport_jobs(document_id, operation, status);
+CREATE INDEX IF NOT EXISTS idx_transport_jobs_created
+    ON transport_jobs(created_at, id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_transport_jobs_active_operation
+    ON transport_jobs(organization_id, document_id, operation)
+    WHERE status IN ('PENDING','RUNNING','RETRY');
 CREATE INDEX IF NOT EXISTS idx_documents_smart_search
     ON documents(organization_id, status, file_type, source_type, created_at);
 CREATE INDEX IF NOT EXISTS idx_documents_org_category

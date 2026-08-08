@@ -13,13 +13,24 @@ Versão beta publicada em 7 de agosto de 2026 para avaliação técnica.
 - migração incremental do banco para a versão 15, preservando configurações em uso;
 - aviso não bloqueante de novidades exibido uma vez por versão instalada.
 
+### Incremento de transporte NAS
+
+- fila corporativa persistente e independente da Cloud Layer;
+- cópia NAS real em background, por chunks e com progresso baseado em bytes;
+- arquivo temporário, conclusão atômica e validação SHA-256;
+- retry limitado e recuperação quando o NAS volta a ficar disponível;
+- exclusão NAS somente após exclusão definitiva no SmartFile;
+- teste administrativo de conexão e auditoria de sucesso ou falha;
+- migration 16, sem alteração do número público `0.9.0-beta.2`.
+
 ## Segurança e compatibilidade
 
 Credenciais não podem ser incluídas na URL do transporte. O campo reservado
 `credential_ref` prepara integração futura com um cofre seguro, sem armazenar
-segredos na configuração do destino. Nenhum conector NAS/LAN/HTTPS foi simulado:
-a configuração valida e persiste o destino, enquanto a transferência efetiva
-depende de um contrato técnico posterior.
+segredos na configuração do destino. O NAS funciona como filesystem previamente
+montado ou compartilhamento UNC acessível pelo sistema operacional. O SmartFile
+não monta o compartilhamento. LAN e HTTPS não fingem transferência: seus
+conectores físicos permanecem para uma etapa futura.
 
 A Cloud Layer para OneDrive e Google Drive continua separada e não foi
 substituída pelo transporte corporativo.
