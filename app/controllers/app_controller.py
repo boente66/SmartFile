@@ -6,6 +6,8 @@ from app.controllers.pdf_signature_controller import PDFSignatureController
 from app.controllers.handwritten_signature_controller import HandwrittenSignatureController
 from app.controllers.scan_controller import ScanController
 from app.services.document_service import DocumentService
+from app.services.version_notification_service import VersionNotificationService
+from app.version import __version__
 
 
 class AppController:
@@ -27,6 +29,7 @@ class AppController:
         self.handwritten_signature_controller = None
         self.scan_controller = None
         self.document_controller = None
+        self.version_notifications = None
 
     def start(self):
         """
@@ -70,6 +73,16 @@ class AppController:
         # Tela inicial
         self.document_controller.activate()
         self.main_view.sidebar.set_active_tool("documents")
+        if self.database:
+            notifications = VersionNotificationService(self.database)
+            self.version_notifications = notifications
+            self.main_view.version_notification_acknowledged.connect(
+                notifications.acknowledge
+            )
+            if notifications.should_notify():
+                self.main_view.show_version_notification(
+                    __version__, notifications.message(),
+                )
 
     def on_tool_selected(self, tool_name: str):
         if tool_name != "documents":

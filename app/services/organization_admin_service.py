@@ -7,6 +7,7 @@ from app.services.audit_service import AuditService
 from app.services.folder_service import FolderService
 from app.services.folder_template_service import FolderTemplateService
 from app.services.organization_service import OrganizationService
+from app.services.organization_feature_service import OrganizationFeatureService
 from app.cloud.cloud_manager import CloudManager
 
 
@@ -16,6 +17,7 @@ class OrganizationAdminService:
         self.organizations=OrganizationService(database); self.members=OrganizationMemberRepository(database=database)
         self.folders=FolderService(database); self.templates=FolderTemplateService(self.folders); self.audit=AuditService(database)
         self.cloud=CloudManager(database)
+        self.features=OrganizationFeatureService(database,session_context)
 
     def list_for_current_user(self, include_archived=False):
         linked={m.organization_id:m for m in self.members.find_by_user(self.context.current_user.id,active_only=False)}
@@ -27,27 +29,52 @@ class OrganizationAdminService:
         cloud=self.organizations.repository.cloud_summary(organization_id)
         return {"documents":self.organizations.repository.count_documents(organization_id),"folders":self.organizations.repository.count_folders(organization_id),"members":self.members.count_active(organization_id),"cloud":cloud["sync_mode"] if cloud else "LOCAL","last_activity":cloud["last_sync"] if cloud else None}
 
-    def create(self,name,description=None,icon="organization",color="#2563eb",template="EMPTY",profile_code=None,storage_plan_code=None,activate=False):
+    def create(self,name,description=None,icon="organization",color="#2563eb",template="EMPTY",profile_code=None,storage_plan_code=None,activate=False,enabled_features=None):
         self.context.require_permission("organization.create")
         if any(o.name.casefold()==name.strip().casefold() for o,_,_ in self.list_for_current_user()): raise AdministrationError("Você já possui uma organização com esse nome.")
         now=self._now()
         with self.database.transaction():
-            organization=self.organizations.create(name,description,template,storage_plan_code); organization.icon=icon; organization.color=color; organization.profile_code=(profile_code or template).upper(); self.organizations.repository.update(organization)
+            profile=OrganizationFeatureService.validate_profile_code(profile_code or template)
+            organization=self.organizations.create(name,description,template,storage_plan_code,profile); organization.icon=icon; organization.color=color; self.organizations.repository.update(organization)
             membership=self.members.create(OrganizationMemberEntity(organization_id=organization.id,user_id=self.context.current_user.id,role="OWNER",created_at=now,updated_at=now,joined_at=now))
             self.templates.create_template_folders(organization.id,template)
             self.cloud.settings(organization.id)
+            self.features.initialize_defaults(organization,user_id=self.context.current_user.id)
+            if enabled_features is not None:
+                self.features.update_enabled_features(
+                    organization,set(enabled_features),authorization_checked=True,
+                )
             self.audit.record("ORGANIZATION_CREATED",user_id=self.context.current_user.id,organization_id=organization.id,target_type="organization",target_id=organization.id,description=f"Organização criada: {organization.name}")
         self.context.memberships.append(membership)
         if activate: self.activate(organization.id)
         return organization
 
-    def update(self,organization_id,name,description=None,icon=None,color=None):
+    def update(self,organization_id,name,description=None,icon=None,color=None,profile_code=None,enabled_features=None):
         self._require_for(organization_id,"organization.update")
-        organization=self.organizations.update(organization_id,name,description)
-        if icon is not None: organization.icon=icon
-        if color is not None: organization.color=color
-        organization=self.organizations.repository.update(organization)
-        self.audit.record("ORGANIZATION_UPDATED",user_id=self.context.current_user.id,organization_id=organization_id,target_type="organization",target_id=organization_id,description=f"Organização editada: {organization.name}")
+        current=self.organizations.repository.find_by_id(organization_id)
+        if current is None: raise AdministrationError("Organização não encontrada.")
+        profile=OrganizationFeatureService.validate_profile_code(profile_code or current.profile_code)
+        profile_changed=profile != current.profile_code
+        with self.database.transaction():
+            organization=self.organizations.update(organization_id,name,description)
+            if icon is not None: organization.icon=icon
+            if color is not None: organization.color=color
+            organization.profile_code=profile
+            organization=self.organizations.repository.update(organization)
+            selected=(set(enabled_features) if enabled_features is not None else None)
+            if selected is None and profile_changed:
+                selected=set(self.features.default_enabled_codes(profile))
+            if selected is not None:
+                if "server_transport" in selected:
+                    self._require_for(organization_id,"transport.configure")
+                self.features.update_enabled_features(
+                    organization,selected,authorization_checked=True,
+                )
+            else:
+                self.features.initialize_defaults(organization,user_id=self.context.current_user.id)
+            self.audit.record("ORGANIZATION_UPDATED",user_id=self.context.current_user.id,organization_id=organization_id,target_type="organization",target_id=organization_id,description=f"Organização editada: {organization.name}")
+            if profile_changed:
+                self.audit.record("ORGANIZATION_PROFILE_UPDATED",user_id=self.context.current_user.id,organization_id=organization_id,target_type="organization",target_id=organization_id,description=f"Perfil de recursos alterado para {profile}")
         return organization
 
     def duplicate(self,organization_id,new_name,activate=False):
@@ -65,6 +92,7 @@ class OrganizationAdminService:
                         created=self.folders.create(target.id,folder.name,mapping.get(folder.parent_id)); mapping[folder.id]=created.id; remaining.remove(folder); progressed=True
                 if not progressed: raise AdministrationError("Estrutura de pastas inválida.")
             self.cloud.settings(target.id)
+            self.features.initialize_defaults(target,user_id=self.context.current_user.id)
             self.audit.record("ORGANIZATION_DUPLICATED",user_id=self.context.current_user.id,organization_id=target.id,target_type="organization",target_id=target.id,description=f"Estrutura duplicada de {source.name}")
         self.context.memberships.append(membership)
         if activate: self.activate(target.id)

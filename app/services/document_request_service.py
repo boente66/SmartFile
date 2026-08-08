@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 
 from app.entities.document_request_entity import DocumentRequestEntity
 from app.repositories.document_request_repository import DocumentRequestRepository
+from app.repositories.organization_member_repository import OrganizationMemberRepository
+from app.repositories.user_repository import UserRepository
 from app.services.audit_service import AuditService
 from app.services.organization_feature_service import OrganizationFeatureService
 from app.services.organization_service import OrganizationService
@@ -14,15 +16,38 @@ class DocumentRequestService:
 
     def __init__(self, database, context):
         self.context = context
+        self.database = database
         self.repository = DocumentRequestRepository(database=database)
+        self.members = OrganizationMemberRepository(database=database)
+        self.users = UserRepository(database=database)
         self.organizations = OrganizationService(database)
-        self.features = OrganizationFeatureService()
+        self.features = OrganizationFeatureService(database)
         self.audit = AuditService(database)
 
     def list_requests(self, organization_id: int) -> list[DocumentRequestEntity]:
         self._require(organization_id, "document.request.view")
-        self.repository.mark_overdue(organization_id, self._now())
+        if self.deadline_enabled(organization_id):
+            self.repository.mark_overdue(organization_id, self._now())
         return self.repository.find_by_organization(organization_id)
+
+    def list_assignable_members(self, organization_id: int):
+        self._require(organization_id, "document.request.view")
+        users = []
+        for membership in self.members.find_by_organization(organization_id, active_only=True):
+            user = self.users.find_by_id(membership.user_id)
+            if user is not None and user.is_active:
+                users.append(user)
+        return sorted(users, key=lambda user: user.display_name.casefold())
+
+    def can_create(self) -> bool:
+        return self.context.has_permission("document.request.create")
+
+    def can_update(self) -> bool:
+        return self.context.has_permission("document.request.update")
+
+    def deadline_enabled(self, organization_id: int) -> bool:
+        organization = self.organizations.repository.find_by_id(organization_id)
+        return bool(organization and self.features.for_organization(organization).has("deadline_timers"))
 
     def create(
         self, organization_id: int, title: str, description: str | None = None,
@@ -34,7 +59,10 @@ class DocumentRequestService:
             raise ValueError("Informe o documento solicitado.")
         if len(clean_title) > 180:
             raise ValueError("O título deve possuir até 180 caracteres.")
+        self._validate_assignee(organization_id, assigned_to_user_id)
         if due_at:
+            organization = self.organizations.repository.find_by_id(organization_id)
+            self.features.require(organization, "deadline_timers")
             try:
                 parsed_due = datetime.fromisoformat(due_at)
                 if parsed_due.tzinfo is None:
@@ -82,6 +110,20 @@ class DocumentRequestService:
         self.context.require_permission(permission)
         organization = self.organizations.repository.find_by_id(organization_id)
         self.features.require(organization, "document_requests")
+
+    def _validate_assignee(
+        self, organization_id: int, assigned_to_user_id: int | None,
+    ) -> None:
+        if assigned_to_user_id is None:
+            return
+        user = self.users.find_by_id(int(assigned_to_user_id))
+        if user is None:
+            raise ValueError("O responsável selecionado não existe.")
+        if not user.is_active:
+            raise ValueError("O responsável selecionado está inativo.")
+        membership = self.members.find(organization_id, int(assigned_to_user_id))
+        if membership is None or membership.status != "ACTIVE":
+            raise ValueError("O responsável deve ser membro ativo da organização.")
 
     @staticmethod
     def _now() -> str:

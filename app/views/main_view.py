@@ -1,9 +1,11 @@
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
-    QMainWindow,
-    QWidget,
     QHBoxLayout,
-    QStatusBar
-    ,QToolButton
+    QMainWindow,
+    QMessageBox,
+    QStatusBar,
+    QToolButton,
+    QWidget,
 )
 
 from app.views.sidebar_view import SidebarView
@@ -18,6 +20,8 @@ class MainView(QMainWindow):
     Janela principal do FileConverte.
     Container de todas as funcionalidades.
     """
+
+    version_notification_acknowledged = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
@@ -72,3 +76,27 @@ class MainView(QMainWindow):
     def set_account(self, display_name: str, menu) -> None:
         self.account_button.setText(display_name)
         self.account_button.setMenu(menu)
+
+    def show_version_notification(self, version: str, message: str) -> None:
+        button = getattr(self, "version_notification_button", None)
+        if button is None:
+            button = QToolButton()
+            button.setObjectName("versionNotificationButton")
+            self.status.addPermanentWidget(button)
+            self.version_notification_button = button
+        button.setText(f"Novidades {version}")
+        button.setToolTip("Clique para ver as novidades desta versão")
+
+        try:
+            button.clicked.disconnect()
+        except TypeError:
+            pass
+
+        def show_details() -> None:
+            QMessageBox.information(
+                self, f"SmartFile atualizado para {version}", message,
+            )
+            self.version_notification_acknowledged.emit(version)
+            button.hide()
+
+        button.clicked.connect(show_details)

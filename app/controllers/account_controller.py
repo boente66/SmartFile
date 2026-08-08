@@ -81,10 +81,12 @@ class AccountController:
         try: self.organizations.create(**dialog.values()); self._reload_organizations(view); self.refresh()
         except Exception as exc: QMessageBox.warning(view,"Organização",str(exc))
     def _edit_organization(self,view,oid):
-        organization=self.auth.organizations.repository.find_by_id(oid); dialog=OrganizationDialog(view,organization,False)
+        organization=self.auth.organizations.repository.find_by_id(oid)
+        enabled=self.organizations.features.for_organization(organization).codes
+        dialog=OrganizationDialog(view,organization,False,enabled)
         if dialog.exec()!=QDialog.DialogCode.Accepted:return
         try:
-            values=dialog.values(); updated=self.organizations.update(oid,values["name"],values["description"],values["icon"],values["color"]); updated.profile_code=values["profile_code"]; self.auth.organizations.repository.update(updated); self.organizations.audit.record("ORGANIZATION_PROFILE_UPDATED",user_id=self.auth.session_context.current_user.id,organization_id=oid,target_type="organization",target_id=oid,description=f"Perfil de recursos alterado para {updated.profile_code}")
+            values=dialog.values(); updated=self.organizations.update(oid,values["name"],values["description"],values["icon"],values["color"],values["profile_code"],values["enabled_features"])
             if oid==getattr(self.auth.session_context.active_organization,"id",None): self.auth.session_context.set_active_organization(updated)
             self._reload_organizations(view); self.refresh()
         except Exception as exc: QMessageBox.warning(view,"Organização",str(exc))

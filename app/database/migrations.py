@@ -7,7 +7,7 @@ from pathlib import Path
 from app.errors.persistence_exceptions import DatabaseError
 
 logger = logging.getLogger(__name__)
-CURRENT_SCHEMA_VERSION = 14
+CURRENT_SCHEMA_VERSION = 15
 GIB = 1024 ** 3
 
 
@@ -493,6 +493,98 @@ def _upgrade_profile_resources(connection: sqlite3.Connection) -> None:
     )
 
 
+def _upgrade_business_feature_policy(connection: sqlite3.Connection) -> None:
+    """Persiste recursos opcionais e prepara referência segura de credencial."""
+    connection.execute(
+        """
+        UPDATE organizations SET profile_code='EMPTY'
+        WHERE profile_code IS NULL
+           OR profile_code NOT IN ('PERSONAL','STUDENT','BUSINESS','EMPTY')
+        """
+    )
+    if "credential_ref" not in _columns(connection, "organization_transport_settings"):
+        connection.execute(
+            "ALTER TABLE organization_transport_settings ADD COLUMN credential_ref TEXT"
+        )
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS organization_feature_settings (
+            organization_id INTEGER NOT NULL,
+            feature_code TEXT NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0,1)),
+            updated_by_user_id INTEGER,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (organization_id, feature_code),
+            FOREIGN KEY (organization_id) REFERENCES organizations(id),
+            FOREIGN KEY (updated_by_user_id) REFERENCES users(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_organization_features_enabled
+            ON organization_feature_settings(organization_id, enabled, feature_code);
+        """
+    )
+    profile_features = {
+        "PERSONAL": (
+            "contextual_actions", "smart_search", "indexed_filters", "cloud_sync",
+            "cloud_protection", "audit_history",
+        ),
+        "STUDENT": (
+            "contextual_actions", "smart_search", "indexed_filters", "cloud_sync",
+            "cloud_protection", "digital_signature", "audit_history",
+        ),
+        "BUSINESS": (
+            "contextual_actions", "smart_search", "indexed_filters", "cloud_sync",
+            "cloud_protection", "digital_signature", "access_control", "server_transport",
+            "document_requests", "deadline_timers", "audit_history",
+        ),
+        "EMPTY": ("contextual_actions", "smart_search", "indexed_filters", "audit_history"),
+    }
+    business_defaults = {
+        "contextual_actions", "smart_search", "indexed_filters", "cloud_protection",
+        "digital_signature", "access_control", "audit_history",
+    }
+    now = connection.execute("SELECT datetime('now')").fetchone()[0]
+    for organization_id, profile_code in connection.execute(
+        "SELECT id, profile_code FROM organizations"
+    ).fetchall():
+        features = profile_features.get(profile_code, profile_features["EMPTY"])
+        enabled = set(features) if profile_code != "BUSINESS" else set(business_defaults)
+        if profile_code == "BUSINESS":
+            if connection.execute(
+                "SELECT 1 FROM organization_transport_settings WHERE organization_id=? AND enabled=1",
+                (organization_id,),
+            ).fetchone():
+                enabled.add("server_transport")
+            if connection.execute(
+                "SELECT 1 FROM document_requests WHERE organization_id=? LIMIT 1",
+                (organization_id,),
+            ).fetchone():
+                enabled.add("document_requests")
+            if connection.execute(
+                "SELECT 1 FROM document_requests WHERE organization_id=? AND due_at IS NOT NULL LIMIT 1",
+                (organization_id,),
+            ).fetchone():
+                enabled.add("deadline_timers")
+            if connection.execute(
+                """
+                SELECT 1 FROM cloud_settings WHERE organization_id=?
+                AND (sync_mode!='LOCAL' OR cloud_account_id IS NOT NULL)
+                """,
+                (organization_id,),
+            ).fetchone():
+                enabled.add("cloud_sync")
+        connection.executemany(
+            """
+            INSERT OR IGNORE INTO organization_feature_settings (
+                organization_id, feature_code, enabled, updated_by_user_id, updated_at
+            ) VALUES (?, ?, ?, NULL, ?)
+            """,
+            [
+                (organization_id, feature_code, int(feature_code in enabled), now)
+                for feature_code in features
+            ],
+        )
+
+
 def migrate(connection: sqlite3.Connection, schema_path: Path) -> int:
     """Cria o schema mínimo ou atualiza bancos legados sem perder documentos."""
     try:
@@ -521,6 +613,7 @@ def migrate(connection: sqlite3.Connection, schema_path: Path) -> int:
             _upgrade_storage_quotas(connection)
             _upgrade_cloud_organization_structure(connection)
             _upgrade_profile_resources(connection)
+            _upgrade_business_feature_policy(connection)
             connection.execute(
                 "UPDATE documents SET source_path = path WHERE source_path IS NULL"
             )

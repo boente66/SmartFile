@@ -12,20 +12,20 @@ Actions. Isso não substitui homologação manual em Windows 10 ou 11 real.
 
 1. No GitHub, abra **Actions > Windows beta package**.
 2. Selecione a execução desejada e baixe o artefato
-   `SmartFile-0.9.0-beta.1-Windows-x64`.
+   `SmartFile-0.9.0-beta.2-Windows-x64`.
 3. Extraia o ZIP do artefato do Actions.
 4. Compare o SHA-256 do instalador ou do ZIP portátil:
 
 ```powershell
-(Get-FileHash .\SmartFile-0.9.0-beta.1-Windows-x64-Setup.exe -Algorithm SHA256).Hash
-Get-Content .\SmartFile-0.9.0-beta.1-Windows-x64-Setup.exe.sha256
+(Get-FileHash .\SmartFile-0.9.0-beta.2-Windows-x64-Setup.exe -Algorithm SHA256).Hash
+Get-Content .\SmartFile-0.9.0-beta.2-Windows-x64-Setup.exe.sha256
 ```
 
 Os dois valores devem ser iguais. Interrompa o teste se forem diferentes.
 
 ## Roteiro do instalador
 
-1. Execute `SmartFile-0.9.0-beta.1-Windows-x64-Setup.exe`.
+1. Execute `SmartFile-0.9.0-beta.2-Windows-x64-Setup.exe`.
 2. Confirme que o instalador identifica a versão como beta.
 3. Mantenha o diretório padrão em `C:\Program Files\SmartFile`.
 4. Escolha se deseja o atalho opcional na Área de Trabalho.
@@ -50,7 +50,7 @@ Os dois valores devem ser iguais. Interrompa o teste se forem diferentes.
 
 ## Roteiro da versão portátil
 
-1. Extraia `SmartFile-0.9.0-beta.1-Windows-x64-Portable.zip` em uma pasta comum.
+1. Extraia `SmartFile-0.9.0-beta.2-Windows-x64-Portable.zip` em uma pasta comum.
 2. Execute `SmartFile.exe` sem instalar Python.
 3. Repita login, importação e abertura após reiniciar o aplicativo.
 4. Confirme que banco, storage e logs não foram criados dentro da pasta

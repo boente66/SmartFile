@@ -126,6 +126,11 @@ def test_business_transport_requires_profile_and_admin_permission(tmp_path: Path
     database, context = _business(tmp_path)
     service = OrganizationTransportService(database, context)
     organization_id = context.active_organization.id
+    policy = OrganizationFeatureService(database, context)
+    policy.update_enabled_features(
+        context.active_organization,
+        set(policy.for_organization(context.active_organization).codes) | {"server_transport"},
+    )
     saved = service.configure(
         organization_id, "HTTPS", "https://ged.example.com/api",
         enabled=True, verify_tls=True,
@@ -149,6 +154,12 @@ def test_business_document_requests_track_deadline_and_audit(tmp_path: Path):
     database, context = _business(tmp_path)
     service = DocumentRequestService(database, context)
     organization_id = context.active_organization.id
+    policy = OrganizationFeatureService(database, context)
+    policy.update_enabled_features(
+        context.active_organization,
+        set(policy.for_organization(context.active_organization).codes)
+        | {"document_requests", "deadline_timers"},
+    )
     due = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
     created = service.create(organization_id, "Contrato assinado", "Solicitar ao cliente", due_at=due)
     assert created.status == "OPEN"

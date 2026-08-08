@@ -47,8 +47,9 @@ O cadastro utiliza um wizard de quatro etapas:
 O primeiro usuário recebe o papel de proprietário (`OWNER`) da organização padrão
 e torna-se o administrador global da instalação. Administradores de uma organização
 não recebem automaticamente permissão para alterar a configuração OAuth global.
-Os modelos Pessoal, Estudante e Empresarial servem somente para criar as pastas
-iniciais; eles não são níveis de acesso.
+O modelo escolhido cria as pastas iniciais. O perfil de recursos usa o mesmo
+nome inicial, mas é uma configuração separada: ele limita as capacidades que a
+organização poderá ativar e não substitui os papéis OWNER, ADMIN, EDITOR e VIEWER.
 
 O modelo de pastas e o plano de armazenamento são conceitos separados. O SmartFile
 oferece planos lógicos de **10 GB**, **20 GB** e **60 GB**. A sugestão inicial é
@@ -155,12 +156,15 @@ configuração independente e controla as capacidades disponíveis:
 
 - **Pessoal:** ações contextuais, busca inteligente, filtros, histórico e nuvem;
 - **Estudante:** recursos normais, filtros indexados e assinatura digital;
-- **Empresarial:** controle de acesso, assinatura digital, auditoria, solicitações,
-  prazos e configuração administrativa NAS, HTTPS ou LAN;
+- **Empresarial:** permite controle de acesso, assinatura digital, auditoria,
+  solicitações, prazos, nuvem e configuração administrativa NAS, HTTPS ou LAN;
 - **Essencial:** documentos, pastas, histórico e busca local.
 
-Somente usuários autorizados podem alterar o perfil. Mudar o perfil não apaga
-pastas, documentos ou configurações já existentes.
+Somente usuários autorizados podem alterar o perfil e os recursos ativados. A
+ordem de decisão é: o perfil permite, a organização ativa e o papel do usuário
+autoriza. No perfil Empresarial, controle de acesso e auditoria são sugeridos;
+nuvem, transporte, solicitações e prazos são opcionais e independentes. Mudar o
+perfil não apaga pastas nem documentos.
 
 ## 6. Documentos
 
@@ -214,18 +218,25 @@ Os atalhos são limitados à tabela e não interferem na edição dos campos de 
 
 ### Recursos empresariais
 
-No perfil Empresarial, o menu **Mais → Recursos empresariais** oferece:
+Quando habilitados no perfil Empresarial, o menu **Mais → Recursos empresariais** oferece:
 
 - configuração de destino NAS, servidor HTTPS ou servidor LAN, exclusiva de
   OWNER/ADMIN autorizado;
-- solicitações de documentos com descrição, prazo e estados Aberta, Em andamento,
-  Concluída, Cancelada ou Atrasada;
+- solicitações de documentos com descrição, responsável ativo da organização e
+  estados Aberta, Em andamento, Concluída, Cancelada ou Atrasada;
 - consulta ao histórico auditável da organização.
 
-O SmartFile rejeita credenciais incluídas em URLs e exige HTTPS válido para esse
+Solicitações documentais não são um sistema de chamados de TI. O prazo é outro
+recurso e pode permanecer desligado. O SmartFile rejeita credenciais incluídas
+em URLs e exige HTTPS válido para esse
 modo. A configuração armazenada prepara a camada de transporte; a comunicação
 real com o servidor depende de contrato, autenticação e protocolo definidos pela
 TI e não deve ser considerada ativa apenas por salvar o endereço.
+
+O transporte corporativo é independente da Cloud Layer. Ele não exige OneDrive,
+Google Drive, OAuth ou mudança do modo Local. O campo interno de referência de
+credencial prepara uma integração futura com cofre seguro; nenhuma senha deve ser
+digitada no endereço NAS, LAN ou HTTPS.
 
 ### Armazenamento da organização
 
@@ -833,7 +844,7 @@ Em sistemas amd64 compatíveis com Linux Mint, Ubuntu ou Debian, instale o pacot
 baixado usando o APT:
 
 ```bash
-sudo apt install ./smartfile_0.9.0~beta1_amd64.deb
+sudo apt install ./smartfile_0.9.0~beta2_amd64.deb
 ```
 
 O SmartFile pode ser aberto pelo menu de aplicativos ou pelo comando

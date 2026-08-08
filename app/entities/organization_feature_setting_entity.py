@@ -4,12 +4,9 @@ from dataclasses import dataclass
 
 
 @dataclass(slots=True)
-class OrganizationTransportEntity:
+class OrganizationFeatureSettingEntity:
     organization_id: int
-    mode: str = "LOCAL"
-    endpoint: str | None = None
-    enabled: bool = False
-    verify_tls: bool = True
-    credential_ref: str | None = None
+    feature_code: str
+    enabled: bool
     updated_by_user_id: int | None = None
     updated_at: str = ""

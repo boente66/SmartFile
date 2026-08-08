@@ -10,8 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_public_and_debian_versions_are_consistent():
-    assert __version__ == "0.9.0-beta.1"
-    assert debian_version() == "0.9.0~beta1"
+    assert __version__ == "0.9.0-beta.2"
+    assert debian_version() == "0.9.0~beta2"
 
 
 def test_resource_resolution_uses_project_root_in_source_mode():

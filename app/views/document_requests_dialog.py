@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PyQt6.QtCore import QDateTime
 from PyQt6.QtWidgets import (
-    QComboBox, QDateTimeEdit, QDialog, QDialogButtonBox, QFormLayout,
+    QCheckBox, QComboBox, QDateTimeEdit, QDialog, QDialogButtonBox, QFormLayout,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
     QPushButton, QTextEdit, QVBoxLayout,
 )
@@ -20,22 +20,41 @@ class DocumentRequestsDialog(QDialog):
         self.setWindowTitle("Solicitações de documentos")
         self.resize(760, 560)
         root = QVBoxLayout(self)
-        root.addWidget(QLabel("Solicitações, responsáveis e temporizadores da organização"))
+        note = QLabel(
+            "Solicitações documentais opcionais. Este recurso não representa chamados de TI."
+        )
+        note.setWordWrap(True); root.addWidget(note)
         self.list = QListWidget(); self.list.currentItemChanged.connect(self._selection_changed)
         root.addWidget(self.list, 1)
         form = QFormLayout()
         self.title = QLineEdit(); self.description = QTextEdit(); self.description.setMaximumHeight(70)
+        self.assignee = QComboBox(); self.assignee.addItem("Sem responsável", None)
+        self._assignee_names = {}
+        for user in self.service.list_assignable_members(organization_id):
+            self.assignee.addItem(user.display_name, user.id)
+            self._assignee_names[user.id] = user.display_name
+        self.use_due = QCheckBox("Definir prazo")
         self.due = QDateTimeEdit(QDateTime.currentDateTime().addDays(7))
         self.due.setCalendarPopup(True); self.due.setDisplayFormat("dd/MM/yyyy HH:mm")
+        deadline_enabled = self.service.deadline_enabled(organization_id)
+        self.use_due.setEnabled(deadline_enabled)
+        self.use_due.setChecked(deadline_enabled)
+        self.due.setEnabled(deadline_enabled)
+        self.use_due.toggled.connect(self.due.setEnabled)
         form.addRow("Documento solicitado:", self.title)
-        form.addRow("Descrição:", self.description); form.addRow("Prazo:", self.due)
+        form.addRow("Descrição:", self.description)
+        form.addRow("Responsável:", self.assignee)
+        form.addRow("", self.use_due); form.addRow("Prazo:", self.due)
         root.addLayout(form)
         actions = QHBoxLayout()
-        create = QPushButton("Criar solicitação"); create.clicked.connect(self._create)
+        self.create_button = QPushButton("Criar solicitação"); self.create_button.clicked.connect(self._create)
         self.status = QComboBox()
         for code, label in self.STATUS_LABELS.items(): self.status.addItem(label, code)
-        update = QPushButton("Atualizar estado"); update.clicked.connect(self._update_status)
-        actions.addWidget(create); actions.addStretch(); actions.addWidget(self.status); actions.addWidget(update)
+        self.update_button = QPushButton("Atualizar estado"); self.update_button.clicked.connect(self._update_status)
+        self.create_button.setEnabled(self.service.can_create())
+        self.update_button.setEnabled(self.service.can_update())
+        self.status.setEnabled(self.service.can_update())
+        actions.addWidget(self.create_button); actions.addStretch(); actions.addWidget(self.status); actions.addWidget(self.update_button)
         root.addLayout(actions)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject); root.addWidget(buttons)
@@ -45,8 +64,10 @@ class DocumentRequestsDialog(QDialog):
         self.list.clear()
         for request in self.service.list_requests(self.organization_id):
             due = request.due_at[:16].replace("T", " ") if request.due_at else "sem prazo"
+            assignee = self._assignee_names.get(request.assigned_to_user_id, "sem responsável")
             item = QListWidgetItem(
-                f"{self.STATUS_LABELS.get(request.status, request.status)} · {request.title} · {due}"
+                f"{self.STATUS_LABELS.get(request.status, request.status)} · "
+                f"{request.title} · {assignee} · {due}"
             )
             item.setData(256, request.id); item.setData(257, request.status); self.list.addItem(item)
 
@@ -54,7 +75,11 @@ class DocumentRequestsDialog(QDialog):
         try:
             self.service.create(
                 self.organization_id, self.title.text(), self.description.toPlainText(),
-                due_at=self.due.dateTime().toPyDateTime().astimezone().isoformat(),
+                assigned_to_user_id=self.assignee.currentData(),
+                due_at=(
+                    self.due.dateTime().toPyDateTime().astimezone().isoformat()
+                    if self.use_due.isChecked() else None
+                ),
             )
             self.title.clear(); self.description.clear(); self._refresh()
         except Exception as exc:

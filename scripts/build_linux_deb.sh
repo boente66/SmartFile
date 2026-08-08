@@ -128,7 +128,7 @@ install -m 0755 packaging/debian/DEBIAN/postinst packaging/debian/DEBIAN/prerm \
     packaging/debian/DEBIAN/postrm "$STAGE/DEBIAN/"
 install -m 0644 LICENSE README.md docs/Manual_Usuario.md docs/Manual_Usuario.pdf \
     docs/AVISO_BETA.md docs/BETA_LINUX.md \
-    docs/RELEASE_NOTES_0.9.0-beta.1.md "$STAGE/usr/share/doc/smartfile/"
+    docs/RELEASE_NOTES_0.9.0-beta.2.md "$STAGE/usr/share/doc/smartfile/"
 install -m 0644 CHANGELOG.md "$STAGE/usr/share/doc/smartfile/changelog"
 gzip -9n "$STAGE/usr/share/doc/smartfile/changelog"
 "$BUILD_PYTHON" scripts/render_linux_icons.py assets/icons/app.svg \

@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.9.0-beta.2] - 2026-08-07
+
+- Separated profile capabilities from organization-enabled features
+- Added conservative BUSINESS defaults with independent activation of cloud,
+  corporate transport, document requests, and deadline timers
+- Added schema migration 15 and auditable organization feature settings
+- Centralized profile and feature updates in the organization administration service
+- Hardened NAS, LAN, and HTTPS transport authorization and endpoint validation
+- Added active-member assignees and independent deadlines to document requests
+- Added a non-blocking, once-per-version in-app release notification
+- Preserved the Cloud Layer, document shortcuts, trash, scanner, PDF tools, and storage
+
 - Separated organization feature profiles from initial folder templates
 - Added PERSONAL, STUDENT, BUSINESS, and EMPTY capability policies
 - Added indexed document filters, multi-term metadata search, and safe rename

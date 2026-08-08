@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from app.database.database import Database
 from app.entities.organization_entity import OrganizationEntity
 from app.repositories.organization_repository import OrganizationRepository
+from app.services.organization_feature_service import OrganizationFeatureService
 
 
 class OrganizationService:
@@ -44,18 +45,20 @@ class OrganizationService:
         description: str | None = None,
         template_code: str = "EMPTY",
         storage_plan_code: str | None = None,
+        profile_code: str | None = None,
     ) -> OrganizationEntity:
         clean_name = self._name(name)
         slug = self._unique_slug(clean_name)
         now = self._now()
         template = template_code.upper()
+        profile = OrganizationFeatureService.validate_profile_code(profile_code or template)
         from app.services.storage_quota_service import PLAN_BY_TEMPLATE, StorageQuotaService
         plan = (storage_plan_code or PLAN_BY_TEMPLATE.get(template, "PERSONAL_10GB")).upper()
         created = self.repository.create(
             OrganizationEntity(
                 name=clean_name, description=description or None, slug=slug,
                 created_at=now, updated_at=now, template_code=template,
-                profile_code=template, storage_plan_code=plan,
+                profile_code=profile, storage_plan_code=plan,
             )
         )
         StorageQuotaService(self.database).assign_plan(created.id, plan, template)
@@ -71,9 +74,7 @@ class OrganizationService:
 
     def set_feature_profile(self, organization_id: int, profile_code: str) -> OrganizationEntity:
         entity = self._active_entity(organization_id)
-        code = profile_code.strip().upper()
-        if code not in {"PERSONAL", "STUDENT", "BUSINESS", "EMPTY"}:
-            raise ValueError("Perfil de recursos inválido.")
+        code = OrganizationFeatureService.validate_profile_code(profile_code)
         entity.profile_code = code
         entity.updated_at = self._now()
         return self.repository.update(entity)

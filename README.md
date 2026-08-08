@@ -35,18 +35,25 @@ independentes.
 
 ## Perfis de recursos
 
-O template cria somente as pastas iniciais. O perfil determina os recursos
-disponíveis e pode ser alterado nas configurações da organização:
+O template cria somente as pastas iniciais. O perfil define o limite de
+capacidades; cada organização ativa somente os recursos que realmente utiliza:
 
 - **Pessoal:** ações contextuais, busca inteligente, filtros, histórico e nuvem;
 - **Estudante:** recursos normais, filtros indexados e assinatura digital;
-- **Empresarial:** todos os anteriores, controle de acesso, solicitações,
-  temporizadores, auditoria e configuração da camada de transporte;
+- **Empresarial:** permite controle de acesso, solicitações, prazos, auditoria,
+  nuvem e transporte corporativo, todos configuráveis individualmente;
 - **Essencial:** documentos e busca sem ativação automática de nuvem.
 
-A configuração NAS/HTTPS/LAN persiste e valida o destino informado pela TI, mas
+No perfil Empresarial, controle de acesso e auditoria são sugeridos como padrão.
+Nuvem, transporte corporativo, solicitações e prazos começam desativados. A
+configuração NAS/HTTPS/LAN persiste e valida o destino informado pela TI, mas
 não representa por si só um conector de produção. A transferência real depende
 do protocolo e das credenciais definidos para o servidor da organização.
+
+Cloud Layer e transporte corporativo são camadas independentes. OneDrive e
+Google Drive usam OAuth e fila de sincronização. NAS, LAN e HTTPS são destinos
+administrativos da organização e não exigem conta de nuvem nem alteram seu modo
+de sincronização.
 
 ## Capturas de tela
 
@@ -190,7 +197,7 @@ O pacote Linux amd64 é destinado a testes em sistemas compatíveis baseados em
 Linux Mint, Ubuntu e Debian:
 
 ```bash
-sudo apt install ./smartfile_0.9.0~beta1_amd64.deb
+sudo apt install ./smartfile_0.9.0~beta2_amd64.deb
 ```
 
 A remoção normal preserva banco, documentos, configurações e backups do
@@ -200,8 +207,8 @@ usuário. Consulte [SmartFile Beta Linux](docs/BETA_LINUX.md).
 
 O GitHub Actions gera:
 
-- `SmartFile-0.9.0-beta.1-Windows-x64-Setup.exe`;
-- `SmartFile-0.9.0-beta.1-Windows-x64-Portable.zip`;
+- `SmartFile-0.9.0-beta.2-Windows-x64-Setup.exe`;
+- `SmartFile-0.9.0-beta.2-Windows-x64-Portable.zip`;
 - checksums SHA-256 dos dois arquivos.
 
 O instalador é construído em um runner oficial Windows com PyInstaller onedir e

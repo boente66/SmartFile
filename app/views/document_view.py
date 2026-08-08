@@ -579,7 +579,17 @@ class DocumentView(QWidget):
         self.profile_badge.setText(f"Perfil: {feature_set.profile_name}")
         indexed = feature_set.has("indexed_filters")
         self.smart_filters_widget.setVisible(indexed)
-        self.enterprise_menu.menuAction().setVisible(feature_set.profile_code == "BUSINESS")
+        self.transport_action.setVisible(feature_set.has("server_transport"))
+        self.requests_action.setVisible(feature_set.has("document_requests"))
+        self.audit_action.setVisible(feature_set.has("audit_history"))
+        self.enterprise_menu.menuAction().setVisible(
+            feature_set.profile_code == "BUSINESS"
+            and any((
+                feature_set.has("server_transport"),
+                feature_set.has("document_requests"),
+                feature_set.has("audit_history"),
+            ))
+        )
         self.action_buttons["Assinar"].setVisible(feature_set.has("digital_signature"))
         if not feature_set.has("cloud_sync"):
             self.cloud_combo.setCurrentIndex(0)

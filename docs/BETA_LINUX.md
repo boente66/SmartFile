@@ -17,7 +17,7 @@ testado em cada ambiente limpo. Um smoke test local não substitui essa etapa.
 ## Instalação e remoção
 
 ```bash
-sudo apt install ./smartfile_0.9.0~beta1_amd64.deb
+sudo apt install ./smartfile_0.9.0~beta2_amd64.deb
 smartfile
 sudo apt remove smartfile
 ```

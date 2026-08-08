@@ -25,6 +25,7 @@ from app.repositories.user_repository import UserRepository
 from app.services.folder_service import FolderService
 from app.services.folder_template_service import FolderTemplateService
 from app.services.organization_service import OrganizationService
+from app.services.organization_feature_service import OrganizationFeatureService
 from app.services.avatar_service import AvatarService
 from app.services.audit_service import AuditService
 from app.services.password_recovery_service import PasswordRecoveryService
@@ -111,6 +112,9 @@ class AuthService:
                 organization.template_code=request.template_code.upper()
                 organization.profile_code=request.template_code.upper()
                 self.organizations.repository.update(organization)
+                OrganizationFeatureService(self.database).initialize_defaults(
+                    organization, user_id=user.id,
+                )
                 membership = self.members.create(OrganizationMemberEntity(
                     organization_id=organization.id, user_id=user.id, role="OWNER",
                     created_at=now, updated_at=now, joined_at=now,

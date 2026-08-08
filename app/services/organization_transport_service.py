@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,6 +12,8 @@ from app.services.audit_service import AuditService
 from app.services.organization_feature_service import OrganizationFeatureService
 from app.services.organization_service import OrganizationService
 
+logger = logging.getLogger(__name__)
+
 
 class OrganizationTransportService:
     MODES = {"LOCAL", "NAS", "HTTPS", "LAN"}
@@ -19,10 +22,11 @@ class OrganizationTransportService:
         self.context = context
         self.organizations = OrganizationService(database)
         self.repository = OrganizationTransportRepository(database=database)
-        self.features = OrganizationFeatureService()
+        self.features = OrganizationFeatureService(database)
         self.audit = AuditService(database)
 
     def get(self, organization_id: int) -> OrganizationTransportEntity:
+        self._require(organization_id)
         return self.repository.get(organization_id)
 
     def configure(
@@ -30,6 +34,7 @@ class OrganizationTransportService:
         *, enabled: bool, verify_tls: bool = True,
     ) -> OrganizationTransportEntity:
         self._require(organization_id)
+        previous = self.repository.get(organization_id)
         mode = mode.strip().upper()
         if mode not in self.MODES:
             raise ValueError("Modo de transporte inválido.")
@@ -38,6 +43,7 @@ class OrganizationTransportService:
         saved = self.repository.save(OrganizationTransportEntity(
             organization_id=organization_id, mode=mode, endpoint=normalized,
             enabled=bool(enabled and mode != "LOCAL"), verify_tls=bool(verify_tls),
+            credential_ref=previous.credential_ref,
             updated_by_user_id=self.context.current_user.id, updated_at=now,
         ))
         self.audit.record(
@@ -45,6 +51,19 @@ class OrganizationTransportService:
             organization_id=organization_id, target_type="transport",
             target_id=organization_id,
             description=f"Transporte {mode} {'ativado' if saved.enabled else 'configurado'}",
+        )
+        if previous.enabled != saved.enabled:
+            self.audit.record(
+                "TRANSPORT_ENABLED" if saved.enabled else "TRANSPORT_DISABLED",
+                user_id=self.context.current_user.id,
+                organization_id=organization_id,
+                target_type="transport",
+                target_id=organization_id,
+                description=f"Transporte corporativo {'ativado' if saved.enabled else 'desativado'}",
+            )
+        logger.info(
+            "corporate.transport.configured organization_id=%s mode=%s enabled=%s success=true",
+            organization_id, mode, saved.enabled,
         )
         return saved
 

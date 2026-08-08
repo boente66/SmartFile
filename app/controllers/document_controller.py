@@ -30,6 +30,7 @@ from app.services.audit_service import AuditService
 from app.services.document_request_service import DocumentRequestService
 from app.services.organization_feature_service import OrganizationFeatureService
 from app.services.organization_transport_service import OrganizationTransportService
+from app.services.organization_admin_service import OrganizationAdminService
 from app.views.document_import_dialog import DocumentImportDialog
 from app.views.document_requests_dialog import DocumentRequestsDialog
 from app.views.organization_transport_dialog import OrganizationTransportDialog
@@ -57,7 +58,7 @@ class DocumentController:
         self._current_folder_id: int | None = None
         self._current_scope = "documents"
         self._search_filters = DocumentSearchFilters()
-        self.feature_service = OrganizationFeatureService()
+        self.feature_service = OrganizationFeatureService(self.service.database, session_context)
         self._cloud_worker = None
         self._cloud_auth_worker = None
         self._retry_sync_after_reauthentication: tuple[str, int] | None = None
@@ -251,6 +252,9 @@ class DocumentController:
                         )
                     )
                     self.session_context.memberships.append(membership)
+                    OrganizationFeatureService(self.service.database).initialize_defaults(
+                        organization, user_id=self.session_context.current_user.id,
+                    )
             self.service.set_active_organization(organization.id)
             if self.session_context:
                 self.session_context.set_active_organization(organization)
@@ -264,28 +268,24 @@ class DocumentController:
 
     def on_edit_organization(self):
         organization = self.service.organization_service.active()
-        dialog = OrganizationDialog(self.view, organization, show_template=False)
+        dialog = OrganizationDialog(
+            self.view, organization, show_template=False,
+            enabled_features=self.feature_service.for_organization(organization).codes,
+        )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         values = dialog.values()
         try:
-            if self.session_context:
-                self.session_context.require_permission("organization.update")
-            updated = self.service.organization_service.update(
-                organization.id, values["name"], values["description"]
+            if self.session_context is None:
+                raise PermissionError("Sessão administrativa indisponível.")
+            updated = OrganizationAdminService(
+                self.service.database, self.session_context,
+            ).update(
+                organization.id, values["name"], values["description"],
+                values["icon"], values["color"], values["profile_code"],
+                values["enabled_features"],
             )
-            updated.icon = values["icon"]; updated.color = values["color"]
-            updated.profile_code = values["profile_code"]
-            self.service.organization_service.repository.update(updated)
-            AuditService(self.service.database).record(
-                "ORGANIZATION_PROFILE_UPDATED",
-                user_id=getattr(getattr(self.session_context, "current_user", None), "id", None),
-                organization_id=updated.id, target_type="organization",
-                target_id=updated.id,
-                description=f"Perfil de recursos alterado para {updated.profile_code}",
-            )
-            if self.session_context:
-                self.session_context.set_active_organization(updated)
+            self.session_context.set_active_organization(updated)
             self._refresh_organizations()
             self._refresh_folders()
             self._apply_profile_features()

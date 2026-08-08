@@ -127,8 +127,20 @@ CREATE TABLE IF NOT EXISTS organization_transport_settings (
     endpoint TEXT,
     enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0,1)),
     verify_tls INTEGER NOT NULL DEFAULT 1 CHECK (verify_tls IN (0,1)),
+    credential_ref TEXT,
     updated_by_user_id INTEGER,
     updated_at TEXT NOT NULL,
+    FOREIGN KEY (organization_id) REFERENCES organizations(id),
+    FOREIGN KEY (updated_by_user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS organization_feature_settings (
+    organization_id INTEGER NOT NULL,
+    feature_code TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0,1)),
+    updated_by_user_id INTEGER,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (organization_id, feature_code),
     FOREIGN KEY (organization_id) REFERENCES organizations(id),
     FOREIGN KEY (updated_by_user_id) REFERENCES users(id)
 );
@@ -330,6 +342,8 @@ CREATE INDEX IF NOT EXISTS idx_storage_reservations_organization ON storage_rese
 CREATE INDEX IF NOT EXISTS idx_documents_source_type ON documents(source_type);
 CREATE INDEX IF NOT EXISTS idx_document_requests_org_status_due
     ON document_requests(organization_id, status, due_at);
+CREATE INDEX IF NOT EXISTS idx_organization_features_enabled
+    ON organization_feature_settings(organization_id, enabled, feature_code);
 CREATE INDEX IF NOT EXISTS idx_documents_smart_search
     ON documents(organization_id, status, file_type, source_type, created_at);
 CREATE INDEX IF NOT EXISTS idx_documents_org_category
