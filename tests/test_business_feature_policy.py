@@ -108,7 +108,9 @@ def test_transport_does_not_require_cloud_account_or_cloud_mode(tmp_path: Path):
     assert cloud["cloud_account_id"] is None and cloud["sync_mode"] == "LOCAL"
 
     service = OrganizationTransportService(database, context)
-    nas = service.configure(organization_id, "NAS", "/mnt/empresa/documentos", enabled=True)
+    nas = service.configure(
+        organization_id, "NAS", r"\\servidor\documentos", enabled=True,
+    )
     https = service.configure(
         organization_id, "HTTPS", "https://ged.example.com/api",
         enabled=True, verify_tls=True,
