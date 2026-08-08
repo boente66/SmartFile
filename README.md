@@ -81,6 +81,10 @@ sobrescrever arquivos existentes.
 
 ![Tela de cadastro de conta e organização do SmartFile](assets/screenshots/smartfile-cadastro.png)
 
+O procedimento ilustrado completo — dados pessoais, organização, template,
+revisão e códigos de recuperação — está disponível no
+[Manual do Usuário](docs/Manual_Usuario.md#3-primeiro-acesso).
+
 ## Camada de Nuvem
 
 A Cloud Layer mantém os módulos do SmartFile desacoplados das APIs externas:

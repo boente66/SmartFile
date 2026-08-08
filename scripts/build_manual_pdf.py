@@ -1,5 +1,6 @@
 """Gera o PDF distribuível a partir do Manual_Usuario.md."""
 
+import re
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -7,12 +8,34 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+from reportlab.platypus import CondPageBreak, Image, Paragraph, SimpleDocTemplate, Spacer
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "docs" / "Manual_Usuario.md"
 OUTPUT = ROOT / "docs" / "Manual_Usuario.pdf"
+IMAGE_PATTERN = re.compile(r"^!\[(?P<alt>[^]]*)\]\(<(?P<angle>[^>]+)>\)$|^!\[(?P<plain_alt>[^]]*)\]\((?P<plain>[^)]+)\)$")
+
+
+def _manual_image(line: str):
+    match = IMAGE_PATTERN.match(line)
+    if match is None:
+        return None
+    relative = match.group("angle") or match.group("plain")
+    alt = match.group("alt") or match.group("plain_alt") or "Captura de tela"
+    path = (SOURCE.parent / relative).resolve()
+    try:
+        path.relative_to(ROOT)
+    except ValueError:
+        return None
+    if not path.is_file():
+        return None
+    picture = Image(str(path))
+    max_width, max_height = 174 * mm, 105 * mm
+    scale = min(max_width / picture.imageWidth, max_height / picture.imageHeight, 1)
+    picture.drawWidth = picture.imageWidth * scale
+    picture.drawHeight = picture.imageHeight * scale
+    return picture, alt
 
 
 def build() -> None:
@@ -21,6 +44,11 @@ def build() -> None:
         "ManualCode", parent=styles["BodyText"], fontName="Courier", fontSize=8,
         leading=10, backColor=colors.HexColor("#eef2f7"), leftIndent=6, rightIndent=6,
         spaceBefore=3, spaceAfter=3,
+    ))
+    styles.add(ParagraphStyle(
+        "ManualCaption", parent=styles["BodyText"], fontSize=8,
+        leading=10, textColor=colors.HexColor("#475569"), alignment=1,
+        spaceBefore=2, spaceAfter=5,
     ))
     styles["Title"].textColor = colors.HexColor("#15803d")
     styles["Heading1"].textColor = colors.HexColor("#0f172a")
@@ -39,7 +67,14 @@ def build() -> None:
         if in_code:
             code_lines.append(line or " ")
             continue
-        if not line:
+        manual_image = _manual_image(line)
+        if manual_image is not None:
+            picture, alt = manual_image
+            story.append(CondPageBreak(picture.drawHeight + 12 * mm))
+            story.append(picture)
+            story.append(Paragraph(f"<i>{escape(alt)}</i>", styles["ManualCaption"]))
+            story.append(Spacer(1, 4 * mm))
+        elif not line:
             story.append(Spacer(1, 2.5 * mm))
         elif line.startswith("# "):
             story.append(Paragraph(escape(line[2:]), styles["Title"]))

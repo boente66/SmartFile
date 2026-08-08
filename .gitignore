@@ -21,6 +21,10 @@ assets/screenshots/*.jpeg
 assets/screenshots/*.webp
 !assets/screenshots/smartfile-login.png
 !assets/screenshots/smartfile-cadastro.png
+!assets/screenshots/smartfile-cadastro-etapa-2-organizacao.png
+!assets/screenshots/smartfile-cadastro-etapa-3-template.png
+!assets/screenshots/smartfile-cadastro-etapa-4-resumo.png
+!assets/screenshots/smartfile-cadastro-concluido-redigido.png
 tokens/
 storage/
 temp/

@@ -35,14 +35,73 @@ abre a tela de login. A janela principal não é disponibilizada sem autenticaç
 
 ## 3. Primeiro acesso
 
-O cadastro utiliza um wizard de quatro etapas:
+Na tela de login, selecione **Criar conta**. O cadastro utiliza um assistente de
+quatro etapas. Em telas compactas, use a barra de rolagem vertical para alcançar
+todos os campos e mantenha os botões **Voltar** e **Continuar** para navegar. É
+possível retornar às etapas anteriores sem persistir dados parciais.
 
-1. Em **Dados pessoais**, informe nome, username, contatos, senha e avatar opcional.
-2. Em **Organização**, escolha nome, descrição, ícone, cor, modelo de pastas e plano de armazenamento.
-3. Em **Resumo**, confira os dados, as pastas previstas e o papel `OWNER`.
-4. Selecione **Finalizar** e, após a conclusão, **Entrar no SmartFile**.
+### Etapa 1 — Dados pessoais
 
-É possível voltar às etapas anteriores sem persistir dados parciais.
+1. Informe o **nome completo**.
+2. Escolha um **nome de usuário**. Use letras, números, ponto, hífen ou sublinhado.
+3. Informe e-mail e telefone se desejar; ambos são opcionais.
+4. Crie uma senha com pelo menos oito caracteres. Para maior segurança, combine
+   letras maiúsculas e minúsculas, números e caractere especial.
+5. Repita exatamente a senha no campo de confirmação.
+6. Se desejar, selecione um avatar. O avatar pode ser removido antes de continuar.
+7. Confira os indicadores de nome de usuário, força da senha e confirmação; depois
+   selecione **Continuar**.
+
+![Etapa 1 do cadastro — dados pessoais](../assets/screenshots/smartfile-cadastro.png)
+
+### Etapa 2 — Organização
+
+1. Defina o nome da organização. **Minha Organização** é a sugestão inicial e pode
+   ser alterada.
+2. Acrescente uma descrição opcional para identificar sua finalidade.
+3. Escolha o ícone e a cor. Se os campos inferiores não estiverem visíveis, use a
+   barra de rolagem à direita.
+4. Selecione **Continuar**.
+
+A organização separa documentos, pastas, histórico, cotas e sincronização dos
+demais espaços de trabalho.
+
+![Etapa 2 do cadastro — configuração da organização](../assets/screenshots/smartfile-cadastro-etapa-2-organizacao.png)
+
+### Etapa 3 — Template e armazenamento
+
+1. Escolha uma estrutura inicial: **Pessoal**, **Estudante**, **Empresarial** ou
+   **Começar vazio**.
+2. Confira a descrição de recursos apresentada em cada opção.
+3. Escolha o plano de armazenamento lógico adequado.
+4. Selecione **Continuar**.
+
+O template cria as pastas iniciais e sugere o perfil de recursos. O perfil e o
+plano poderão ser administrados posteriormente conforme as permissões do usuário.
+
+![Etapa 3 do cadastro — template e armazenamento](../assets/screenshots/smartfile-cadastro-etapa-3-template.png)
+
+### Etapa 4 — Revisão e criação
+
+1. Confira nome, username, organização, template, perfil, plano, papel inicial e
+   pastas que serão criadas.
+2. Se algo estiver incorreto, selecione **Voltar** e faça o ajuste.
+3. Quando os dados estiverem corretos, selecione **Criar conta**.
+
+Nenhum dado parcial é gravado antes da confirmação final.
+
+![Etapa 4 do cadastro — revisão dos dados](../assets/screenshots/smartfile-cadastro-etapa-4-resumo.png)
+
+### Cadastro concluído e códigos de recuperação
+
+Após criar a conta, o SmartFile apresenta cinco códigos de recuperação de uso
+único. Guarde-os em um local seguro, preferencialmente fora do computador. Não
+publique, fotografe nem compartilhe os códigos. Eles não serão mostrados novamente.
+
+Depois de guardar os códigos, selecione **Entrar no SmartFile**. Na imagem do
+manual, os valores foram intencionalmente ocultados por segurança.
+
+![Cadastro concluído — códigos protegidos no manual](../assets/screenshots/smartfile-cadastro-concluido-redigido.png)
 
 O primeiro usuário recebe o papel de proprietário (`OWNER`) da organização padrão
 e torna-se o administrador global da instalação. Administradores de uma organização
