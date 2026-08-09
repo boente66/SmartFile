@@ -1,5 +1,12 @@
+import logging
+
+from PyQt6.QtWidgets import QApplication, QMessageBox
+
+from app.controllers.corporate_transport_controller import CorporateTransportController
 from app.controllers.convert_controller import ConvertController
 from app.controllers.document_controller import DocumentController
+from app.controllers.document_request_controller import DocumentRequestController
+from app.controllers.organization_settings_controller import OrganizationSettingsController
 from app.controllers.pdf_controller import PDFController
 from app.controllers.pdf_viewer_controller import PDFViewerController
 from app.controllers.pdf_signature_controller import PDFSignatureController
@@ -7,7 +14,10 @@ from app.controllers.handwritten_signature_controller import HandwrittenSignatur
 from app.controllers.scan_controller import ScanController
 from app.services.document_service import DocumentService
 from app.services.version_notification_service import VersionNotificationService
+from app.coordinators.corporate_transport_coordinator import CorporateTransportCoordinator
 from app.version import __version__
+
+logger = logging.getLogger(__name__)
 
 
 class AppController:
@@ -29,7 +39,13 @@ class AppController:
         self.handwritten_signature_controller = None
         self.scan_controller = None
         self.document_controller = None
+        self.document_request_controller = None
+        self.transport_controller = None
+        self.transport_coordinator = None
+        self.organization_settings_controller = None
         self.version_notifications = None
+        self._application = None
+        self._stopped = False
 
     def start(self):
         """
@@ -46,7 +62,16 @@ class AppController:
         self.handwritten_signature_controller = HandwrittenSignatureController(
             self.main_view, self.pdf_viewer_controller
         )
-        document_service = DocumentService(db_path=self.database.db_name) if self.database else DocumentService()
+        document_service = (
+            DocumentService(database=self.database)
+            if self.database else DocumentService()
+        )
+        self.transport_coordinator = CorporateTransportCoordinator(
+            document_service.database,
+            self.session_context,
+            service=document_service.corporate_transport_service,
+            parent=self.main_view,
+        )
         self.document_controller = DocumentController(
             self.workspace,
             self.main_view,
@@ -55,7 +80,28 @@ class AppController:
             pdf_viewer_controller=self.pdf_viewer_controller,
             session_context=self.session_context,
             document_service=document_service,
+            transport_job_notifier=self.transport_coordinator.trigger,
         )
+        self.document_request_controller = DocumentRequestController(
+            document_service.database,
+            self.session_context,
+            parent=self.document_controller.view,
+            organization_id_provider=lambda: document_service.active_organization_id,
+        )
+        self.transport_controller = CorporateTransportController(
+            document_service.database,
+            self.session_context,
+            parent=self.document_controller.view,
+            organization_id_provider=lambda: document_service.active_organization_id,
+        )
+        self.organization_settings_controller = OrganizationSettingsController(
+            document_service,
+            self.session_context,
+            parent=self.document_controller.view,
+            refresh_callback=self.document_controller.refresh_organization_state,
+            transport_controller=self.transport_controller,
+        )
+        self._connect_enterprise_layer()
         self.scan_controller = ScanController(
             self.workspace, document_service, self.document_controller.on_refresh_documents,
             self.session_context,
@@ -72,7 +118,11 @@ class AppController:
 
         # Tela inicial
         self.document_controller.activate()
+        self.transport_coordinator.start()
         self.main_view.sidebar.set_active_tool("documents")
+        self._application = QApplication.instance()
+        if self._application is not None:
+            self._application.aboutToQuit.connect(self.shutdown)
         if self.database:
             notifications = VersionNotificationService(self.database)
             self.version_notifications = notifications
@@ -95,3 +145,74 @@ class AppController:
             self.scan_controller.activate()
         elif tool_name == "documents":
             self.document_controller.activate()
+
+    def _connect_enterprise_layer(self) -> None:
+        view = self.document_controller.view
+        settings = self.organization_settings_controller
+        transport = self.transport_controller
+        coordinator = self.transport_coordinator
+
+        view.organization_changed.connect(settings.activate_organization)
+        view.create_organization_requested.connect(settings.create_organization)
+        view.edit_organization_requested.connect(settings.open_general_settings)
+        view.delete_organization_requested.connect(settings.delete_organization)
+        view.configure_transport_requested.connect(
+            settings.open_infrastructure_settings
+        )
+        view.audit_history_requested.connect(settings.open_security_history)
+        view.document_requests_requested.connect(
+            self.document_request_controller.open_requests
+        )
+
+        settings.organization_changed.connect(coordinator.organization_changed)
+        settings.status_changed.connect(view.set_status)
+        settings.failed.connect(
+            lambda message: QMessageBox.warning(
+                view, "Configurações da organização", message
+            )
+        )
+        transport.configuration_saved.connect(coordinator.trigger)
+        transport.retry_enqueued.connect(coordinator.trigger)
+        transport.status_changed.connect(view.set_status)
+        transport.failed.connect(
+            lambda message: QMessageBox.warning(
+                view, "Transporte empresarial", message
+            )
+        )
+        coordinator.progress.connect(self._on_transport_progress)
+        coordinator.succeeded.connect(self._on_transport_succeeded)
+        coordinator.failed.connect(self._on_transport_failed)
+
+    def _on_transport_progress(self, value: int, message: str) -> None:
+        self.main_view.status.showMessage(f"{message} {value}%")
+
+    def _on_transport_succeeded(self, summary: dict) -> None:
+        if not summary.get("jobs"):
+            return
+        self.main_view.status.showMessage(
+            "Transporte NAS: "
+            f"{summary.get('completed', 0)} concluído(s), "
+            f"{summary.get('retry', 0)} aguardando nova tentativa, "
+            f"{summary.get('failed', 0)} falha(s)."
+        )
+
+    def _on_transport_failed(self, message: str) -> None:
+        logger.error("corporate.transport.application.failed message=%s", message)
+        self.main_view.status.showMessage(
+            f"Falha no transporte corporativo: {message}"
+        )
+
+    def shutdown(self) -> None:
+        if self._stopped:
+            return
+        self._stopped = True
+        if self.transport_controller is not None:
+            self.transport_controller.shutdown()
+        if self.transport_coordinator is not None:
+            self.transport_coordinator.shutdown()
+        if self._application is not None:
+            try:
+                self._application.aboutToQuit.disconnect(self.shutdown)
+            except TypeError:
+                pass
+            self._application = None

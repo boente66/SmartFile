@@ -37,9 +37,12 @@ class DocumentService:
         self,
         db_path: Optional[str] = None,
         *,
+        database: Database | None = None,
         storage_service: DocumentStorageService | None = None,
     ):
-        self.database = Database(db_name=db_path)
+        if database is not None and db_path is not None:
+            raise ValueError("Informe database ou db_path, não ambos.")
+        self.database = database or Database(db_name=db_path)
         self.document_repository = DocumentRepository(database=self.database)
         self.organization_service = OrganizationService(self.database)
         self.folder_service = FolderService(self.database)

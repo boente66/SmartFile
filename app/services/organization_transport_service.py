@@ -86,6 +86,20 @@ class OrganizationTransportService:
         self._require(organization_id)
         return self.corporate.summary(organization_id)
 
+    def retry_failed(self, organization_id: int) -> int:
+        self._require(organization_id)
+        count = self.corporate.retry_failed(organization_id)
+        if count:
+            self.audit.record(
+                "TRANSPORT_RETRY_REQUESTED",
+                user_id=self.context.current_user.id,
+                organization_id=organization_id,
+                target_type="transport",
+                target_id=organization_id,
+                description=f"Nova tentativa solicitada para {count} job(s).",
+            )
+        return count
+
     def _require(self, organization_id: int) -> None:
         if organization_id != getattr(self.context.active_organization, "id", None):
             raise PermissionError("Ative a organização antes de configurar o transporte.")

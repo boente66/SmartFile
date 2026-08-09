@@ -21,11 +21,11 @@ from app.repositories.organization_member_repository import OrganizationMemberRe
 from app.repositories.user_repository import UserRepository
 from app.services.auth_service import AuthService
 from app.services.document_request_service import DocumentRequestService
+from app.controllers.document_request_controller import DocumentRequestController
 from app.services.organization_admin_service import OrganizationAdminService
 from app.services.organization_feature_service import OrganizationFeatureService
 from app.services.organization_transport_service import OrganizationTransportService
 from app.services.version_notification_service import VersionNotificationService
-from app.views.document_requests_dialog import DocumentRequestsDialog
 
 _APPLICATION = None
 
@@ -193,9 +193,11 @@ def test_viewer_can_view_requests_but_cannot_create_or_update(tmp_path: Path):
     context.memberships[0].role = "VIEWER"
     context.current_user = replace(context.current_user, is_superuser=False)
     context.set_active_organization(context.active_organization)
-    dialog = DocumentRequestsDialog(
-        DocumentRequestService(database, context), context.active_organization.id,
+    controller = DocumentRequestController(
+        database, context,
+        organization_id_provider=lambda: context.active_organization.id,
     )
+    dialog = controller.open_requests(modal=False)
     assert not dialog.create_button.isEnabled()
     assert not dialog.update_button.isEnabled()
     dialog.close()

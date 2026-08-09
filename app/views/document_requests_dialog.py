@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import QDateTime
+from PyQt6.QtCore import QDateTime, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox, QComboBox, QDateTimeEdit, QDialog, QDialogButtonBox, QFormLayout,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
@@ -9,14 +9,21 @@ from PyQt6.QtWidgets import (
 
 
 class DocumentRequestsDialog(QDialog):
+    """View passiva para solicitações documentais.
+
+    A view coleta dados e emite intenções. Carregamento, permissões e regras de
+    negócio pertencem ao ``DocumentRequestController`` e ao service.
+    """
+
+    create_requested = pyqtSignal(dict)
+    status_update_requested = pyqtSignal(int, str)
     STATUS_LABELS = {
         "OPEN": "Aberta", "IN_PROGRESS": "Em andamento", "COMPLETED": "Concluída",
         "CANCELLED": "Cancelada", "OVERDUE": "Atrasada",
     }
 
-    def __init__(self, service, organization_id: int, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.service = service; self.organization_id = organization_id
         self.setWindowTitle("Solicitações de documentos")
         self.resize(760, 560)
         root = QVBoxLayout(self)
@@ -30,16 +37,10 @@ class DocumentRequestsDialog(QDialog):
         self.title = QLineEdit(); self.description = QTextEdit(); self.description.setMaximumHeight(70)
         self.assignee = QComboBox(); self.assignee.addItem("Sem responsável", None)
         self._assignee_names = {}
-        for user in self.service.list_assignable_members(organization_id):
-            self.assignee.addItem(user.display_name, user.id)
-            self._assignee_names[user.id] = user.display_name
         self.use_due = QCheckBox("Definir prazo")
         self.due = QDateTimeEdit(QDateTime.currentDateTime().addDays(7))
         self.due.setCalendarPopup(True); self.due.setDisplayFormat("dd/MM/yyyy HH:mm")
-        deadline_enabled = self.service.deadline_enabled(organization_id)
-        self.use_due.setEnabled(deadline_enabled)
-        self.use_due.setChecked(deadline_enabled)
-        self.due.setEnabled(deadline_enabled)
+        self.set_deadline_enabled(False)
         self.use_due.toggled.connect(self.due.setEnabled)
         form.addRow("Documento solicitado:", self.title)
         form.addRow("Descrição:", self.description)
@@ -51,18 +52,14 @@ class DocumentRequestsDialog(QDialog):
         self.status = QComboBox()
         for code, label in self.STATUS_LABELS.items(): self.status.addItem(label, code)
         self.update_button = QPushButton("Atualizar estado"); self.update_button.clicked.connect(self._update_status)
-        self.create_button.setEnabled(self.service.can_create())
-        self.update_button.setEnabled(self.service.can_update())
-        self.status.setEnabled(self.service.can_update())
+        self.set_permissions(can_create=False, can_update=False)
         actions.addWidget(self.create_button); actions.addStretch(); actions.addWidget(self.status); actions.addWidget(self.update_button)
         root.addLayout(actions)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject); root.addWidget(buttons)
-        self._refresh()
-
-    def _refresh(self) -> None:
+    def set_requests(self, requests) -> None:
         self.list.clear()
-        for request in self.service.list_requests(self.organization_id):
+        for request in requests:
             due = request.due_at[:16].replace("T", " ") if request.due_at else "sem prazo"
             assignee = self._assignee_names.get(request.assigned_to_user_id, "sem responsável")
             item = QListWidgetItem(
@@ -71,28 +68,52 @@ class DocumentRequestsDialog(QDialog):
             )
             item.setData(256, request.id); item.setData(257, request.status); self.list.addItem(item)
 
+    def set_assignable_members(self, users) -> None:
+        selected = self.assignee.currentData()
+        self.assignee.clear()
+        self.assignee.addItem("Sem responsável", None)
+        self._assignee_names = {}
+        for user in users:
+            self.assignee.addItem(user.display_name, user.id)
+            self._assignee_names[user.id] = user.display_name
+        index = self.assignee.findData(selected)
+        if index >= 0:
+            self.assignee.setCurrentIndex(index)
+
+    def set_permissions(self, *, can_create: bool, can_update: bool) -> None:
+        self.create_button.setEnabled(can_create)
+        self.update_button.setEnabled(can_update)
+        self.status.setEnabled(can_update)
+
+    def set_deadline_enabled(self, enabled: bool) -> None:
+        self.use_due.setEnabled(enabled)
+        self.use_due.setChecked(enabled)
+        self.due.setEnabled(enabled)
+
+    def clear_create_form(self) -> None:
+        self.title.clear()
+        self.description.clear()
+
+    def show_error(self, message: str) -> None:
+        QMessageBox.warning(self, "Solicitações", message)
+
     def _create(self) -> None:
-        try:
-            self.service.create(
-                self.organization_id, self.title.text(), self.description.toPlainText(),
-                assigned_to_user_id=self.assignee.currentData(),
-                due_at=(
+        self.create_requested.emit({
+            "title": self.title.text(),
+            "description": self.description.toPlainText(),
+            "assigned_to_user_id": self.assignee.currentData(),
+            "due_at": (
                     self.due.dateTime().toPyDateTime().astimezone().isoformat()
                     if self.use_due.isChecked() else None
-                ),
-            )
-            self.title.clear(); self.description.clear(); self._refresh()
-        except Exception as exc:
-            QMessageBox.warning(self, "Solicitações", str(exc))
+            ),
+        })
 
     def _update_status(self) -> None:
         item = self.list.currentItem()
         if item is None: return
-        try:
-            self.service.set_status(self.organization_id, int(item.data(256)), str(self.status.currentData()))
-            self._refresh()
-        except Exception as exc:
-            QMessageBox.warning(self, "Solicitações", str(exc))
+        self.status_update_requested.emit(
+            int(item.data(256)), str(self.status.currentData())
+        )
 
     def _selection_changed(self, current, _previous) -> None:
         if current is None: return

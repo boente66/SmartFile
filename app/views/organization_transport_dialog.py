@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
 
 class OrganizationTransportDialog(QDialog):
     test_requested = pyqtSignal(dict)
+    retry_requested = pyqtSignal()
 
     def __init__(self, settings, summary: dict | None = None, parent=None):
         super().__init__(parent)
@@ -42,7 +43,12 @@ class OrganizationTransportDialog(QDialog):
         self.test_button = buttons.addButton(
             "Testar conexão", QDialogButtonBox.ButtonRole.ActionRole,
         )
+        self.retry_button = buttons.addButton(
+            "Tentar falhas novamente", QDialogButtonBox.ButtonRole.ActionRole,
+        )
+        self.retry_button.setEnabled(bool(summary.get("failed")))
         self.test_button.clicked.connect(lambda: self.test_requested.emit(self.values()))
+        self.retry_button.clicked.connect(self.retry_requested.emit)
         self.save_button = buttons.button(QDialogButtonBox.StandardButton.Save)
         self.mode.currentIndexChanged.connect(self._update_state); self._update_state()
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); root.addWidget(buttons)
@@ -68,6 +74,10 @@ class OrganizationTransportDialog(QDialog):
     def show_test_result(self, success: bool, message: str) -> None:
         prefix = "Conectado" if success else "Falha"
         self.transport_status.setText(f"{prefix}: {message}")
+
+    def show_summary(self, summary: dict) -> None:
+        self.transport_status.setText(self._summary_text(summary))
+        self.retry_button.setEnabled(bool(summary.get("failed")))
 
     @staticmethod
     def _summary_text(summary: dict) -> str:

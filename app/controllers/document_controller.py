@@ -20,33 +20,19 @@ from app.cloud.cloud_oauth_config_service import CloudOAuthConfigService
 from app.cloud.cloud_python_auth_service import CloudPythonAuthService
 from app.views.cloud_api_settings_dialog import CloudApiSettingsDialog
 from app.workers.cloud_auth_worker import CloudAuthWorker
-from app.entities.organization_member_entity import OrganizationMemberEntity
-from app.repositories.organization_member_repository import OrganizationMemberRepository
-from app.services.folder_template_service import FolderTemplateService
 from app.cloud.cloud_models import CloudOAuthState
 from app.errors.cloud_exceptions import CloudConfigurationMissingError, CloudPermissionError
 from app.models.document_search import DocumentSearchFilters
-from app.services.audit_service import AuditService
-from app.services.document_request_service import DocumentRequestService
 from app.services.organization_feature_service import OrganizationFeatureService
-from app.services.organization_transport_service import OrganizationTransportService
-from app.services.organization_admin_service import OrganizationAdminService
-from app.services.corporate_transport_service import CorporateTransportService
 from app.views.document_import_dialog import DocumentImportDialog
-from app.views.document_requests_dialog import DocumentRequestsDialog
-from app.views.organization_transport_dialog import OrganizationTransportDialog
-from app.views.organization_dialog import OrganizationDialog
-from app.views.organization_audit_dialog import OrganizationAuditDialog
-from app.workers.transport_worker import TransportWorker
 
 logger = logging.getLogger(__name__)
 
 
 class DocumentController:
     _active_cloud_workers: dict[tuple[str, int], CloudSyncWorker] = {}
-    _active_transport_workers: dict[tuple[str, int], TransportWorker] = {}
 
-    def __init__(self, workspace, main_view, convert_controller: Optional[ConvertController] = None, pdf_controller: Optional[PDFController] = None, pdf_viewer_controller: Optional[PDFViewerController] = None, session_context=None, document_service=None):
+    def __init__(self, workspace, main_view, convert_controller: Optional[ConvertController] = None, pdf_controller: Optional[PDFController] = None, pdf_viewer_controller: Optional[PDFViewerController] = None, session_context=None, document_service=None, transport_job_notifier=None):
         self.workspace = workspace
         self.main_view = main_view
         self.view = DocumentView()
@@ -55,6 +41,7 @@ class DocumentController:
         self.pdf_controller = pdf_controller
         self.pdf_viewer_controller = pdf_viewer_controller
         self.session_context = session_context
+        self.transport_job_notifier = transport_job_notifier
         self.service.cloud_manager.session_context = session_context
         self._current_search = ""
         self._current_type = "Todos"
@@ -64,19 +51,12 @@ class DocumentController:
         self.feature_service = OrganizationFeatureService(self.service.database, session_context)
         self._cloud_worker = None
         self._cloud_auth_worker = None
-        self._transport_worker = None
         self._retry_sync_after_reauthentication: tuple[str, int] | None = None
         self._copied_document_id = None
         self._cloud_timer = QTimer(self.view)
         self._cloud_timer.setInterval(60_000)
         self._cloud_timer.timeout.connect(self._auto_sync)
         self._cloud_timer.start()
-        self._transport_timer = QTimer(self.view)
-        self._transport_timer.setInterval(60_000)
-        self._transport_timer.timeout.connect(self._auto_transport)
-        self._transport_timer.start()
-        self.view.destroyed.connect(self._cancel_transport_worker)
-
         self._connect_signals()
         self._register_view()
 
@@ -91,10 +71,6 @@ class DocumentController:
         self.view.delete_requested.connect(self.on_delete_document)
         self.view.favorite_requested.connect(self.on_toggle_favorite)
         self.view.document_selected.connect(self.on_document_selected)
-        self.view.organization_changed.connect(self.on_organization_changed)
-        self.view.create_organization_requested.connect(self.on_create_organization)
-        self.view.edit_organization_requested.connect(self.on_edit_organization)
-        self.view.delete_organization_requested.connect(self.on_delete_organization)
         self.view.folder_selected.connect(self.on_folder_selected)
         self.view.create_folder_requested.connect(self.on_create_folder)
         self.view.rename_folder_requested.connect(self.on_rename_folder)
@@ -122,9 +98,6 @@ class DocumentController:
         self.view.change_storage_plan_requested.connect(self.on_change_storage_plan)
         self.view.rename_document_requested.connect(self.on_rename_document)
         self.view.smart_filters_changed.connect(self.on_smart_filters_changed)
-        self.view.configure_transport_requested.connect(self.on_configure_transport)
-        self.view.document_requests_requested.connect(self.on_document_requests)
-        self.view.audit_history_requested.connect(self.on_audit_history)
 
     def _register_view(self):
         self.workspace.register_view("documents", self.view)
@@ -132,13 +105,19 @@ class DocumentController:
     def activate(self):
         self.main_view.sidebar.hide()
         self.workspace.show_view("documents")
+        self.refresh_organization_state(reset_folder=False)
+        self._notify_transport_jobs()
+
+    def refresh_organization_state(self, *, reset_folder: bool = True) -> None:
+        """Atualiza a apresentação após mudança administrativa da organização."""
+        if reset_folder:
+            self._current_folder_id = None
         self._refresh_organizations()
         self.view.apply_cloud_permissions(self.session_context)
         self._apply_profile_features()
         self._refresh_folders()
         self._refresh_cloud()
         self.on_refresh_documents()
-        self._auto_transport()
 
     def on_import_document(self):
         try:
@@ -168,7 +147,7 @@ class DocumentController:
             self.view.set_status(f"{imported} documento(s) adicionado(s) com sucesso")
             self._refresh_folders(); self.on_refresh_documents()
             self._auto_sync()
-            self._auto_transport()
+            self._notify_transport_jobs()
         if errors:
             QMessageBox.warning(
                 self.view, "Importação concluída com avisos", "\n".join(errors[:10]),
@@ -205,122 +184,6 @@ class DocumentController:
     def on_document_selected(self, document_id: int):
         document = self.service.get_document(document_id)
         self.view.show_document_details(document)
-
-    def on_organization_changed(self, organization_id: int):
-        try:
-            organization = self.service.set_active_organization(organization_id)
-            if self.session_context:
-                self.session_context.set_active_organization(organization)
-            self._current_folder_id = None
-            self._refresh_folders()
-            self._refresh_cloud()
-            self._apply_profile_features()
-            self._refresh_documents()
-            self.view.set_status(f"Organização ativa: {organization.name}")
-        except Exception as exc:
-            QMessageBox.warning(self.view, "Organizações", str(exc))
-
-    def on_create_organization(self):
-        name, accepted = QInputDialog.getText(self.view, "Nova organização", "Nome:")
-        if not accepted:
-            return
-        template_name, template_accepted = QInputDialog.getItem(
-            self.view, "Modelo inicial", "Estrutura de pastas:",
-            ["Pessoal", "Estudante", "Empresarial", "Começar vazio"], 3, False,
-        )
-        if not template_accepted:
-            return
-        template_code = {
-            "Pessoal": "PERSONAL", "Estudante": "STUDENT",
-            "Empresarial": "BUSINESS", "Começar vazio": "EMPTY",
-        }[template_name]
-        plan_name, plan_accepted = QInputDialog.getItem(
-            self.view, "Plano de armazenamento", "Cota lógica:",
-            ["Pessoal — 10 GB", "Estudante — 20 GB", "Empresarial — 60 GB"],
-            {"PERSONAL": 0, "STUDENT": 1, "BUSINESS": 2, "EMPTY": 0}[template_code], False,
-        )
-        if not plan_accepted:
-            return
-        plan_code = {
-            "Pessoal — 10 GB": "PERSONAL_10GB", "Estudante — 20 GB": "STUDENT_20GB",
-            "Empresarial — 60 GB": "BUSINESS_60GB",
-        }[plan_name]
-        try:
-            with self.service.database.transaction():
-                organization = self.service.organization_service.create(
-                    name, template_code=template_code, storage_plan_code=plan_code
-                )
-                FolderTemplateService(self.service.folder_service).create_template_folders(
-                    organization.id, template_code
-                )
-                if self.session_context and self.session_context.current_user:
-                    now = self.service._now()
-                    membership = OrganizationMemberRepository(database=self.service.database).create(
-                        OrganizationMemberEntity(
-                            organization_id=organization.id,
-                            user_id=self.session_context.current_user.id,
-                            role="OWNER", created_at=now, updated_at=now,
-                        )
-                    )
-                    self.session_context.memberships.append(membership)
-                    OrganizationFeatureService(self.service.database).initialize_defaults(
-                        organization, user_id=self.session_context.current_user.id,
-                    )
-            self.service.set_active_organization(organization.id)
-            if self.session_context:
-                self.session_context.set_active_organization(organization)
-            self._current_folder_id = None
-            self._refresh_organizations()
-            self._refresh_folders()
-            self._refresh_cloud()
-            self._refresh_documents()
-        except Exception as exc:
-            QMessageBox.warning(self.view, "Organizações", str(exc))
-
-    def on_edit_organization(self):
-        organization = self.service.organization_service.active()
-        dialog = OrganizationDialog(
-            self.view, organization, show_template=False,
-            enabled_features=self.feature_service.for_organization(organization).codes,
-        )
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-        values = dialog.values()
-        try:
-            if self.session_context is None:
-                raise PermissionError("Sessão administrativa indisponível.")
-            updated = OrganizationAdminService(
-                self.service.database, self.session_context,
-            ).update(
-                organization.id, values["name"], values["description"],
-                values["icon"], values["color"], values["profile_code"],
-                values["enabled_features"],
-            )
-            self.session_context.set_active_organization(updated)
-            self._refresh_organizations()
-            self._refresh_folders()
-            self._apply_profile_features()
-            self.view.set_status(f"Perfil de recursos atualizado: {updated.profile_code}")
-        except Exception as exc:
-            QMessageBox.warning(self.view, "Organizações", str(exc))
-
-    def on_delete_organization(self):
-        organization = self.service.organization_service.active()
-        answer = QMessageBox.question(
-            self.view,
-            "Excluir organização",
-            f"Deseja excluir a organização ‘{organization.name}’? Os arquivos internos não serão apagados.",
-        )
-        if answer != QMessageBox.StandardButton.Yes:
-            return
-        try:
-            self.service.organization_service.delete(organization.id)
-            self._current_folder_id = None
-            self._refresh_organizations()
-            self._refresh_folders()
-            self._refresh_documents()
-        except Exception as exc:
-            QMessageBox.warning(self.view, "Organizações", str(exc))
 
     def on_folder_selected(self, folder_id):
         self._current_folder_id = int(folder_id) if folder_id is not None else None
@@ -645,89 +508,10 @@ class DocumentController:
         )
         return database_name, organization_id
 
-    def _auto_transport(self) -> None:
-        organization_id = self.service.active_organization_id
-        corporate = self.service.corporate_transport_service
-        if not corporate.queue.next_pending(organization_id):
-            return
-        worker_key = self._cloud_worker_key(organization_id)
-        active = self._active_transport_workers.get(worker_key)
-        if self._transport_worker is not None or (active is not None and active.isRunning()):
-            return
-        if active is not None:
-            self._active_transport_workers.pop(worker_key, None)
-        worker = TransportWorker(
-            lambda progress, cancelled: corporate.process_pending(
-                organization_id, progress, cancelled,
-            )
-        )
-        self._transport_worker = worker
-        self._active_transport_workers[worker_key] = worker
-        worker.progress.connect(
-            lambda value, message: self.view.set_status(f"{message} {value}%")
-        )
-        worker.succeeded.connect(self._on_transport_succeeded)
-        worker.failed.connect(self._on_transport_failed)
-        worker.finished.connect(
-            lambda worker=worker, organization_id=organization_id:
-            self._cleanup_transport_worker(worker, organization_id)
-        )
-        worker.finished.connect(worker.deleteLater)
-        worker.start()
-
-    def _on_transport_succeeded(self, summary: dict) -> None:
-        if summary.get("jobs"):
-            self.view.set_status(
-                "Transporte NAS: "
-                f"{summary.get('completed', 0)} concluído(s), "
-                f"{summary.get('retry', 0)} aguardando nova tentativa, "
-                f"{summary.get('failed', 0)} falha(s)."
-            )
-
-    def _on_transport_failed(self, message: str) -> None:
-        logger.error("corporate.transport.ui.failed message=%s", message)
-        self.view.set_status(f"Falha no transporte corporativo: {message}")
-
-    def _cleanup_transport_worker(
-        self, worker: TransportWorker, organization_id: int,
-    ) -> None:
-        if self._transport_worker is worker:
-            self._transport_worker = None
-        key = self._cloud_worker_key(organization_id)
-        if self._active_transport_workers.get(key) is worker:
-            self._active_transport_workers.pop(key, None)
-
-    def _cancel_transport_worker(self) -> None:
-        if self._transport_worker is not None and self._transport_worker.isRunning():
-            self._transport_worker.requestInterruption()
-
-    def _test_transport_connection(
-        self, service: OrganizationTransportService,
-        dialog: OrganizationTransportDialog,
-        organization_id: int,
-        values: dict,
-    ) -> None:
-        if self._transport_worker is not None:
-            dialog.show_test_result(False, "Aguarde o transporte em andamento.")
-            return
-        dialog.set_test_busy(True)
-        worker = TransportWorker(
-            lambda _progress, _cancelled: service.test_connection(
-                organization_id, values["mode"], values["endpoint"],
-            )
-        )
-        self._transport_worker = worker
-        worker.succeeded.connect(
-            lambda result: dialog.show_test_result(result.success, result.message)
-        )
-        worker.failed.connect(lambda message: dialog.show_test_result(False, message))
-        worker.finished.connect(lambda: dialog.set_test_busy(False))
-        worker.finished.connect(
-            lambda worker=worker, organization_id=organization_id:
-            self._cleanup_transport_worker(worker, organization_id)
-        )
-        worker.finished.connect(worker.deleteLater)
-        worker.start()
+    def _notify_transport_jobs(self) -> None:
+        """Notifica a camada de aplicação sem executar o motor de transporte."""
+        if self.transport_job_notifier is not None:
+            self.transport_job_notifier(self.service.active_organization_id)
 
     def on_copy_document(self,document_id):
         try:
@@ -738,7 +522,7 @@ class DocumentController:
         if self._copied_document_id is None: QMessageBox.information(self.view,"Colar","Nenhum documento foi copiado."); return
         try:
             if self.session_context:self.session_context.require_permission("document.create")
-            self.service.copy_document(self._copied_document_id,self._current_folder_id); self._refresh_documents(); self.view.set_status("Cópia criada com sucesso"); self._auto_transport()
+            self.service.copy_document(self._copied_document_id,self._current_folder_id); self._refresh_documents(); self.view.set_status("Cópia criada com sucesso"); self._notify_transport_jobs()
         except Exception as exc:QMessageBox.warning(self.view,"Colar",str(exc))
     def on_rename_document(self, document_id: int):
         document = self.service.get_document(document_id)
@@ -758,60 +542,16 @@ class DocumentController:
         except Exception as exc:
             QMessageBox.warning(self.view, "Renomear documento", str(exc))
 
-    def on_configure_transport(self):
-        if self.session_context is None:
-            QMessageBox.warning(self.view, "Transporte", "Sessão de usuário indisponível.")
-            return
-        try:
-            organization_id = self.service.active_organization_id
-            service = OrganizationTransportService(self.service.database, self.session_context)
-            dialog = OrganizationTransportDialog(
-                service.get(organization_id), service.summary(organization_id), self.view,
-            )
-            dialog.test_requested.connect(
-                lambda values: self._test_transport_connection(
-                    service, dialog, organization_id, values,
-                )
-            )
-            if dialog.exec() == QDialog.DialogCode.Accepted:
-                service.configure(organization_id, **dialog.values())
-                self.view.set_status("Configuração de transporte atualizada")
-                self._auto_transport()
-        except Exception as exc:
-            QMessageBox.warning(self.view, "Transporte empresarial", str(exc))
-
-    def on_document_requests(self):
-        if self.session_context is None:
-            QMessageBox.warning(self.view, "Solicitações", "Sessão de usuário indisponível.")
-            return
-        try:
-            service = DocumentRequestService(self.service.database, self.session_context)
-            DocumentRequestsDialog(
-                service, self.service.active_organization_id, self.view,
-            ).exec()
-        except Exception as exc:
-            QMessageBox.warning(self.view, "Solicitações", str(exc))
-
-    def on_audit_history(self):
-        try:
-            if self.session_context:
-                self.session_context.require_permission("audit.view")
-            rows = AuditService(self.service.database).list_for_organization(
-                self.service.active_organization_id, 50,
-            )
-            OrganizationAuditDialog(rows, self.view).exec()
-        except Exception as exc:
-            QMessageBox.warning(self.view, "Histórico", str(exc))
     def on_restore_document(self,document_id):
         try:self.service.restore_document(document_id); self._refresh_documents(); self.view.set_status("Documento restaurado")
         except Exception as exc:QMessageBox.warning(self.view,"Lixeira",str(exc))
     def on_permanent_delete_document(self,document_id):
         if QMessageBox.question(self.view,"Excluir definitivamente","Esta ação não pode ser desfeita. Continuar?")!=QMessageBox.StandardButton.Yes:return
-        try:self.service.permanently_delete_document(document_id); self._refresh_documents(); self._auto_transport()
+        try:self.service.permanently_delete_document(document_id); self._refresh_documents(); self._notify_transport_jobs()
         except Exception as exc:QMessageBox.warning(self.view,"Lixeira",str(exc))
     def on_empty_trash(self):
         if QMessageBox.question(self.view,"Esvaziar lixeira","Excluir definitivamente todos os documentos da lixeira?")!=QMessageBox.StandardButton.Yes:return
-        try:count=self.service.empty_trash(); self._refresh_documents(); self.view.set_status(f"Lixeira esvaziada: {count} documento(s)"); self._auto_transport()
+        try:count=self.service.empty_trash(); self._refresh_documents(); self.view.set_status(f"Lixeira esvaziada: {count} documento(s)"); self._notify_transport_jobs()
         except Exception as exc:QMessageBox.warning(self.view,"Lixeira",str(exc))
 
     def on_recalculate_storage(self):

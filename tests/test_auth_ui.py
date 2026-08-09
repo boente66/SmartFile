@@ -147,6 +147,12 @@ def test_authenticated_app_keeps_existing_modules_registered(tmp_path: Path):
     auth = AuthController(app, database); auth.service.register_first_user(_request())
     main = MainView(); controller = AppController(main, auth.session_context, database); controller.start()
     assert {"documents", "converter", "pdf", "pdf_viewer", "scanner"} <= set(main.workspace.list_views())
+    assert controller.document_controller.service.database is database
+    assert controller.document_request_controller is not None
+    assert controller.transport_controller is not None
+    assert controller.transport_coordinator is not None
+    assert controller.organization_settings_controller is not None
+    controller.shutdown()
     main.close()
 
 

@@ -134,6 +134,8 @@ class AuthController:
         self.account_controller=AccountController(self.main_view,self.service,self.app_controller,self.logout); self.main_view.show()
 
     def logout(self):
+        if self.app_controller:
+            self.app_controller.shutdown()
         self.service.logout()
         if self.main_view: self.main_view.close(); self.main_view=None
         self.app_controller=None; self.account_controller=None
