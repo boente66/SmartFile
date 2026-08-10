@@ -21,13 +21,17 @@ Versão beta publicada em 7 de agosto de 2026 para avaliação técnica.
 - retry limitado e recuperação quando o NAS volta a ficar disponível;
 - exclusão NAS somente após exclusão definitiva no SmartFile;
 - teste administrativo de conexão e auditoria de sucesso ou falha;
-- migration 16, sem alteração do número público `0.9.0-beta.2`.
+- snapshots imutáveis de destino para preservar retries e DELETEs após troca de NAS;
+- reconciliation conservadora para jobs históricos sem destino comprovável;
+- Credential Vault via keyring do sistema operacional, sem segredo no SQLite;
+- migration 17, sem alteração do número público `0.9.0-beta.2`.
 
 ## Segurança e compatibilidade
 
-Credenciais não podem ser incluídas na URL do transporte. O campo reservado
-`credential_ref` prepara integração futura com um cofre seguro, sem armazenar
-segredos na configuração do destino. O NAS funciona como filesystem previamente
+Credenciais não podem ser incluídas na URL do transporte. `credential_ref`
+aponta para o cofre do sistema operacional e o banco não armazena username ou
+senha. Rotação cria nova referência e preserva a anterior enquanto houver job ou
+arquivo remoto dependente. O NAS funciona como filesystem previamente
 montado ou compartilhamento UNC acessível pelo sistema operacional. O SmartFile
 não monta o compartilhamento. LAN e HTTPS não fingem transferência: seus
 conectores físicos permanecem para uma etapa futura.

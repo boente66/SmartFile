@@ -10,11 +10,13 @@ from app.errors.transport_exceptions import (
     TransportCancelledError,
     TransportConfigurationError,
     TransportModeNotImplementedError,
+    TransportReconciliationError,
     TransportRetryableError,
 )
 from app.repositories.document_repository import DocumentRepository
 from app.repositories.organization_repository import OrganizationRepository
 from app.repositories.organization_transport_repository import OrganizationTransportRepository
+from app.repositories.transport_target_repository import TransportTargetRepository
 from app.services.audit_service import AuditService
 from app.services.document_storage_service import DocumentStorageService
 from app.services.organization_feature_service import OrganizationFeatureService
@@ -22,7 +24,6 @@ from app.transport.nas_transport_adapter import NASTransportAdapter
 from app.transport.transport_job_queue import TransportJobQueue
 from app.transport.transport_models import (
     TransportJob,
-    TransportJobStatus,
     TransportOperation,
     TransportResult,
     TransportUploadRequest,
@@ -41,6 +42,7 @@ class CorporateTransportService:
         self.documents = DocumentRepository(database=database)
         self.organizations = OrganizationRepository(database=database)
         self.settings = OrganizationTransportRepository(database=database)
+        self.targets = TransportTargetRepository(database=database)
         self.features = OrganizationFeatureService(database)
         self.queue = TransportJobQueue(database)
         self.audit = AuditService(database)
@@ -65,7 +67,8 @@ class CorporateTransportService:
         existing = self.queue.repository.find_active(
             organization_id, document_id, str(TransportOperation.UPLOAD),
         )
-        job = self.queue.enqueue_upload(organization_id, document_id)
+        target = self._current_target(organization_id)
+        job = self.queue.enqueue_upload(organization_id, document_id, target.id)
         if existing is None:
             self._audit(
                 "TRANSPORT_JOB_CREATED", job, actor_user_id,
@@ -89,6 +92,11 @@ class CorporateTransportService:
         )
         job = self.queue.enqueue_delete(
             organization_id, document_id, uploaded.remote_path,
+            uploaded.transport_target_id,
+            needs_reconciliation=(
+                uploaded.transport_target_id is None
+                or uploaded.reconciliation_status != "RESOLVED"
+            ),
         )
         if existing is None:
             self._audit(
@@ -96,6 +104,11 @@ class CorporateTransportService:
                 "Exclusão NAS adicionada à fila.",
             )
             self._log(job, "created")
+            if job.reconciliation_status != "RESOLVED":
+                self._audit(
+                    "TRANSPORT_RECONCILIATION_REQUIRED", job, actor_user_id,
+                    "O destino histórico do DELETE não pôde ser comprovado.",
+                )
         return job
 
     def is_nas_enabled(self, organization_id: int) -> bool:
@@ -107,7 +120,19 @@ class CorporateTransportService:
         if not self.features.for_organization(organization).has("server_transport"):
             return False
         setting = self.settings.get(organization_id)
-        return bool(setting.enabled and setting.mode == "NAS" and setting.endpoint)
+        if not (
+            setting.enabled and setting.mode == "NAS"
+            and setting.endpoint and setting.current_target_id
+        ):
+            return False
+        target = self.targets.find_by_id(
+            setting.current_target_id, organization_id
+        )
+        return bool(target and target.status == "ACTIVE" and target.mode == "NAS")
+
+    def automatic_processing_enabled(self, organization_id: int) -> bool:
+        """Desativação/LOCAL preserva a fila sem executá-la automaticamente."""
+        return self.is_nas_enabled(organization_id)
 
     def process_next(
         self, organization_id: int,
@@ -159,6 +184,13 @@ class CorporateTransportService:
         cancellation_requested: Callable[[], bool] | None = None,
     ) -> TransportJob:
         job = self.queue.get(job_id)
+        if (
+            job.reconciliation_status != "RESOLVED"
+            or job.transport_target_id is None
+        ):
+            raise TransportReconciliationError(
+                "O job exige reconciliation antes de acessar um destino físico."
+            )
         if not self.queue.repository.mark_running(job_id):
             return self.queue.get(job_id)
         job = self.queue.get(job_id)
@@ -266,6 +298,10 @@ class CorporateTransportService:
     def summary(self, organization_id: int) -> dict:
         setting = self.settings.get(organization_id)
         counts = self.queue.repository.counts(organization_id)
+        current_target = (
+            self.targets.find_by_id(setting.current_target_id, organization_id)
+            if setting.current_target_id else None
+        )
         last = self.database.fetch_one(
             """
             SELECT description, created_at FROM audit_log
@@ -277,6 +313,17 @@ class CorporateTransportService:
         return {
             "mode": setting.mode,
             "enabled": setting.enabled,
+            "current_target_id": setting.current_target_id,
+            "current_target_status": (
+                current_target.status if current_target else None
+            ),
+            "retired_target_jobs": self.targets.count_pending_for_retired(
+                organization_id
+            ),
+            "reconciliation_required": (
+                self.queue.repository.reconciliation_count(organization_id)
+            ),
+            "credential_configured": bool(setting.credential_ref),
             "last_test_at": last["created_at"] if last else None,
             "last_test_message": last["description"] if last else None,
             **counts,
@@ -287,10 +334,6 @@ class CorporateTransportService:
         progress_callback: Callable[[int, str], None] | None,
         cancellation_requested: Callable[[], bool] | None,
     ) -> TransportResult:
-        if not self.is_nas_enabled(job.organization_id):
-            raise TransportConfigurationError(
-                "O transporte NAS não está habilitado para a organização."
-            )
         document = self.documents.find_by_id(job.document_id, job.organization_id)
         if document is None or document.status != "ACTIVE":
             raise TransportConfigurationError("Documento local não encontrado.")
@@ -316,11 +359,90 @@ class CorporateTransportService:
         organization = self.organizations.find_by_id(job.organization_id)
         if organization is None or organization.status != "ACTIVE":
             raise TransportConfigurationError("Organização do job não encontrada.")
-        setting = self.settings.get(job.organization_id)
+        if job.transport_target_id is None:
+            raise TransportReconciliationError("Job sem destino físico identificado.")
+        target = self.targets.find_by_id(
+            job.transport_target_id, job.organization_id
+        )
+        if target is None:
+            raise TransportReconciliationError(
+                "O destino histórico do job não está disponível."
+            )
         return self._adapter(
-            job.transport_mode, setting.endpoint,
+            target.mode, target.endpoint,
             self._organization_segment(organization),
         )
+
+    def cancel_reconciliation(
+        self, organization_id: int, job_id: int,
+        *, actor_user_id: int | None = None,
+    ) -> bool:
+        job = self.queue.get(job_id)
+        if job.organization_id != organization_id:
+            raise TransportConfigurationError("Job não pertence à organização.")
+        if job.reconciliation_status != "NEEDS_RECONCILIATION":
+            raise TransportConfigurationError("O job não exige reconciliation.")
+        changed = self.queue.repository.cancel(
+            job_id, "Operação cancelada durante reconciliation administrativa."
+        )
+        if changed:
+            self._audit(
+                "TRANSPORT_RECONCILIATION_CANCELLED", job, actor_user_id,
+                "Operação histórica cancelada pelo administrador.",
+            )
+        return changed
+
+    def recreate_upload_for_current_target(
+        self, organization_id: int, job_id: int,
+        *, actor_user_id: int | None = None,
+    ) -> TransportJob:
+        original = self.queue.get(job_id)
+        if original.organization_id != organization_id:
+            raise TransportConfigurationError("Job não pertence à organização.")
+        if original.operation != TransportOperation.UPLOAD:
+            raise TransportConfigurationError(
+                "Somente uploads podem ser recriados para o destino atual."
+            )
+        if original.reconciliation_status != "NEEDS_RECONCILIATION":
+            raise TransportConfigurationError(
+                "O upload não exige reconciliation administrativa."
+            )
+        document = self.documents.find_by_id(original.document_id, organization_id)
+        if document is None or document.status != "ACTIVE":
+            raise TransportConfigurationError("Documento local não está disponível.")
+        target = self._current_target(organization_id)
+        with self.database.transaction():
+            if not self.queue.repository.cancel(
+                original.id,
+                "Job substituído explicitamente durante reconciliation.",
+            ):
+                raise TransportConfigurationError(
+                    "O job não pode mais ser recriado."
+                )
+            replacement = self.queue.enqueue_upload(
+                organization_id, original.document_id, target.id
+            )
+            self._audit(
+                "TRANSPORT_RECONCILIATION_RECREATED", replacement,
+                actor_user_id,
+                "Upload recriado explicitamente para o destino atual.",
+            )
+        return replacement
+
+    def _current_target(self, organization_id: int):
+        setting = self.settings.get(organization_id)
+        if not setting.current_target_id:
+            raise TransportConfigurationError(
+                "Nenhum destino de transporte ativo foi configurado."
+            )
+        target = self.targets.find_by_id(
+            setting.current_target_id, organization_id
+        )
+        if target is None or target.status != "ACTIVE":
+            raise TransportConfigurationError(
+                "O destino atual de transporte não está disponível."
+            )
+        return target
 
     @staticmethod
     def _adapter(mode: str, endpoint: str | None, organization_segment: str):
@@ -372,7 +494,8 @@ class CorporateTransportService:
     def _log(job: TransportJob, event: str) -> None:
         logger.info(
             "corporate.transport.job.%s organization_id=%s document_id=%s "
-            "job_id=%s mode=%s operation=%s status=%s attempt=%s",
+            "job_id=%s target_id=%s mode=%s operation=%s status=%s attempt=%s",
             event, job.organization_id, job.document_id, job.id,
-            job.transport_mode, job.operation, job.status, job.attempts,
+            job.transport_target_id, job.transport_mode, job.operation,
+            job.status, job.attempts,
         )

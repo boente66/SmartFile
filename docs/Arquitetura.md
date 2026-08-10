@@ -63,13 +63,37 @@ CorporateTransportCoordinator
         ↓
 TransportWorker
         ↓
-CorporateTransportService → TransportJobQueue → NASTransportAdapter
+CorporateTransportService → TransportJobQueue → TransportTarget → NASTransportAdapter
 ```
 
 O coordinator inicia com a sessão autenticada, consulta jobs sem depender da
 tela Documentos, impede dois workers para o mesmo banco e organização, cancela
 com segurança na troca de organização e solicita interrupção no logout/encerramento.
 Resultados chegam à UI apenas por sinais Qt.
+
+Cada job conserva a identidade imutável do destino físico usado na sua criação:
+
+```text
+OrganizationTransportSettings ── current_target_id ──► Target B (ACTIVE)
+TransportJob antigo            ─ transport_target_id ► Target A (RETIRED)
+TransportJob novo              ─ transport_target_id ► Target B (ACTIVE)
+```
+
+Um job sem identidade comprovada recebe `NEEDS_RECONCILIATION` e não chega ao
+adapter. O fluxo administrativo pode cancelar o job ou recriar um upload como
+novo job no target atual; o registro original nunca é reescrito silenciosamente.
+
+Credenciais de transporte seguem um fluxo separado da Cloud Layer:
+
+```text
+OrganizationTransportDialog
+        ↓ campos transitórios
+OrganizationTransportService
+        ↓
+CredentialVaultService → CredentialProvider → keyring do sistema operacional
+        │
+        └── SQLite recebe somente credential_ref opaca
+```
 
 ## Persistência local
 

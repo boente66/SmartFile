@@ -75,6 +75,8 @@ class CorporateTransportController(QObject):
             self.configuration_saved.emit(self._organization_id)
         except Exception as exc:
             self._report_failure(exc)
+        finally:
+            self.dialog.clear_credentials()
 
     def test_connection(self, values: dict):
         if self.dialog is None or self._organization_id is None:

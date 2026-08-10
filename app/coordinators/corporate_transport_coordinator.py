@@ -68,6 +68,12 @@ class CorporateTransportCoordinator(QObject):
         if active is not None:
             self._active_workers.pop(key, None)
         try:
+            if not self.service.automatic_processing_enabled(target_id):
+                logger.info(
+                    "corporate.transport.coordinator.paused organization_id=%s",
+                    target_id,
+                )
+                return False
             if self.service.queue.next_pending(target_id) is None:
                 return False
         except Exception as exc:

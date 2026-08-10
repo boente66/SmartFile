@@ -123,6 +123,7 @@ class _TransportService:
         return {
             "mode": "NAS", "enabled": True, "pending": 1,
             "failed": self.retry_count, "last_test_message": None,
+            "credential_configured": True,
         }
 
     def configure(self, organization_id, **values):
@@ -148,6 +149,9 @@ def test_transport_controller_opens_saves_tests_and_loads_summary():
     )
     dialog = controller.open_configuration(modal=False)
     assert "Jobs pendentes: 1" in dialog.transport_status.text()
+    assert "Credencial configurada" in dialog.credential_status.text()
+    assert dialog.credential_password.echoMode() == dialog.credential_password.EchoMode.Password
+    assert not dialog.credential_username.text() and not dialog.credential_password.text()
 
     worker = controller.test_connection(dialog.values())
     assert worker.wait(3_000)
@@ -155,8 +159,12 @@ def test_transport_controller_opens_saves_tests_and_loads_summary():
     assert service.tests == [(7, "NAS", "/tmp/nas")]
     assert "Conectado" in dialog.transport_status.text()
 
+    dialog.credential_username.setText("usuario")
+    dialog.credential_password.setText("segredo-transitorio")
     dialog.accept()
     assert service.configured and service.configured[0][0] == 7
+    assert service.configured[0][1]["credential_password"] == "segredo-transitorio"
+    assert not dialog.credential_username.text() and not dialog.credential_password.text()
 
 
 def test_transport_controller_reports_configuration_error_and_retries():
@@ -192,6 +200,9 @@ class _CorporateService:
         self.processed.append(organization_id)
         progress(100, "Concluído")
         return {"jobs": 1, "completed": 1, "retry": 0, "failed": 0}
+
+    def automatic_processing_enabled(self, _organization_id):
+        return True
 
 
 class _ControlledWorker(QObject):

@@ -11,5 +11,6 @@ class OrganizationTransportEntity:
     enabled: bool = False
     verify_tls: bool = True
     credential_ref: str | None = None
+    current_target_id: int | None = None
     updated_by_user_id: int | None = None
     updated_at: str = ""

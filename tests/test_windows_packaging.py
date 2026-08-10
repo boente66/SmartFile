@@ -33,6 +33,8 @@ def test_windows_pyinstaller_spec_is_onedir_and_bundles_required_resources():
     assert '"schema.sql"' in spec
     assert '"app.ico"' in spec
     assert '"sane"' in spec
+    assert '"keyring.backends.Windows"' in spec
+    assert '"keyring"' in spec
     assert (ROOT / "assets/icons/app.ico").is_file()
 
 

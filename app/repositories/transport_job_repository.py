@@ -20,13 +20,15 @@ class TransportJobRepository(BaseRepository):
             """
             INSERT INTO transport_jobs (
                 organization_id, document_id, operation, transport_mode,
+                transport_target_id, reconciliation_status,
                 status, attempts, last_error, remote_path,
                 created_at, updated_at, completed_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 job.organization_id, job.document_id, str(job.operation),
-                job.transport_mode, str(job.status), job.attempts,
+                job.transport_mode, job.transport_target_id,
+                str(job.reconciliation_status), str(job.status), job.attempts,
                 job.last_error, job.remote_path, job.created_at,
                 job.updated_at, job.completed_at,
             ),
@@ -73,6 +75,7 @@ class TransportJobRepository(BaseRepository):
                 """
                 SELECT * FROM transport_jobs
                 WHERE organization_id=? AND status IN ('PENDING','RETRY')
+                  AND reconciliation_status='RESOLVED'
                 ORDER BY attempts, created_at, id LIMIT ?
                 """,
                 (organization_id, max(1, min(int(limit), 1000))),
@@ -83,12 +86,42 @@ class TransportJobRepository(BaseRepository):
         rows = self.list_pending(organization_id, 1)
         return rows[0] if rows else None
 
+    def list_reconciliation_required(
+        self, organization_id: int, limit: int = 100,
+    ) -> list[TransportJob]:
+        return [
+            self._entity(row) for row in self._fetch_all(
+                """
+                SELECT * FROM transport_jobs
+                WHERE organization_id=?
+                  AND reconciliation_status='NEEDS_RECONCILIATION'
+                  AND status IN ('PENDING','RETRY','FAILED')
+                ORDER BY created_at, id LIMIT ?
+                """,
+                (organization_id, max(1, min(int(limit), 1000))),
+            )
+        ]
+
+    def reconciliation_count(self, organization_id: int) -> int:
+        row = self._fetch_one(
+            """
+            SELECT COUNT(*) AS total FROM transport_jobs
+            WHERE organization_id=?
+              AND reconciliation_status='NEEDS_RECONCILIATION'
+              AND status IN ('PENDING','RETRY','FAILED')
+            """,
+            (organization_id,),
+        )
+        return int(row["total"] if row else 0)
+
     def mark_running(self, job_id: int) -> bool:
         return self._write(
             """
             UPDATE transport_jobs SET status='RUNNING', attempts=attempts+1,
                 last_error=NULL, updated_at=?, completed_at=NULL
             WHERE id=? AND status IN ('PENDING','RETRY')
+              AND reconciliation_status='RESOLVED'
+              AND transport_target_id IS NOT NULL
             """,
             (self._now(), job_id),
         ).rowcount > 0
@@ -144,7 +177,7 @@ class TransportJobRepository(BaseRepository):
             """
             UPDATE transport_jobs SET status='CANCELLED', last_error=?,
                 updated_at=?, completed_at=?
-            WHERE id=? AND status IN ('PENDING','RUNNING','RETRY')
+            WHERE id=? AND status IN ('PENDING','RUNNING','RETRY','FAILED')
             """,
             (message, now, now, job_id),
         ).rowcount > 0
@@ -167,6 +200,7 @@ class TransportJobRepository(BaseRepository):
             UPDATE transport_jobs SET status='RETRY', last_error=NULL,
                 updated_at=?, completed_at=NULL
             WHERE organization_id=? AND status='FAILED'
+              AND reconciliation_status='RESOLVED'
             """,
             (self._now(), organization_id),
         ).rowcount
@@ -205,6 +239,15 @@ class TransportJobRepository(BaseRepository):
             id=row["id"], organization_id=row["organization_id"],
             document_id=row["document_id"], operation=row["operation"],
             transport_mode=row["transport_mode"], status=row["status"],
+            transport_target_id=(
+                row["transport_target_id"]
+                if "transport_target_id" in row.keys() else None
+            ),
+            reconciliation_status=(
+                row["reconciliation_status"]
+                if "reconciliation_status" in row.keys()
+                else "NEEDS_RECONCILIATION"
+            ),
             attempts=row["attempts"], last_error=row["last_error"],
             remote_path=row["remote_path"], created_at=row["created_at"],
             updated_at=row["updated_at"], completed_at=row["completed_at"],

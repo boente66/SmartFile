@@ -291,9 +291,16 @@ em URLs e exige HTTPS válido para esse modo.
 
 O modo NAS realiza transferência para um caminho já montado pelo Linux ou para
 um compartilhamento UNC acessível pelo Windows. O SmartFile não monta o volume e
-não solicita senha de rede. Use **Testar conexão** para verificar se o destino
-existe, é um diretório e permite escrita. Os modos HTTPS e LAN continuam
+não monta SMB/NFS automaticamente. Use **Testar conexão** para verificar se o
+destino existe, é um diretório e permite escrita. Os modos HTTPS e LAN continuam
 configuráveis, mas ainda não possuem transferência física nesta fase.
+
+A tela administrativa permite cadastrar usuário e senha opcionais no cofre
+seguro do sistema operacional. Ao salvar, os campos são limpos e a senha nunca é
+mostrada novamente; apenas o estado **Credencial configurada** é apresentado.
+No NAS atual, essa credencial não monta nem autentica o compartilhamento: o
+caminho ainda precisa estar acessível pelo Linux ou Windows. O cofre prepara os
+conectores corporativos futuros sem gravar segredo no SQLite.
 
 Após uma importação, o arquivo permanece primeiro no storage interno. O SmartFile
 cria um job NAS e copia em background, usando arquivo temporário, conclusão
@@ -304,8 +311,22 @@ definitiva.
 
 O transporte corporativo é independente da Cloud Layer. Ele não exige OneDrive,
 Google Drive, OAuth ou mudança do modo Local. O campo interno de referência de
-credencial prepara uma integração futura com cofre seguro; nenhuma senha deve ser
+credencial aponta para o cofre do sistema operacional; nenhuma senha deve ser
 digitada no endereço NAS, LAN ou HTTPS.
+
+### Troca de destino e reconciliation
+
+Ao substituir NAS A por NAS B, o SmartFile encerra o destino A como histórico e
+cria um novo destino B. Uploads, retries e exclusões já associados a A continuam
+usando A; novos documentos usam B. O sistema não migra arquivos entre os dois
+NAS automaticamente.
+
+Jobs de bancos antigos só são vinculados automaticamente quando o caminho remoto
+está comprovadamente dentro da raiz conhecida. Caso contrário, aparecem como
+operações que exigem reconciliation e ficam impedidos de acessar qualquer
+destino. A TI pode cancelar a operação histórica ou recriar explicitamente um
+upload para o destino atual. Ao mudar para **Local**, jobs antigos são preservados
+e o processamento automático é pausado, sem apagar conteúdo no NAS.
 
 ### Armazenamento da organização
 

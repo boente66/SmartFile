@@ -18,7 +18,8 @@ class OrganizationTransportDialog(QDialog):
         root = QVBoxLayout(self)
         note = QLabel(
             "Configura o destino administrado pela TI. Credenciais não são aceitas no endereço "
-            "e a ativação não substitui o storage interno do SmartFile."
+            "e a ativação não substitui o storage interno do SmartFile. Para NAS, o caminho "
+            "deve continuar previamente montado ou acessível pelo sistema operacional."
         )
         note.setWordWrap(True); root.addWidget(note)
         form = QFormLayout()
@@ -32,8 +33,23 @@ class OrganizationTransportDialog(QDialog):
         self.endpoint.setPlaceholderText("/mnt/nas/smartfile, https://ged.exemplo ou servidor/pasta")
         self.enabled = QCheckBox("Ativar transporte após salvar"); self.enabled.setChecked(settings.enabled)
         self.verify_tls = QCheckBox("Validar certificado TLS"); self.verify_tls.setChecked(settings.verify_tls)
+        self.credential_username = QLineEdit()
+        self.credential_username.setPlaceholderText("Usuário para a próxima credencial")
+        self.credential_password = QLineEdit()
+        self.credential_password.setEchoMode(QLineEdit.EchoMode.Password)
+        self.credential_password.setPlaceholderText("Senha (nunca será exibida novamente)")
+        self.remove_credential = QCheckBox("Remover credencial da configuração atual")
+        configured = bool((summary or {}).get("credential_configured"))
+        self.credential_status = QLabel(
+            "Credencial configurada no cofre do sistema operacional."
+            if configured else "Nenhuma credencial configurada."
+        )
         form.addRow("Modo:", self.mode); form.addRow("Destino:", self.endpoint)
         form.addRow("", self.enabled); form.addRow("", self.verify_tls)
+        form.addRow("Usuário:", self.credential_username)
+        form.addRow("Senha:", self.credential_password)
+        form.addRow("Credencial:", self.credential_status)
+        form.addRow("", self.remove_credential)
         root.addLayout(form)
         summary = summary or {}
         self.transport_status = QLabel(self._summary_text(summary))
@@ -57,12 +73,25 @@ class OrganizationTransportDialog(QDialog):
         return {
             "mode": str(self.mode.currentData()), "endpoint": self.endpoint.text(),
             "enabled": self.enabled.isChecked(), "verify_tls": self.verify_tls.isChecked(),
+            "credential_username": self.credential_username.text(),
+            "credential_password": self.credential_password.text(),
+            "remove_credential": self.remove_credential.isChecked(),
         }
+
+    def clear_credentials(self) -> None:
+        self.credential_username.clear()
+        self.credential_password.clear()
 
     def _update_state(self) -> None:
         remote = self.mode.currentData() != "LOCAL"
         self.endpoint.setEnabled(remote); self.enabled.setEnabled(remote)
         self.verify_tls.setVisible(self.mode.currentData() == "HTTPS")
+        self.credential_username.setEnabled(remote)
+        self.credential_password.setEnabled(remote)
+        self.remove_credential.setEnabled(remote)
+        if not remote:
+            self.clear_credentials()
+            self.remove_credential.setChecked(False)
         self.test_button.setEnabled(remote)
 
     def set_test_busy(self, busy: bool) -> None:
@@ -78,6 +107,11 @@ class OrganizationTransportDialog(QDialog):
     def show_summary(self, summary: dict) -> None:
         self.transport_status.setText(self._summary_text(summary))
         self.retry_button.setEnabled(bool(summary.get("failed")))
+        self.credential_status.setText(
+            "Credencial configurada no cofre do sistema operacional."
+            if summary.get("credential_configured")
+            else "Nenhuma credencial configurada."
+        )
 
     @staticmethod
     def _summary_text(summary: dict) -> str:
@@ -90,5 +124,7 @@ class OrganizationTransportDialog(QDialog):
         return (
             f"Transporte {mode}: {enabled} · Último teste: {last} · "
             f"Jobs pendentes: {summary.get('pending', 0)} · "
+            f"Destino anterior: {summary.get('retired_target_jobs', 0)} · "
+            f"Reconciliation: {summary.get('reconciliation_required', 0)} · "
             f"Falhas: {summary.get('failed', 0)}"
         )

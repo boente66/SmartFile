@@ -44,3 +44,13 @@ def test_package_scripts_never_remove_user_directories():
     contents = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
     assert ".local/share/SmartFile" not in contents
     assert "rm -rf" not in contents
+
+
+def test_linux_bundle_includes_system_credential_vault_backends():
+    spec = (ROOT / "packaging/pyinstaller/smartfile.spec").read_text(
+        encoding="utf-8"
+    )
+    requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+    assert 'collect_submodules("keyring.backends")' in spec
+    assert '"keyring"' in spec
+    assert "keyring>=" in requirements
