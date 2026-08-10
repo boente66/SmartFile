@@ -12,21 +12,29 @@ class TransportJobQueue:
     def __init__(self, database):
         self.repository = TransportJobRepository(database=database)
 
-    def enqueue_upload(self, organization_id: int, document_id: int) -> TransportJob:
+    def enqueue_upload(
+        self, organization_id: int, document_id: int, transport_target_id: int,
+    ) -> TransportJob:
         return self._enqueue(
             organization_id, document_id, TransportOperation.UPLOAD, None,
+            transport_target_id,
         )
 
     def enqueue_delete(
         self, organization_id: int, document_id: int, remote_path: str,
+        transport_target_id: int | None,
+        *, needs_reconciliation: bool = False,
     ) -> TransportJob:
         return self._enqueue(
             organization_id, document_id, TransportOperation.DELETE, remote_path,
+            transport_target_id, needs_reconciliation=needs_reconciliation,
         )
 
     def _enqueue(
         self, organization_id: int, document_id: int,
         operation: TransportOperation, remote_path: str | None,
+        transport_target_id: int | None,
+        *, needs_reconciliation: bool = False,
     ) -> TransportJob:
         existing = self.repository.find_active(
             organization_id, document_id, str(operation),
@@ -39,6 +47,10 @@ class TransportJobQueue:
             document_id=document_id,
             operation=operation,
             transport_mode="NAS",
+            transport_target_id=transport_target_id,
+            reconciliation_status=(
+                "NEEDS_RECONCILIATION" if needs_reconciliation else "RESOLVED"
+            ),
             remote_path=remote_path,
             created_at=now,
             updated_at=now,

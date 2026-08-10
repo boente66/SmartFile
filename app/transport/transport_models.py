@@ -20,6 +20,11 @@ class TransportJobStatus(StrEnum):
     CANCELLED = "CANCELLED"
 
 
+class ReconciliationStatus(StrEnum):
+    RESOLVED = "RESOLVED"
+    NEEDS_RECONCILIATION = "NEEDS_RECONCILIATION"
+
+
 @dataclass(slots=True)
 class TransportJob:
     id: int | None = None
@@ -27,6 +32,8 @@ class TransportJob:
     document_id: int = 0
     operation: str = TransportOperation.UPLOAD
     transport_mode: str = "NAS"
+    transport_target_id: int | None = None
+    reconciliation_status: str = ReconciliationStatus.RESOLVED
     status: str = TransportJobStatus.PENDING
     attempts: int = 0
     last_error: str | None = None

@@ -7,7 +7,13 @@
   bounded retry, recovery, and organization-isolated remote roots
 - Added background processing and administrative NAS connection testing
 - Added transport audit events and durable delete jobs after permanent trash removal
-- Added incremental database migration 16 without changing the public beta version
+- Added immutable transport targets so historical retries and deletes keep their
+  original NAS after an endpoint change
+- Added conservative reconciliation for legacy jobs whose physical target cannot
+  be proven
+- Added OS Credential Vault integration through keyring with opaque database refs,
+  safe rotation, in-use protection, and database-failure compensation
+- Added incremental database migration 17 without changing the public beta version
 
 ## [0.9.0-beta.2] - 2026-08-07
 

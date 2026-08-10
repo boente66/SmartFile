@@ -14,6 +14,7 @@ from app.database.database import Database
 from app.database.migrations import CURRENT_SCHEMA_VERSION
 from app.entities.organization_feature_setting_entity import OrganizationFeatureSettingEntity
 from app.entities.organization_transport_entity import OrganizationTransportEntity
+from app.entities.transport_target_entity import TransportTargetEntity
 from app.errors.transport_exceptions import (
     TransportCancelledError,
     TransportConfigurationError,
@@ -23,6 +24,7 @@ from app.repositories.organization_feature_setting_repository import (
     OrganizationFeatureSettingRepository,
 )
 from app.repositories.organization_transport_repository import OrganizationTransportRepository
+from app.repositories.transport_target_repository import TransportTargetRepository
 from app.services.corporate_transport_service import CorporateTransportService
 from app.services.document_service import DocumentService
 from app.services.organization_service import OrganizationService
@@ -54,11 +56,22 @@ def _configure_nas(
                 enabled=True, updated_at=_now(),
             )
         )
+    target = None
+    if mode != "LOCAL":
+        target = TransportTargetRepository(database=service.database).create(
+            TransportTargetEntity(
+                organization_id=organization_id, mode=mode,
+                endpoint=str(endpoint), fingerprint=hashlib.sha256(
+                    f"{organization_id}:{mode}:{endpoint}".encode()
+                ).hexdigest(), created_at=_now(),
+            )
+        )
     OrganizationTransportRepository(database=service.database).save(
         OrganizationTransportEntity(
             organization_id=organization_id, mode=mode,
             endpoint=str(endpoint) if mode != "LOCAL" else None,
-            enabled=enabled, updated_at=_now(),
+            enabled=enabled, current_target_id=(target.id if target else None),
+            updated_at=_now(),
         )
     )
     return organization_id
@@ -328,7 +341,7 @@ def test_https_and_lan_do_not_pretend_to_have_physical_connector(tmp_path: Path)
     assert "não implementado" in result.message
 
 
-def test_schema_15_migrates_to_16_without_losing_existing_data(tmp_path: Path):
+def test_schema_15_migrates_to_current_without_losing_existing_data(tmp_path: Path):
     source_path = tmp_path / "source.db"
     service = DocumentService(db_path=str(source_path))
     endpoint = tmp_path / "nas"
@@ -347,8 +360,8 @@ def test_schema_15_migrates_to_16_without_losing_existing_data(tmp_path: Path):
     legacy.close()
 
     migrated = Database(str(legacy_path))
-    assert migrated.connect().execute("PRAGMA user_version").fetchone()[0] == 16
-    assert CURRENT_SCHEMA_VERSION == 16
+    assert migrated.connect().execute("PRAGMA user_version").fetchone()[0] == 17
+    assert CURRENT_SCHEMA_VERSION == 17
     assert migrated.fetch_one("SELECT id FROM documents WHERE id=?", (document.id,))
     assert migrated.fetch_one("SELECT id FROM organizations WHERE id=?", (organization_id,))
     assert migrated.fetch_one(
@@ -365,6 +378,10 @@ def test_schema_15_migrates_to_16_without_losing_existing_data(tmp_path: Path):
     )
     assert migrated.fetch_one(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='transport_jobs'"
+    )
+    assert migrated.fetch_one(
+        "SELECT id FROM organization_transport_targets WHERE organization_id=?",
+        (organization_id,),
     )
 
 

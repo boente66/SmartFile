@@ -48,8 +48,10 @@ capacidades; cada organização ativa somente os recursos que realmente utiliza:
 No perfil Empresarial, controle de acesso e auditoria são sugeridos como padrão.
 Nuvem, transporte corporativo, solicitações e prazos começam desativados. O modo
 NAS possui transferência real para um caminho que já esteja acessível pelo
-sistema operacional. O SmartFile não monta compartilhamentos nem persiste senha
-de rede. HTTPS e LAN continuam configuráveis, mas não executam transferência.
+sistema operacional. O SmartFile não monta compartilhamentos. Credenciais
+opcionais são mantidas exclusivamente no cofre do sistema operacional por meio
+do `keyring`; o SQLite guarda apenas uma referência opaca. HTTPS e LAN continuam
+configuráveis, mas não executam transferência.
 
 Cloud Layer e transporte corporativo são camadas independentes. OneDrive e
 Google Drive usam OAuth e fila de sincronização. NAS, LAN e HTTPS são destinos
@@ -70,6 +72,20 @@ Em caso de indisponibilidade, o job permanece em `RETRY` e o documento local
 continua utilizável. O destino deve estar montado no Linux ou acessível como UNC
 no Windows. A ação **Testar conexão** verifica diretório, acesso e escrita sem
 sobrescrever arquivos existentes.
+
+Cada job referencia um snapshot imutável do destino físico. Ao trocar NAS A por
+NAS B, operações antigas continuam associadas ao NAS A e novos documentos passam
+a usar o NAS B. Jobs legados cujo destino não possa ser comprovado entram em
+`NEEDS_RECONCILIATION` e não acessam nenhum caminho até uma decisão administrativa.
+Ao escolher Local, a fila histórica é preservada e pausada, sem exclusão remota
+em massa.
+
+Na configuração empresarial, OWNER/ADMIN pode cadastrar, substituir ou remover
+uma credencial de transporte. A senha nunca é preenchida de volta na interface,
+não aparece em logs/auditoria e não é armazenada no banco. No Linux o backend do
+`keyring` usa o Secret Service disponível; no Windows usa o Credential Manager.
+Se o cofre não estiver disponível, a operação falha de forma segura e a
+configuração anterior permanece válida.
 
 ## Capturas de tela
 

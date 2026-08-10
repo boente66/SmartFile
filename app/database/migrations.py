@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import logging
+import hashlib
+import ntpath
 import sqlite3
 from pathlib import Path
 
 from app.errors.persistence_exceptions import DatabaseError
 
 logger = logging.getLogger(__name__)
-CURRENT_SCHEMA_VERSION = 16
+CURRENT_SCHEMA_VERSION = 17
 GIB = 1024 ** 3
 
 
@@ -620,6 +622,207 @@ def _upgrade_corporate_transport_jobs(connection: sqlite3.Connection) -> None:
     )
 
 
+def _upgrade_transport_targets(connection: sqlite3.Connection) -> None:
+    """Vincula jobs ao snapshot físico sem presumir destinos históricos."""
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS organization_transport_targets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL,
+            mode TEXT NOT NULL CHECK (mode IN ('NAS','HTTPS','LAN')),
+            endpoint TEXT NOT NULL,
+            credential_ref TEXT,
+            verify_tls INTEGER NOT NULL DEFAULT 1 CHECK (verify_tls IN (0,1)),
+            fingerprint TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'ACTIVE'
+                CHECK (status IN ('ACTIVE','RETIRED')),
+            created_by_user_id INTEGER,
+            created_at TEXT NOT NULL,
+            retired_at TEXT,
+            FOREIGN KEY (organization_id) REFERENCES organizations(id),
+            FOREIGN KEY (created_by_user_id) REFERENCES users(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_transport_targets_organization
+            ON organization_transport_targets(organization_id, status, created_at);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_transport_targets_one_active
+            ON organization_transport_targets(organization_id) WHERE status='ACTIVE';
+        """
+    )
+    if "current_target_id" not in _columns(
+        connection, "organization_transport_settings"
+    ):
+        connection.execute(
+            "ALTER TABLE organization_transport_settings "
+            "ADD COLUMN current_target_id INTEGER "
+            "REFERENCES organization_transport_targets(id)"
+        )
+    if "transport_target_id" not in _columns(connection, "transport_jobs"):
+        connection.execute(
+            "ALTER TABLE transport_jobs ADD COLUMN transport_target_id INTEGER "
+            "REFERENCES organization_transport_targets(id)"
+        )
+    if "reconciliation_status" not in _columns(connection, "transport_jobs"):
+        connection.execute(
+            "ALTER TABLE transport_jobs ADD COLUMN reconciliation_status TEXT "
+            "NOT NULL DEFAULT 'NEEDS_RECONCILIATION' "
+            "CHECK (reconciliation_status IN ('RESOLVED','NEEDS_RECONCILIATION'))"
+        )
+
+    now = connection.execute("SELECT datetime('now')").fetchone()[0]
+    settings_rows = connection.execute(
+        """
+        SELECT s.*, o.slug FROM organization_transport_settings s
+        JOIN organizations o ON o.id=s.organization_id
+        WHERE s.mode IN ('NAS','HTTPS','LAN') AND s.endpoint IS NOT NULL
+        """
+    ).fetchall()
+    current_targets: dict[int, tuple[int, str, str]] = {}
+    for row in settings_rows:
+        organization_id = int(row["organization_id"])
+        existing = connection.execute(
+            """
+            SELECT id, endpoint FROM organization_transport_targets
+            WHERE organization_id=? AND status='ACTIVE'
+            ORDER BY id DESC LIMIT 1
+            """,
+            (organization_id,),
+        ).fetchone()
+        created = existing is None
+        if created:
+            fingerprint = _transport_target_fingerprint(
+                organization_id, row["mode"], row["endpoint"],
+                bool(row["verify_tls"]), row["credential_ref"],
+            )
+            cursor = connection.execute(
+                """
+                INSERT INTO organization_transport_targets (
+                    organization_id, mode, endpoint, credential_ref, verify_tls,
+                    fingerprint, status, created_by_user_id, created_at, retired_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, NULL)
+                """,
+                (
+                    organization_id, row["mode"], row["endpoint"],
+                    row["credential_ref"], int(row["verify_tls"]), fingerprint,
+                    row["updated_by_user_id"], now,
+                ),
+            )
+            target_id = int(cursor.lastrowid)
+            target_endpoint = str(row["endpoint"])
+        else:
+            target_id = int(existing["id"])
+            target_endpoint = str(existing["endpoint"])
+        connection.execute(
+            "UPDATE organization_transport_settings SET current_target_id=? "
+            "WHERE organization_id=?",
+            (target_id, organization_id),
+        )
+        current_targets[organization_id] = (
+            target_id, target_endpoint, str(row["slug"]),
+        )
+        if created:
+            connection.executemany(
+                """
+                INSERT INTO audit_log (
+                    user_id, organization_id, action, target_type, target_id,
+                    description, created_at
+                ) VALUES (?, ?, ?, 'transport_target', ?, ?, ?)
+                """,
+                [
+                    (
+                        row["updated_by_user_id"], organization_id,
+                        "TRANSPORT_TARGET_CREATED", target_id,
+                        "Destino de transporte atual preservado durante a migração.", now,
+                    ),
+                    (
+                        row["updated_by_user_id"], organization_id,
+                        "TRANSPORT_TARGET_ACTIVATED", target_id,
+                        "Destino de transporte ativado durante a migração.", now,
+                    ),
+                ],
+            )
+
+    jobs = connection.execute(
+        "SELECT id, organization_id, remote_path FROM transport_jobs"
+    ).fetchall()
+    for job in jobs:
+        target = current_targets.get(int(job["organization_id"]))
+        if target and job["remote_path"] and _legacy_remote_matches_target(
+            str(job["remote_path"]), target[1], target[2], int(job["organization_id"])
+        ):
+            connection.execute(
+                """
+                UPDATE transport_jobs SET transport_target_id=?,
+                    reconciliation_status='RESOLVED' WHERE id=?
+                """,
+                (target[0], job["id"]),
+            )
+            continue
+        connection.execute(
+            """
+            UPDATE transport_jobs SET transport_target_id=NULL,
+                reconciliation_status='NEEDS_RECONCILIATION' WHERE id=?
+            """,
+            (job["id"],),
+        )
+        if job["id"] and job["organization_id"]:
+            connection.execute(
+                """
+                INSERT INTO audit_log (
+                    user_id, organization_id, action, target_type, target_id,
+                    description, created_at
+                ) VALUES (NULL, ?, 'TRANSPORT_RECONCILIATION_REQUIRED',
+                          'transport_job', ?, ?, ?)
+                """,
+                (
+                    job["organization_id"], job["id"],
+                    "A identidade do destino do job legado não pôde ser comprovada.",
+                    now,
+                ),
+            )
+    connection.executescript(
+        """
+        CREATE INDEX IF NOT EXISTS idx_transport_jobs_target
+            ON transport_jobs(transport_target_id, status, created_at);
+        CREATE INDEX IF NOT EXISTS idx_transport_jobs_reconciliation
+            ON transport_jobs(organization_id, reconciliation_status, status);
+        """
+    )
+
+
+def _transport_target_fingerprint(
+    organization_id: int, mode: str, endpoint: str,
+    verify_tls: bool, credential_ref: str | None,
+) -> str:
+    material = "\0".join((
+        str(organization_id), str(mode).upper(), str(endpoint),
+        "1" if verify_tls else "0", credential_ref or "",
+    ))
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def _legacy_remote_matches_target(
+    remote_path: str, endpoint: str, slug: str, organization_id: int,
+) -> bool:
+    segment = f"{slug}-{organization_id}"
+    if endpoint.startswith("\\\\"):
+        root = ntpath.normcase(ntpath.normpath(
+            ntpath.join(endpoint, "SmartFile", segment, "Documents")
+        ))
+        candidate = ntpath.normcase(ntpath.normpath(remote_path))
+        try:
+            return ntpath.commonpath((root, candidate)) == root and candidate != root
+        except ValueError:
+            return False
+    try:
+        root = (
+            Path(endpoint).expanduser() / "SmartFile" / segment / "Documents"
+        ).resolve(strict=False)
+        candidate = Path(remote_path).expanduser().resolve(strict=False)
+        return candidate != root and candidate.is_relative_to(root)
+    except (OSError, RuntimeError, ValueError):
+        return False
+
+
 def migrate(connection: sqlite3.Connection, schema_path: Path) -> int:
     """Cria o schema mínimo ou atualiza bancos legados sem perder documentos."""
     try:
@@ -650,6 +853,7 @@ def migrate(connection: sqlite3.Connection, schema_path: Path) -> int:
             _upgrade_profile_resources(connection)
             _upgrade_business_feature_policy(connection)
             _upgrade_corporate_transport_jobs(connection)
+            _upgrade_transport_targets(connection)
             connection.execute(
                 "UPDATE documents SET source_path = path WHERE source_path IS NULL"
             )

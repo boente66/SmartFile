@@ -121,6 +121,22 @@ CREATE TABLE IF NOT EXISTS audit_log (
     FOREIGN KEY (organization_id) REFERENCES organizations(id)
 );
 
+CREATE TABLE IF NOT EXISTS organization_transport_targets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    organization_id INTEGER NOT NULL,
+    mode TEXT NOT NULL CHECK (mode IN ('NAS','HTTPS','LAN')),
+    endpoint TEXT NOT NULL,
+    credential_ref TEXT,
+    verify_tls INTEGER NOT NULL DEFAULT 1 CHECK (verify_tls IN (0,1)),
+    fingerprint TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','RETIRED')),
+    created_by_user_id INTEGER,
+    created_at TEXT NOT NULL,
+    retired_at TEXT,
+    FOREIGN KEY (organization_id) REFERENCES organizations(id),
+    FOREIGN KEY (created_by_user_id) REFERENCES users(id)
+);
+
 CREATE TABLE IF NOT EXISTS organization_transport_settings (
     organization_id INTEGER PRIMARY KEY,
     mode TEXT NOT NULL DEFAULT 'LOCAL' CHECK (mode IN ('LOCAL','NAS','HTTPS','LAN')),
@@ -128,10 +144,12 @@ CREATE TABLE IF NOT EXISTS organization_transport_settings (
     enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0,1)),
     verify_tls INTEGER NOT NULL DEFAULT 1 CHECK (verify_tls IN (0,1)),
     credential_ref TEXT,
+    current_target_id INTEGER,
     updated_by_user_id INTEGER,
     updated_at TEXT NOT NULL,
     FOREIGN KEY (organization_id) REFERENCES organizations(id),
-    FOREIGN KEY (updated_by_user_id) REFERENCES users(id)
+    FOREIGN KEY (updated_by_user_id) REFERENCES users(id),
+    FOREIGN KEY (current_target_id) REFERENCES organization_transport_targets(id)
 );
 
 CREATE TABLE IF NOT EXISTS organization_feature_settings (
@@ -151,6 +169,9 @@ CREATE TABLE IF NOT EXISTS transport_jobs (
     document_id INTEGER NOT NULL,
     operation TEXT NOT NULL CHECK (operation IN ('UPLOAD','DELETE')),
     transport_mode TEXT NOT NULL CHECK (transport_mode IN ('NAS','HTTPS','LAN')),
+    transport_target_id INTEGER,
+    reconciliation_status TEXT NOT NULL DEFAULT 'RESOLVED'
+        CHECK (reconciliation_status IN ('RESOLVED','NEEDS_RECONCILIATION')),
     status TEXT NOT NULL DEFAULT 'PENDING'
         CHECK (status IN ('PENDING','RUNNING','RETRY','COMPLETED','FAILED','CANCELLED')),
     attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
@@ -159,7 +180,8 @@ CREATE TABLE IF NOT EXISTS transport_jobs (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     completed_at TEXT,
-    FOREIGN KEY (organization_id) REFERENCES organizations(id)
+    FOREIGN KEY (organization_id) REFERENCES organizations(id),
+    FOREIGN KEY (transport_target_id) REFERENCES organization_transport_targets(id)
 );
 
 CREATE TABLE IF NOT EXISTS document_requests (
@@ -369,9 +391,17 @@ CREATE INDEX IF NOT EXISTS idx_transport_jobs_document
     ON transport_jobs(document_id, operation, status);
 CREATE INDEX IF NOT EXISTS idx_transport_jobs_created
     ON transport_jobs(created_at, id);
+CREATE INDEX IF NOT EXISTS idx_transport_jobs_target
+    ON transport_jobs(transport_target_id, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_transport_jobs_reconciliation
+    ON transport_jobs(organization_id, reconciliation_status, status);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_transport_jobs_active_operation
     ON transport_jobs(organization_id, document_id, operation)
     WHERE status IN ('PENDING','RUNNING','RETRY');
+CREATE INDEX IF NOT EXISTS idx_transport_targets_organization
+    ON organization_transport_targets(organization_id, status, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_transport_targets_one_active
+    ON organization_transport_targets(organization_id) WHERE status='ACTIVE';
 CREATE INDEX IF NOT EXISTS idx_documents_smart_search
     ON documents(organization_id, status, file_type, source_type, created_at);
 CREATE INDEX IF NOT EXISTS idx_documents_org_category

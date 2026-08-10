@@ -16,9 +16,39 @@ controla lifecycle recorrente e independente de telas. Um worker executa apenas
 uma tarefa demorada fora da thread Qt. Regras, permissões e auditoria permanecem
 nos services de domínio.
 
+## Transporte corporativo e reconciliation
+
+`OrganizationTransportService` cria snapshots físicos imutáveis em
+`organization_transport_targets`. `organization_transport_settings` aponta para
+o target atual, enquanto cada `transport_job` conserva seu próprio
+`transport_target_id`. Assim, alteração de endpoint ou rotação de credencial não
+redireciona jobs históricos. O único campo mutável do lifecycle do target é o
+estado `ACTIVE`/`RETIRED`.
+
+Jobs migrados sem prova de origem recebem `NEEDS_RECONCILIATION`. O repositório
+não os entrega à fila normal, `mark_running` aplica a mesma barreira no banco e o
+service recusa processamento direto. Caminhos remotos continuam validados pelo
+adapter contra a raiz do target correspondente.
+
+## Credential Vault
+
+`CredentialVaultService` depende do contrato `CredentialProvider`. A
+implementação `OSCredentialProvider` usa `keyring`: Secret Service no Linux e
+Credential Manager no Windows. O SQLite persiste somente refs no formato
+`smartfile:transport:<organization_id>:<uuid>`; username e senha existem apenas
+no objeto transitório e no cofre.
+
+Rotação cria nova referência e novo target. Uma referência antiga não é apagada
+enquanto houver target ativo, job pendente/falho ou upload remoto ainda sem
+DELETE concluído. Como SQLite e keyring não compartilham transação, falha de banco
+após `store` executa compensação no cofre. Indisponibilidade do keyring não impede
+a inicialização da aplicação e nunca produz fallback em texto puro.
+
 ## Persistência
 
 Os documentos são armazenados localmente em SQLite através de uma camada de serviço e repositório.
+O schema atual é 17; a migration preserva os dados da versão 16 e classifica de
+forma conservadora os jobs cujo destino histórico não pode ser comprovado.
 
 ## Interface
 
