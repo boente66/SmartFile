@@ -52,8 +52,7 @@ class SidebarView(QWidget):
 
         self._add_button(layout, "Documentos", "documents")
         self._add_button(layout, "Converter", "converter")
-        self._add_button(layout, "PDF Tools", "pdf")
-        self._add_button(layout, "Scanner", "scanner")
+        self._add_button(layout, "Captura e PDF", "capture_pdf")
 
         layout.addStretch()
 
@@ -91,6 +90,9 @@ class SidebarView(QWidget):
     # Highlight ativo
     # -------------------------
     def set_active_tool(self, tool_name: str):
+
+        if tool_name in {"pdf", "scanner"}:
+            tool_name = "capture_pdf"
 
         for name, button in self._buttons.items():
 

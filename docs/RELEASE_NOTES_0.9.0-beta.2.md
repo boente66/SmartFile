@@ -4,6 +4,11 @@ Versão beta publicada em 7 de agosto de 2026 para avaliação técnica.
 
 ## Principais alterações
 
+- nova experiência **Captura e PDF**, com scanner e manipulação estrutural no
+  mesmo workspace, sem fundir os serviços internos;
+- digitalização direta para miniaturas e preview, importação de imagens,
+  composição de PDFs, reordenação, rotação persistente, extração e exportação;
+- integração oficial com `DocumentService` para adicionar o resultado ao GED;
 - perfis de recursos separados das funcionalidades efetivamente ativadas em cada organização;
 - padrão Empresarial conservador: controle de acesso e auditoria ativos, integrações externas opcionais;
 - transporte corporativo NAS, LAN ou HTTPS independente da Cloud Layer e do OAuth;

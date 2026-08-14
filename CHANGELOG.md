@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Added the integrated Captura e PDF workspace for scanner acquisition, image
+  import, PDF composition, persistent rotation, drag-and-drop ordering, export,
+  and managed GED import without intermediate files
+- Preserved Scanner and PDF Tools services and legacy route aliases while
+  consolidating their primary navigation entry
 - Added real filesystem-based NAS transport with a dedicated persistent queue
 - Added atomic chunked uploads, SHA-256 verification, cooperative cancellation,
   bounded retry, recovery, and organization-isolated remote roots

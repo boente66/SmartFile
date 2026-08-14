@@ -767,3 +767,30 @@ QFrame#registrationFooter { background: #f0f8f3; border-top: 1px solid #d6e7dc; 
 QFrame#registrationFooter QLabel { color: #4a586b; }
 QLabel#registrationSecureText { color: #187c3c; }
 QToolButton#accountButton { background: #17212a; color: #e5e7eb; border: 1px solid #334155; border-radius: 6px; padding: 5px 10px; }
+
+/* Captura e PDF */
+QWidget#capturePdf { background: #171c22; color: #e5e7eb; }
+QWidget#capturePdf QLabel { color: #e5e7eb; }
+QFrame#capturePdfHeader, QFrame#capturePdfFooter { background: #11161c; border-bottom: 1px solid #303841; }
+QFrame#capturePdfFooter { border-top: 1px solid #303841; border-bottom: none; }
+QLabel#capturePdfTitle { color: #ffffff; font-size: 21px; font-weight: 750; }
+QLabel#capturePdfSubtitle, QLabel#capturePdfOrigin { color: #cbd5e1; }
+QToolButton#capturePdfToolbarButton { background: transparent; color: #e5e7eb; border: 1px solid transparent; border-radius: 6px; padding: 6px 14px; min-width: 68px; }
+QToolButton#capturePdfToolbarButton:hover { background: #20354a; border-color: #2563eb; color: #7dd3fc; }
+QScrollArea#capturePdfScanScroll, QScrollArea#capturePdfScanScroll QWidget#qt_scrollarea_viewport, QFrame#capturePdfPanel { background: #1b2128; border: none; }
+QFrame#capturePdfPanel { border-right: 1px solid #303841; }
+QFrame#capturePdfPreviewPanel { background: #20262d; border: none; }
+QLabel#capturePdfSection { color: #f8fafc; font-weight: 750; font-size: 13px; padding: 4px 0; }
+QLabel#capturePdfHint { background: #dbeafe; color: #1e3a5f; border-radius: 5px; padding: 10px; }
+QWidget#capturePdf QComboBox { background: #2a3139; color: #e5e7eb; border: 1px solid #46515d; border-radius: 4px; min-height: 30px; padding: 2px 8px; }
+QWidget#capturePdf QCheckBox { color: #e5e7eb; spacing: 7px; }
+QPushButton#capturePdfPrimary { background: #2563eb; color: #ffffff; border: none; min-height: 42px; font-weight: 650; }
+QPushButton#capturePdfWideButton { background: #252c34; color: #e5e7eb; border: 1px solid #46515d; min-height: 36px; text-align: left; padding-left: 12px; }
+QPushButton#capturePdfAction { background: transparent; color: #e5e7eb; border: 1px solid transparent; min-height: 34px; padding: 5px 8px; }
+QPushButton#capturePdfAction:hover { background: #27323d; border-color: #46515d; }
+QListWidget#capturePdfPages { background: #171c22; color: #e5e7eb; border: none; }
+QListWidget#capturePdfPages::item { background: #20262d; border: 1px solid transparent; border-radius: 5px; padding: 4px; }
+QListWidget#capturePdfPages::item:selected { background: #173b63; border: 2px solid #3b82f6; color: #ffffff; }
+QWidget#capturePdfPreview QScrollArea { background: #2b3138; border: none; }
+QLabel#capturePdfPageIndicator { background: #151a20; border: 1px solid #46515d; border-radius: 4px; padding: 6px 14px; }
+QPushButton#capturePdfGed { background: #249447; color: #ffffff; border: none; min-height: 38px; font-weight: 700; padding: 0 18px; }
