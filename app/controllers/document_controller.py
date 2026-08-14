@@ -247,8 +247,8 @@ class DocumentController:
             QMessageBox.warning(self.view, "Pastas", str(exc))
 
     def on_open_scanner(self):
-        self.main_view.sidebar.set_active_tool("scanner")
-        self.main_view.sidebar.tool_selected.emit("scanner")
+        self.main_view.sidebar.set_active_tool("capture_pdf")
+        self.main_view.sidebar.tool_selected.emit("capture_pdf")
 
     def on_sign_document(self, document_id: int):
         document = self.service.get_document(document_id)
@@ -628,7 +628,7 @@ class DocumentController:
             self.pdf_controller.open_document(document.path)
         else:
             QMessageBox.information(self.view, "Mini GED", "PDF Tools é indicado para arquivos PDF.")
-        self.view.set_status(f"Arquivo enviado para PDF Tools: {document.name}")
+        self.view.set_status(f"Arquivo enviado para Captura e PDF: {document.name}")
 
     def on_delete_document(self, document_id: int):
         if self._current_scope == "trash":

@@ -5,13 +5,12 @@ from PyQt6.QtWidgets import QApplication, QMessageBox
 from app.controllers.corporate_transport_controller import CorporateTransportController
 from app.controllers.convert_controller import ConvertController
 from app.controllers.document_controller import DocumentController
+from app.controllers.capture_pdf_controller import CapturePdfController
 from app.controllers.document_request_controller import DocumentRequestController
 from app.controllers.organization_settings_controller import OrganizationSettingsController
-from app.controllers.pdf_controller import PDFController
 from app.controllers.pdf_viewer_controller import PDFViewerController
 from app.controllers.pdf_signature_controller import PDFSignatureController
 from app.controllers.handwritten_signature_controller import HandwrittenSignatureController
-from app.controllers.scan_controller import ScanController
 from app.services.document_service import DocumentService
 from app.services.version_notification_service import VersionNotificationService
 from app.coordinators.corporate_transport_coordinator import CorporateTransportCoordinator
@@ -38,6 +37,7 @@ class AppController:
         self.pdf_signature_controller = None
         self.handwritten_signature_controller = None
         self.scan_controller = None
+        self.capture_pdf_controller = None
         self.document_controller = None
         self.document_request_controller = None
         self.transport_controller = None
@@ -54,7 +54,6 @@ class AppController:
         """
         # Criar controllers
         self.convert_controller = ConvertController(self.workspace, self.main_view)
-        self.pdf_controller = PDFController(self.workspace)
         self.pdf_viewer_controller = PDFViewerController(self.workspace)
         self.pdf_signature_controller = PDFSignatureController(
             self.main_view, self.pdf_viewer_controller
@@ -66,6 +65,15 @@ class AppController:
             DocumentService(database=self.database)
             if self.database else DocumentService()
         )
+        self.capture_pdf_controller = CapturePdfController(
+            self.workspace,
+            document_service,
+            session_context=self.session_context,
+        )
+        # Compatibilidade de API durante a transição: as rotas históricas
+        # Scanner e PDF Tools apontam para a experiência integrada.
+        self.pdf_controller = self.capture_pdf_controller
+        self.scan_controller = self.capture_pdf_controller
         self.transport_coordinator = CorporateTransportCoordinator(
             document_service.database,
             self.session_context,
@@ -102,9 +110,8 @@ class AppController:
             transport_controller=self.transport_controller,
         )
         self._connect_enterprise_layer()
-        self.scan_controller = ScanController(
-            self.workspace, document_service, self.document_controller.on_refresh_documents,
-            self.session_context,
+        self.capture_pdf_controller.imported_callback = (
+            self.document_controller.on_refresh_documents
         )
         self.pdf_signature_controller.set_document_service(
             self.document_controller.service
@@ -139,10 +146,8 @@ class AppController:
             self.main_view.sidebar.show()
         if tool_name == "converter":
             self.convert_controller.activate()
-        elif tool_name == "pdf":
-            self.pdf_controller.activate()
-        elif tool_name == "scanner":
-            self.scan_controller.activate()
+        elif tool_name in {"capture_pdf", "pdf", "scanner"}:
+            self.capture_pdf_controller.activate()
         elif tool_name == "documents":
             self.document_controller.activate()
 

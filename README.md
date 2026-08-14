@@ -23,9 +23,11 @@ independentes.
 - armazenamento interno gerenciado com SQLite e checksums SHA-256;
 - recuperação offline de senha com códigos de uso único protegidos por Argon2id;
 - visualizador interno de PDF com navegação, zoom, miniaturas e pesquisa;
-- PDF Tools para operações estruturais;
+- **Captura e PDF**, experiência integrada para digitalizar, importar imagens,
+  abrir ou mesclar PDFs, reorganizar, girar, extrair, salvar e adicionar ao GED;
 - assinatura digital e assinatura manuscrita;
-- scanner SANE no Linux e TWAIN no Windows;
+- scanner SANE no Linux e TWAIN no Windows, integrado ao workspace de PDF sem
+  exigir arquivo intermediário;
 - conversor responsivo com formatos compatíveis, progresso, cancelamento,
   histórico da sessão e abertura do resultado;
 - backup completo em ZIP para administradores;

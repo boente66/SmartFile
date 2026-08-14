@@ -8,7 +8,7 @@ class WorkspaceView(QWidget):
     Responsável por exibir um módulo por vez:
     - Documentos
     - Converter
-    - PDF Tools
+    - Captura e PDF
     - Visualizador de PDF
     - Scanner
     """
@@ -34,6 +34,15 @@ class WorkspaceView(QWidget):
 
         self._views[name] = view
         self._layout.addWidget(view)
+
+    def register_alias(self, alias: str, target: str) -> None:
+        """Mantém rotas públicas antigas sem duplicar o widget no layout."""
+        if alias in self._views:
+            raise ValueError(f"View já registrada: {alias}")
+        view = self._views.get(target)
+        if view is None:
+            raise ValueError(f"View alvo não registrada: {target}")
+        self._views[alias] = view
 
     def show_view(self, name: str):
         """

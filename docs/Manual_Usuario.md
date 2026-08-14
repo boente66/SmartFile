@@ -400,40 +400,43 @@ Atalhos principais:
 PDFs digitalizados sem camada de texto não podem ser pesquisados nesta fase. O
 visualizador não executa OCR automaticamente.
 
-## 8. PDF Tools
+## 8. Captura e PDF
 
-O módulo PDF Tools é destinado à manipulação estrutural. Ele permite:
+**Captura e PDF** reúne a experiência de Scanner e PDF Tools em um único
+workspace, mantendo internamente separados os serviços de aquisição, composição,
+preview e persistência documental.
 
-- adicionar PDFs;
-- remover páginas;
-- alterar a ordem;
-- girar páginas permanentemente;
-- extrair páginas;
-- dividir documentos;
-- mesclar PDFs;
-- salvar um novo PDF.
+### Digitalizar e organizar
 
-Revise a seleção de páginas antes de aplicar alterações. Sempre que possível,
-salve o resultado como um novo arquivo para preservar o original.
+1. Abra **Captura e PDF**.
+2. Selecione scanner, perfil, fonte do papel e resolução.
+3. Coloque o documento na mesa ou no alimentador selecionado.
+4. Selecione **Iniciar Digitalização**. A página entra diretamente no workspace;
+   não é preciso salvar um arquivo intermediário.
+5. Digitalize páginas adicionais ou use **Adicionar** para importar imagens e
+   outros PDFs.
+6. Arraste as miniaturas para definir a ordem final. Use seleção múltipla para
+   girar, remover ou extrair páginas.
+7. Revise o preview e utilize os controles de página e zoom.
+8. Selecione **Salvar PDF...** para exportar fora do GED ou **Adicionar ao
+   SmartFile...** para cadastrar pelo fluxo oficial de armazenamento gerenciado.
 
-## 9. Scanner
+### Abrir e combinar PDFs
 
-1. Abra **Scanner**.
-2. Selecione o dispositivo disponível.
-3. Escolha perfil, fonte do papel e resolução.
-4. Coloque o documento na mesa ou no alimentador selecionado.
-5. Selecione **Digitalizar**.
-6. Revise as páginas.
-7. Use **Digitalizar e adicionar mais** quando necessário.
-8. Para exportar, selecione **Salvar documento**.
-9. Para cadastrar diretamente, selecione **Adicionar ao GED**.
-10. Escolha organização e pasta, preencha título, categoria, descrição, etiquetas,
-    data e observações, e confirme.
+1. Use **Abrir PDF** para iniciar a sessão com um documento existente.
+2. Use **Adicionar outro PDF** ou **Mesclar** para acrescentar suas páginas.
+3. Reordene, gire permanentemente, remova ou extraia a seleção.
+4. Salve em novo arquivo. O SmartFile nunca sobrescreve silenciosamente uma saída
+   existente.
 
-As setas na lista permitem reordenar as páginas antes da geração do PDF. Ao adicionar
-ao GED, o SmartFile cria um PDF temporário, verifica e reserva a cota, copia o arquivo
-para o storage interno, persiste os metadados com origem `SCANNER`, registra o
-histórico e enfileira a nuvem vinculada. O temporário é removido ao final.
+A ordem da lista é a ordem escrita no PDF. A rotação também é persistida no
+arquivo gerado. A remoção afeta somente o workspace em edição e não altera os
+arquivos originais.
+
+Ao adicionar ao GED, o SmartFile cria um PDF temporário, verifica e reserva a
+cota, importa pelo `DocumentService`, grava no storage interno, persiste os
+metadados e enfileira as integrações habilitadas. O temporário é removido mesmo
+em caso de falha.
 
 As opções disponíveis dependem do driver SANE no Linux ou TWAIN no Windows e das
 capacidades do equipamento. A mensagem “alimentador sem documentos” indica que a
