@@ -425,7 +425,9 @@ preview e persistência documental.
 
 1. Use **Abrir PDF** para iniciar a sessão com um documento existente.
 2. Use **Adicionar outro PDF** ou **Mesclar** para acrescentar suas páginas.
-3. Reordene, gire permanentemente, remova ou extraia a seleção.
+3. Reordene, gire permanentemente, remova ou extraia a seleção. No menu
+   **Mais**, use **Dividir em arquivos individuais** quando precisar de um PDF
+   separado para cada página.
 4. Salve em novo arquivo. O SmartFile nunca sobrescreve silenciosamente uma saída
    existente.
 

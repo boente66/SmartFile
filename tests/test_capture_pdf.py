@@ -138,6 +138,18 @@ def test_controller_open_merge_reorder_rotate_remove_and_save(tmp_path: Path, mo
     controller.clear_workspace(confirm=False)
 
 
+def test_controller_splits_every_workspace_page(tmp_path: Path, monkeypatch):
+    app(); database = Database(str(tmp_path / "smartfile.db")); controller = CapturePdfController(WorkspaceView(), DocumentService(database=database))
+    monkeypatch.setattr("app.controllers.capture_pdf_controller.QMessageBox.information", lambda *args: None)
+    controller.state.add_pages(CapturePdfService.pages_from_pdf(make_pdf(tmp_path / "source.pdf", ["A", "B", "C"])))
+    output = tmp_path / "split"
+    controller.on_split_pdf(str(output)); wait_until(lambda: controller._operation_worker is None)
+    files = sorted(output.glob("*.pdf"))
+    assert len(files) == 3
+    assert [PdfReader(path).pages[0].extract_text().strip() for path in files] == ["A", "B", "C"]
+    controller.clear_workspace(confirm=False)
+
+
 def test_ged_flow_uses_document_service_managed_storage(tmp_path: Path, monkeypatch):
     app(); database = Database(str(tmp_path / "smartfile.db")); service = DocumentService(database=database)
     controller = CapturePdfController(WorkspaceView(), service)

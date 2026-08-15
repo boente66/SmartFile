@@ -57,6 +57,7 @@ class CapturePdfController:
         self.view.reorder_requested.connect(self.on_reorder_pages)
         self.view.rotate_requested.connect(self.on_rotate_pages)
         self.view.extract_requested.connect(self.on_extract_pages)
+        self.view.split_requested.connect(self.on_split_pdf)
         self.view.save_requested.connect(self.on_save_pdf)
         self.view.add_to_ged_requested.connect(self.on_add_to_ged)
         self.view.clear_requested.connect(self.on_clear_requested)
@@ -247,6 +248,41 @@ class CapturePdfController:
             QMessageBox.warning(self.view, "Salvar PDF", "Nenhuma página disponível.")
             return
         self._materialize_to(Path(path), self.state.pages, "Salvar PDF", reopen=True)
+
+    def on_split_pdf(self, directory: str) -> None:
+        if not self.state.pages:
+            return
+        target = Path(directory).expanduser().resolve()
+        snapshot = self.state.snapshot()
+
+        def task(progress, cancelled):
+            outputs = []
+            try:
+                target.mkdir(parents=True, exist_ok=True)
+                for index, page in enumerate(snapshot, start=1):
+                    if cancelled():
+                        raise InterruptedError
+                    progress(
+                        int(index * 100 / len(snapshot)),
+                        f"Gerando página {index} de {len(snapshot)}",
+                    )
+                    output = safe_output_path(
+                        target / f"{self.state.output_name}_pagina_{index}.pdf"
+                    )
+                    outputs.append(CapturePdfService.materialize([page], output))
+                return outputs
+            finally:
+                CapturePdfService.close_pages(snapshot)
+
+        self._start_operation(
+            task,
+            lambda outputs: QMessageBox.information(
+                self.view,
+                "Dividir PDF",
+                f"{len(outputs)} arquivo(s) criado(s) em:\n{target}",
+            ),
+            "Dividir PDF",
+        )
 
     def _materialize_to(self, requested: Path, pages, title: str, *, reopen: bool) -> None:
         output = safe_output_path(requested.expanduser())
