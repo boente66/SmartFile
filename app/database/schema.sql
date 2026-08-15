@@ -186,21 +186,124 @@ CREATE TABLE IF NOT EXISTS transport_jobs (
 
 CREATE TABLE IF NOT EXISTS document_requests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    request_uuid TEXT NOT NULL UNIQUE,
     organization_id INTEGER NOT NULL,
     title TEXT NOT NULL,
     description TEXT,
     requested_by_user_id INTEGER,
     assigned_to_user_id INTEGER,
     status TEXT NOT NULL DEFAULT 'OPEN'
-        CHECK (status IN ('OPEN','IN_PROGRESS','COMPLETED','CANCELLED','OVERDUE')),
+        CHECK (status IN ('OPEN','IN_PROGRESS','ATTENDED','DELIVERING','DELIVERED','COMPLETED','CANCELLED')),
     due_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
+    started_at TEXT,
+    attended_at TEXT,
+    delivered_at TEXT,
     completed_at TEXT,
+    cancelled_at TEXT,
+    origin_instance_id TEXT,
+    target_instance_id TEXT,
     FOREIGN KEY (organization_id) REFERENCES organizations(id),
     FOREIGN KEY (requested_by_user_id) REFERENCES users(id),
     FOREIGN KEY (assigned_to_user_id) REFERENCES users(id)
 );
+
+CREATE TABLE IF NOT EXISTS smartfile_instances (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    instance_id TEXT NOT NULL UNIQUE,
+    organization_id INTEGER NOT NULL,
+    device_name TEXT NOT NULL,
+    owner_user_id INTEGER,
+    current_ip TEXT NOT NULL,
+    http_port INTEGER NOT NULL CHECK (http_port BETWEEN 1024 AND 65535),
+    enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0,1)),
+    is_local INTEGER NOT NULL DEFAULT 0 CHECK (is_local IN (0,1)),
+    created_at TEXT NOT NULL,
+    last_seen_at TEXT,
+    FOREIGN KEY (organization_id) REFERENCES organizations(id),
+    FOREIGN KEY (owner_user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS document_request_documents (
+    request_id INTEGER NOT NULL,
+    document_id INTEGER NOT NULL,
+    linked_by_user_id INTEGER,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (request_id, document_id),
+    FOREIGN KEY (request_id) REFERENCES document_requests(id) ON DELETE CASCADE,
+    FOREIGN KEY (document_id) REFERENCES documents(id),
+    FOREIGN KEY (linked_by_user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS document_deliveries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    delivery_uuid TEXT NOT NULL UNIQUE,
+    protocol_number TEXT NOT NULL UNIQUE,
+    organization_id INTEGER NOT NULL,
+    request_id INTEGER,
+    sender_user_id INTEGER,
+    recipient_user_id INTEGER,
+    sender_instance_id TEXT NOT NULL,
+    recipient_instance_id TEXT NOT NULL,
+    recipient_host TEXT NOT NULL,
+    recipient_port INTEGER NOT NULL,
+    direction TEXT NOT NULL CHECK (direction IN ('OUTGOING','INCOMING')),
+    message TEXT,
+    status TEXT NOT NULL CHECK (status IN ('CREATED','QUEUED','SENDING','DELIVERED','VIEWED','ACKNOWLEDGED','FAILED','CANCELLED')),
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TEXT,
+    last_error TEXT,
+    created_at TEXT NOT NULL,
+    queued_at TEXT,
+    sent_at TEXT,
+    delivered_at TEXT,
+    viewed_at TEXT,
+    viewed_by_user_id INTEGER,
+    acknowledged_at TEXT,
+    completed_at TEXT,
+    cancelled_at TEXT,
+    FOREIGN KEY (organization_id) REFERENCES organizations(id),
+    FOREIGN KEY (request_id) REFERENCES document_requests(id),
+    FOREIGN KEY (sender_user_id) REFERENCES users(id),
+    FOREIGN KEY (recipient_user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS document_delivery_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_uuid TEXT NOT NULL UNIQUE,
+    delivery_id INTEGER NOT NULL,
+    document_id INTEGER,
+    logical_name TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    sha256 TEXT NOT NULL,
+    transfer_status TEXT NOT NULL DEFAULT 'PENDING' CHECK (transfer_status IN ('PENDING','SENDING','RECEIVED','VERIFIED','FAILED')),
+    received_path TEXT,
+    sent_at TEXT,
+    received_at TEXT,
+    FOREIGN KEY (delivery_id) REFERENCES document_deliveries(id) ON DELETE CASCADE,
+    FOREIGN KEY (document_id) REFERENCES documents(id)
+);
+
+CREATE TABLE IF NOT EXISTS delivery_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    organization_id INTEGER NOT NULL,
+    request_id INTEGER,
+    delivery_id INTEGER,
+    event_type TEXT NOT NULL,
+    actor_user_id INTEGER,
+    description TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (organization_id) REFERENCES organizations(id),
+    FOREIGN KEY (request_id) REFERENCES document_requests(id),
+    FOREIGN KEY (delivery_id) REFERENCES document_deliveries(id) ON DELETE CASCADE,
+    FOREIGN KEY (actor_user_id) REFERENCES users(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_delivery_org_direction_status ON document_deliveries(organization_id, direction, status);
+CREATE INDEX IF NOT EXISTS idx_delivery_retry ON document_deliveries(status, next_attempt_at);
+CREATE INDEX IF NOT EXISTS idx_delivery_items_delivery ON document_delivery_items(delivery_id);
+CREATE INDEX IF NOT EXISTS idx_delivery_history_request ON delivery_history(request_id, created_at);
 
 CREATE TABLE IF NOT EXISTS cloud_settings (
     organization_id INTEGER PRIMARY KEY,

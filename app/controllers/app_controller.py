@@ -7,6 +7,7 @@ from app.controllers.convert_controller import ConvertController
 from app.controllers.document_controller import DocumentController
 from app.controllers.capture_pdf_controller import CapturePdfController
 from app.controllers.document_request_controller import DocumentRequestController
+from app.controllers.document_delivery_controller import DocumentDeliveryController
 from app.controllers.organization_settings_controller import OrganizationSettingsController
 from app.controllers.pdf_viewer_controller import PDFViewerController
 from app.controllers.pdf_signature_controller import PDFSignatureController
@@ -40,6 +41,7 @@ class AppController:
         self.capture_pdf_controller = None
         self.document_controller = None
         self.document_request_controller = None
+        self.document_delivery_controller = None
         self.transport_controller = None
         self.transport_coordinator = None
         self.organization_settings_controller = None
@@ -96,6 +98,10 @@ class AppController:
             parent=self.document_controller.view,
             organization_id_provider=lambda: document_service.active_organization_id,
         )
+        self.document_delivery_controller = DocumentDeliveryController(
+            self.workspace, document_service, self.session_context,
+            parent=self.document_controller.view,
+        )
         self.transport_controller = CorporateTransportController(
             document_service.database,
             self.session_context,
@@ -126,6 +132,7 @@ class AppController:
         # Tela inicial
         self.document_controller.activate()
         self.transport_coordinator.start()
+        self.document_delivery_controller.start()
         self.main_view.sidebar.set_active_tool("documents")
         self._application = QApplication.instance()
         if self._application is not None:
@@ -150,6 +157,8 @@ class AppController:
             self.capture_pdf_controller.activate()
         elif tool_name == "documents":
             self.document_controller.activate()
+        elif tool_name == "deliveries":
+            self.document_delivery_controller.activate()
 
     def _connect_enterprise_layer(self) -> None:
         view = self.document_controller.view
@@ -166,10 +175,13 @@ class AppController:
         )
         view.audit_history_requested.connect(settings.open_security_history)
         view.document_requests_requested.connect(
-            self.document_request_controller.open_requests
+            self.document_delivery_controller.activate
         )
 
         settings.organization_changed.connect(coordinator.organization_changed)
+        settings.organization_changed.connect(
+            self.document_delivery_controller.organization_changed
+        )
         settings.status_changed.connect(view.set_status)
         settings.failed.connect(
             lambda message: QMessageBox.warning(
@@ -215,6 +227,8 @@ class AppController:
             self.transport_controller.shutdown()
         if self.transport_coordinator is not None:
             self.transport_coordinator.shutdown()
+        if self.document_delivery_controller is not None:
+            self.document_delivery_controller.shutdown()
         if self._application is not None:
             try:
                 self._application.aboutToQuit.disconnect(self.shutdown)

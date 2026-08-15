@@ -445,6 +445,59 @@ capacidades do equipamento. A mensagem “alimentador sem documentos” indica q
 fonte ADF foi escolhida, mas não há papel no alimentador; coloque as folhas ou
 troque a fonte para mesa/Flatbed.
 
+## 9. Solicitações e Entregas
+
+O painel **Solicitações e Entregas** atende dois casos de uso: responder a um
+pedido documental e enviar documentos diretamente para outro usuário/SmartFile.
+Ele não substitui a sincronização em nuvem nem o transporte NAS empresarial.
+
+### Caso de uso: solicitar e receber um documento
+
+1. Abra **Solicitações e Entregas** e selecione **Solicitações recebidas**.
+2. Informe o documento desejado, a descrição, o responsável e o prazo opcional.
+3. Se a instalação do responsável estiver cadastrada e disponível, o SmartFile
+   envia a solicitação; se estiver offline, a solicitação local é preservada e o
+   coordenador tenta novamente.
+4. O responsável usa **Iniciar atendimento**, providencia ou importa o documento
+   pelo GED e marca a solicitação como **Atendida**.
+5. Selecione **Preparar entrega da solicitação**. A cesta mantém o destinatário e
+   a solicitação relacionados.
+6. Use **Selecionar documentos** para navegar pelas pastas lógicas do GED. O
+   explorador não revela os caminhos físicos do armazenamento gerenciado.
+7. Selecione **Enviar e gerar protocolo**. O estado **Atendida** não significa
+   **Entregue**: a entrega só é confirmada depois que todos os itens chegam e o
+   SHA-256 é validado.
+8. No SmartFile destinatário, abra **Documentos recebidos**, selecione o protocolo
+   e use **Visualizar**, **Download**, **Adicionar ao SmartFile** ou **Confirmar
+   recebimento**.
+9. Visualizar registra o visto real. Confirmar o recebimento encerra o protocolo
+   e conclui a solicitação associada.
+
+### Caso de uso: envio direto
+
+1. Abra a aba **Cesta de documentos**.
+2. Selecione um ou mais documentos do GED.
+3. Escolha o destinatário e a instalação SmartFile cadastrada.
+4. Informe uma mensagem opcional e envie. O protocolo é criado sem uma
+   solicitação associada.
+
+### Destinatário offline
+
+Se o destinatário não responder, a entrega permanece **QUEUED**. O SmartFile
+aplica retry com intervalo crescente e mantém a fila no SQLite, inclusive após
+reiniciar o aplicativo. Após o limite automático, o estado passa a **FAILED** e
+o usuário pode selecionar **Tentar novamente**, reiniciando a política de retry.
+
+### Configuração LAN
+
+OWNER ou ADMIN pode usar **Configurar LAN** para definir o endereço atual e a
+porta de recepção. Cada instalação possui um UUID permanente; a mudança de IP
+não muda sua identidade. A versão beta usa HTTP em laboratório de rede local
+confiável. Não exponha a porta diretamente à Internet.
+
+Consulte [Teste de entrega LAN](DELIVERY_LAN_TEST.md) para configurar duas
+máquinas e diagnosticar firewall, porta e conectividade.
+
 ## 10. Assinaturas
 
 ### Assinatura digital

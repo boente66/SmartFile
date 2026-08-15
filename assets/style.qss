@@ -768,6 +768,17 @@ QFrame#registrationFooter QLabel { color: #4a586b; }
 QLabel#registrationSecureText { color: #187c3c; }
 QToolButton#accountButton { background: #17212a; color: #e5e7eb; border: 1px solid #334155; border-radius: 6px; padding: 5px 10px; }
 
+/* Solicitações e Entregas */
+QWidget#deliveryWorkspace { background: #f5f7fa; color: #172033; }
+QWidget#deliveryWorkspace QLabel { color: #334155; }
+QLabel#deliveryTitle { color: #101c2c; font-size: 24px; font-weight: 800; }
+QWidget#deliveryWorkspace QTabWidget::pane { background: #ffffff; border: 1px solid #d8e0e8; }
+QWidget#deliveryWorkspace QTabBar::tab { background: #edf1f5; color: #334155; padding: 9px 12px; }
+QWidget#deliveryWorkspace QTabBar::tab:selected { background: #ffffff; color: #1769e8; border-bottom: 2px solid #1769e8; }
+QWidget#deliveryWorkspace QListWidget { background: #ffffff; color: #172033; border: 1px solid #d8e0e8; }
+QWidget#deliveryWorkspace QLineEdit, QWidget#deliveryWorkspace QTextEdit, QWidget#deliveryWorkspace QComboBox { background: #ffffff; color: #172033; border: 1px solid #cbd5e1; border-radius: 5px; padding: 5px; }
+QPushButton#deliveryPrimary { background: #1f9d4d; color: white; border: none; min-height: 40px; font-weight: 700; }
+
 /* Captura e PDF */
 QWidget#capturePdf { background: #171c22; color: #e5e7eb; }
 QWidget#capturePdf QLabel { color: #e5e7eb; }

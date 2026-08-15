@@ -53,6 +53,7 @@ class SidebarView(QWidget):
         self._add_button(layout, "Documentos", "documents")
         self._add_button(layout, "Converter", "converter")
         self._add_button(layout, "Captura e PDF", "capture_pdf")
+        self._add_button(layout, "Solicitações e Entregas", "deliveries")
 
         layout.addStretch()
 

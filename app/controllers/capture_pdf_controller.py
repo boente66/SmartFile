@@ -369,6 +369,11 @@ class CapturePdfController:
             if answer != QMessageBox.StandardButton.Yes:
                 return False
         CapturePdfService.close_pages(self.state.clear())
+        # Invalida qualquer resultado já enfileirado antes de limpar a View.
+        self._render_generation += 1
+        self._render_pending = False
+        if self._render_worker is not None:
+            self._render_worker.requestInterruption()
         self.view.set_pages([], -1)
         self._update_view_state()
         return True
@@ -434,11 +439,10 @@ class CapturePdfController:
     def _cleanup_render(self, worker: CapturePdfWorker) -> None:
         if self._render_worker is worker:
             self._render_worker = None
-            if self._render_pending or self._render_generation:
-                pending = self._render_pending
-                self._render_pending = False
-                if pending:
-                    self._schedule_render()
+            pending = self._render_pending
+            self._render_pending = False
+            if pending and self.state.pages:
+                self._schedule_render()
 
     def _set_current_page(self, index: int) -> None:
         if 0 <= index < len(self.state.pages):
