@@ -25,6 +25,7 @@ class CapturePdfView(QWidget):
     reorder_requested = pyqtSignal(list)
     rotate_requested = pyqtSignal(list, int)
     extract_requested = pyqtSignal(list, str)
+    split_requested = pyqtSignal(str)
     save_requested = pyqtSignal(str)
     add_to_ged_requested = pyqtSignal()
     clear_requested = pyqtSignal()
@@ -169,7 +170,14 @@ class CapturePdfView(QWidget):
         self.document_actions: list[QPushButton] = []
         for text, icon, callback in specs:
             button = self._compact_action(text, icon, callback); tools.addWidget(button); self.document_actions.append(button)
-        more = self._compact_action("Mais", "more", lambda: None); tools.addWidget(more); tools.addStretch()
+        more = QToolButton(); more.setObjectName("capturePdfAction"); more.setText("Mais")
+        more.setIcon(IconProvider.icon("more")); more.setIconSize(QSize(18, 18))
+        more.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        more.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        more_menu = QMenu(more)
+        self._menu_action(more_menu, "Dividir em arquivos individuais", "pdf_split", self._choose_split_directory)
+        self._menu_action(more_menu, "Limpar workspace", "trash", self.clear_requested.emit)
+        more.setMenu(more_menu); tools.addWidget(more); tools.addStretch()
         layout.addLayout(tools)
         self.preview = PreviewWidget(); self.preview.setObjectName("capturePdfPreview")
         layout.addWidget(self.preview, 1)
@@ -303,6 +311,13 @@ class CapturePdfView(QWidget):
     def _choose_save(self) -> None:
         path, _ = QFileDialog.getSaveFileName(self, "Salvar PDF", "documento.pdf", "PDF (*.pdf)")
         if path: self.save_requested.emit(path)
+
+    def _choose_split_directory(self) -> None:
+        if not self.page_list.count():
+            return
+        directory = QFileDialog.getExistingDirectory(self, "Pasta para páginas divididas")
+        if directory:
+            self.split_requested.emit(directory)
 
     def _device_selected(self, value: str) -> None:
         self.origin_label.setText(f"Origem selecionada: {value}")

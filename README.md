@@ -33,8 +33,10 @@ independentes.
 - backup completo em ZIP para administradores;
 - sincronização opcional com Microsoft OneDrive ou Google Drive;
 - para organizações empresariais: controle de acesso, solicitações com prazo,
-  auditoria e transporte NAS resiliente; HTTPS e LAN permanecem preparados para
-  conectores futuros.
+  auditoria e transporte NAS resiliente;
+- **Solicitações e Entregas** com cesta referencial, protocolo auditável,
+  transferência HTTP 1:1 entre instalações SmartFile, SHA-256, fila offline,
+  visto e confirmação de recebimento. Essa entrega LAN é independente do NAS.
 
 ## Perfis de recursos
 
@@ -59,6 +61,25 @@ Cloud Layer e transporte corporativo são camadas independentes. OneDrive e
 Google Drive usam OAuth e fila de sincronização. NAS, LAN e HTTPS são destinos
 administrativos da organização e não exigem conta de nuvem nem alteram seu modo
 de sincronização.
+
+### Solicitações e Entregas na rede local
+
+O workspace **Solicitações e Entregas** diferencia o pedido documental da
+transferência efetiva. A solicitação percorre `OPEN → IN_PROGRESS → ATTENDED →
+DELIVERING → DELIVERED → COMPLETED`; atraso é calculado pelo prazo e não apaga o
+estado principal. Os documentos oficiais permanecem no GED e a cesta guarda
+somente suas referências.
+
+Cada instalação possui UUID permanente. O endereço IP apenas localiza o peer
+cadastrado. Uma entrega gera protocolo legível, envia os arquivos em chunks,
+valida tamanho e SHA-256 no destinatário e somente então assume `DELIVERED`. Se o
+peer estiver offline, o protocolo permanece `QUEUED` para retry com backoff.
+
+O HTTP local desta beta é destinado a laboratório em rede confiável. HTTPS e
+autenticação criptográfica entre instalações estão preparados como evolução,
+mas ainda não estão declarados como implementados. Consulte o
+[roteiro Mint ↔ Zorin](docs/DELIVERY_LAN_TEST.md) e o
+[contrato HTTP](docs/DELIVERY_HTTP_API.md).
 
 ### Transporte NAS
 

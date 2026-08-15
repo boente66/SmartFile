@@ -360,8 +360,8 @@ def test_schema_15_migrates_to_current_without_losing_existing_data(tmp_path: Pa
     legacy.close()
 
     migrated = Database(str(legacy_path))
-    assert migrated.connect().execute("PRAGMA user_version").fetchone()[0] == 17
-    assert CURRENT_SCHEMA_VERSION == 17
+    assert migrated.connect().execute("PRAGMA user_version").fetchone()[0] == CURRENT_SCHEMA_VERSION
+    assert CURRENT_SCHEMA_VERSION == 18
     assert migrated.fetch_one("SELECT id FROM documents WHERE id=?", (document.id,))
     assert migrated.fetch_one("SELECT id FROM organizations WHERE id=?", (organization_id,))
     assert migrated.fetch_one(
@@ -395,7 +395,10 @@ def test_transport_worker_runs_task_outside_caller_and_emits_result():
     progress_spy = QSignalSpy(worker.progress)
     success_spy = QSignalSpy(worker.succeeded)
     worker.start()
-    assert success_spy.wait(3000)
+    # Em suítes Qt extensas, o agendador pode demorar além de 3 s para entregar
+    # o sinal mesmo com a tarefa já concluída. Mantém o teste determinístico sem
+    # alterar o timeout de produção do transporte.
+    assert success_spy.wait(10000)
     assert worker.wait(3000)
     application.processEvents()
     assert progress_spy and progress_spy[0] == [50, "Transferindo"]

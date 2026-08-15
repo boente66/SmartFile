@@ -57,6 +57,7 @@ class CapturePdfController:
         self.view.reorder_requested.connect(self.on_reorder_pages)
         self.view.rotate_requested.connect(self.on_rotate_pages)
         self.view.extract_requested.connect(self.on_extract_pages)
+        self.view.split_requested.connect(self.on_split_pdf)
         self.view.save_requested.connect(self.on_save_pdf)
         self.view.add_to_ged_requested.connect(self.on_add_to_ged)
         self.view.clear_requested.connect(self.on_clear_requested)
@@ -248,6 +249,41 @@ class CapturePdfController:
             return
         self._materialize_to(Path(path), self.state.pages, "Salvar PDF", reopen=True)
 
+    def on_split_pdf(self, directory: str) -> None:
+        if not self.state.pages:
+            return
+        target = Path(directory).expanduser().resolve()
+        snapshot = self.state.snapshot()
+
+        def task(progress, cancelled):
+            outputs = []
+            try:
+                target.mkdir(parents=True, exist_ok=True)
+                for index, page in enumerate(snapshot, start=1):
+                    if cancelled():
+                        raise InterruptedError
+                    progress(
+                        int(index * 100 / len(snapshot)),
+                        f"Gerando página {index} de {len(snapshot)}",
+                    )
+                    output = safe_output_path(
+                        target / f"{self.state.output_name}_pagina_{index}.pdf"
+                    )
+                    outputs.append(CapturePdfService.materialize([page], output))
+                return outputs
+            finally:
+                CapturePdfService.close_pages(snapshot)
+
+        self._start_operation(
+            task,
+            lambda outputs: QMessageBox.information(
+                self.view,
+                "Dividir PDF",
+                f"{len(outputs)} arquivo(s) criado(s) em:\n{target}",
+            ),
+            "Dividir PDF",
+        )
+
     def _materialize_to(self, requested: Path, pages, title: str, *, reopen: bool) -> None:
         output = safe_output_path(requested.expanduser())
         snapshot = CapturePdfWorkspace(pages=list(pages)).snapshot()
@@ -333,6 +369,11 @@ class CapturePdfController:
             if answer != QMessageBox.StandardButton.Yes:
                 return False
         CapturePdfService.close_pages(self.state.clear())
+        # Invalida qualquer resultado já enfileirado antes de limpar a View.
+        self._render_generation += 1
+        self._render_pending = False
+        if self._render_worker is not None:
+            self._render_worker.requestInterruption()
         self.view.set_pages([], -1)
         self._update_view_state()
         return True
@@ -398,11 +439,10 @@ class CapturePdfController:
     def _cleanup_render(self, worker: CapturePdfWorker) -> None:
         if self._render_worker is worker:
             self._render_worker = None
-            if self._render_pending or self._render_generation:
-                pending = self._render_pending
-                self._render_pending = False
-                if pending:
-                    self._schedule_render()
+            pending = self._render_pending
+            self._render_pending = False
+            if pending and self.state.pages:
+                self._schedule_render()
 
     def _set_current_page(self, index: int) -> None:
         if 0 <= index < len(self.state.pages):

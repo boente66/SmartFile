@@ -18,7 +18,8 @@ class DocumentRequestsDialog(QDialog):
     create_requested = pyqtSignal(dict)
     status_update_requested = pyqtSignal(int, str)
     STATUS_LABELS = {
-        "OPEN": "Aberta", "IN_PROGRESS": "Em andamento", "COMPLETED": "Concluída",
+        "OPEN": "Aberta", "IN_PROGRESS": "Em atendimento", "ATTENDED": "Atendida",
+        "DELIVERING": "Em entrega", "DELIVERED": "Entregue", "COMPLETED": "Concluída",
         "CANCELLED": "Cancelada", "OVERDUE": "Atrasada",
     }
 
