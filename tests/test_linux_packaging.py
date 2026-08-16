@@ -138,7 +138,9 @@ def test_linux_build_validates_package_format_desktop_and_appstream():
     assert "dpkg-deb --info" in build
     assert "dpkg-deb --contents" in build
     assert "desktop-file-validate" in build
-    assert "appstreamcli validate --no-net --strict" in build
+    assert "validate_appstream" in build
+    assert "appstreamcli validate --help" in build
+    assert "arguments+=(--strict)" in build
     assert "diagnostic_smoke_test" in build
     assert "startup_smoke_test" in build
     assert "LINTIAN_STATUS=${PIPESTATUS[0]}" in build

@@ -155,6 +155,15 @@ diagnostic_smoke_test() {
     fi
 }
 
+validate_appstream() {
+    local metadata_file="$1"
+    local arguments=(validate --no-net)
+    if appstreamcli validate --help 2>&1 | grep -q -- '--strict'; then
+        arguments+=(--strict)
+    fi
+    appstreamcli "${arguments[@]}" "$metadata_file"
+}
+
 echo "==> Smoke test fora do venv"
 diagnostic_smoke_test "$DIST_DIR/SmartFile/smartfile" \
     "$BUILD_ROOT/smoke-dist-diagnostic" "$BUILD_ROOT/smoke-dist-diagnostic.log"
@@ -219,7 +228,7 @@ if [[ $sensitive_found -ne 0 ]]; then
 fi
 
 desktop-file-validate "$STAGE/usr/share/applications/smartfile.desktop"
-appstreamcli validate --no-net --strict \
+validate_appstream \
     "$STAGE/usr/share/metainfo/io.github.boente66.SmartFile.metainfo.xml"
 rm -f "$RELEASE_DIR/$ARTIFACT" "$RELEASE_DIR/$ARTIFACT.sha256"
 dpkg-deb --root-owner-group -Zgzip -z6 --build "$STAGE" "$RELEASE_DIR/$ARTIFACT"

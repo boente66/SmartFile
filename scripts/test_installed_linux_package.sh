@@ -19,6 +19,15 @@ assert_root_owned() {
         || fail "$path não pertence a root:root"
 }
 
+validate_appstream() {
+    local metadata_file="$1"
+    local arguments=(validate --no-net)
+    if appstreamcli validate --help 2>&1 | grep -q -- '--strict'; then
+        arguments+=(--strict)
+    fi
+    appstreamcli "${arguments[@]}" "$metadata_file"
+}
+
 run_diagnostic_smoke() {
     local command_path="$1"
     local label="$2"
@@ -102,7 +111,7 @@ assert_root_owned "$DESKTOP_FILE"
 assert_root_owned "$METainfo_FILE"
 
 desktop-file-validate "$DESKTOP_FILE"
-appstreamcli validate --no-net --strict "$METainfo_FILE"
+validate_appstream "$METainfo_FILE"
 
 desktop_exec="$(sed -n 's/^Exec=//p' "$DESKTOP_FILE")"
 [[ "$desktop_exec" == "smartfile" ]] \
