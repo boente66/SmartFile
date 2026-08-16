@@ -7,13 +7,20 @@ erros, comportamentos inesperados ou incompatibilidades encontrados.
 
 ## Compatibilidade inicial
 
-- Linux Mint baseado em Ubuntu 24.04;
-- Zorin OS baseado em Ubuntu compatível;
+- Linux Mint com base Ubuntu 22.04 ou 24.04;
+- Zorin OS com base Ubuntu 22.04 ou 24.04;
+- Ubuntu 22.04 LTS;
 - Ubuntu 24.04 LTS;
 - Debian e derivados amd64 com bibliotecas compatíveis.
 
-A compatibilidade só é considerada confirmada quando o pacote é instalado e
-testado em cada ambiente limpo. Um smoke test local não substitui essa etapa.
+O pacote é compilado uma única vez no runner Ubuntu 22.04, com baseline máxima
+`GLIBC_2.35` e `GLIBCXX_3.4.29`. Esse mesmo arquivo, sem recompilação, é instalado
+e iniciado nos runners Ubuntu 22.04 e Ubuntu 24.04. Distribuições baseadas em
+Ubuntu 20.04 ou anteriores não fazem parte da compatibilidade declarada.
+
+A compatibilidade com uma família de distribuição depende da base Ubuntu, não
+apenas do nome ou da versão visual do sistema. Hardware, drivers de scanner e
+ambiente gráfico ainda devem ser testados no equipamento do usuário.
 
 ## Download oficial da beta
 
@@ -132,9 +139,11 @@ O script cria um ambiente isolado em `build/linux/venv`, instala
 `requirements.txt` e `requirements-build.txt`, executa testes, compila o bundle,
 monta a árvore Debian, executa smoke tests isolados e grava o pacote e o checksum
 em `release/`. Ele não usa `sudo` e não acessa os dados reais do usuário. O
-workflow oficial executa uma segunda etapa em runner limpo, instala o `.deb` de
-verdade, valida o comando, o launcher, o AppStream, reinstala e remove o pacote
-confirmando a preservação dos dados do usuário.
+workflow oficial executa etapas em runners limpos 22.04 e 24.04, usando o mesmo
+`.deb`: instala de verdade, valida o comando, o launcher, o AppStream, reinstala
+e remove o pacote confirmando a preservação dos dados do usuário. A auditoria
+`scripts/audit_linux_abi.sh` registra todos os ELF e bloqueia o build se a maior
+versão requerida ultrapassar a baseline declarada.
 
 Para reutilizar um ambiente já preparado:
 

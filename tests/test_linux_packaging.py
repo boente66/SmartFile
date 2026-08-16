@@ -145,6 +145,19 @@ def test_linux_build_validates_package_format_desktop_and_appstream():
     assert "o relatório foi preservado" in build
     assert "cd /tmp" in build
     assert "env -u PYTHONPATH -u PYTHONHOME -u VIRTUAL_ENV" in build
+    assert "scripts/audit_linux_abi.sh" in build
+    assert '"${SMARTFILE_MAX_GLIBC:-2.35}"' in build
+    assert '"${SMARTFILE_MAX_GLIBCXX:-3.4.29}"' in build
+
+
+def test_linux_abi_audit_has_explicit_ubuntu_2204_baseline():
+    audit = (ROOT / "scripts/audit_linux_abi.sh").read_text(encoding="utf-8")
+    assert 'MAX_GLIBC="${2:-2.35}"' in audit
+    assert 'MAX_GLIBCXX="${3:-3.4.29}"' in audit
+    assert "readelf --dyn-syms --wide" in audit
+    assert "MAX_REQUIRED_GLIBC=" in audit
+    assert "MAX_REQUIRED_GLIBCXX=" in audit
+    assert "acima da baseline" in audit
 
 
 def test_installed_package_check_covers_real_entry_points():
@@ -166,6 +179,9 @@ def test_linux_ci_installs_reinstalls_and_removes_real_package():
         encoding="utf-8"
     )
     assert "install-test:" in workflow
+    assert "runs-on: ubuntu-22.04" in workflow
+    assert "os: [ubuntu-22.04, ubuntu-24.04]" in workflow
+    assert "runs-on: ${{ matrix.os }}" in workflow
     assert "sudo apt-get install -y \"$PWD/$package\"" in workflow
     assert "dpkg-query -W" in workflow
     assert "./scripts/test_installed_linux_package.sh" in workflow

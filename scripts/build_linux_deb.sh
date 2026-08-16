@@ -86,6 +86,13 @@ if [[ -s "$MISSING_LIBS" ]]; then
     exit 1
 fi
 
+echo "==> Auditando baseline GLIBC/libstdc++"
+"$ROOT_DIR/scripts/audit_linux_abi.sh" \
+    "$DIST_DIR/SmartFile" \
+    "${SMARTFILE_MAX_GLIBC:-2.35}" \
+    "${SMARTFILE_MAX_GLIBCXX:-3.4.29}" \
+    | tee "$BUILD_ROOT/abi-report.txt"
+
 startup_smoke_test() {
     local executable="$1"
     local sandbox="$2"
