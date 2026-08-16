@@ -174,6 +174,8 @@ def test_installed_package_check_covers_real_entry_points():
     assert "cd /tmp" in check
     assert '"$command_path" --smoke-test' in check
     assert "run_persistent_startup_smoke" in check
+    assert 'run_persistent_startup_smoke "$BINARY"' in check
+    assert 'run_persistent_startup_smoke "$WRAPPER"' in check
 
 
 def test_linux_ci_installs_reinstalls_and_removes_real_package():
