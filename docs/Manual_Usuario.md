@@ -988,7 +988,8 @@ retorna à tela de login. Depois disso, a aplicação pode ser fechada normalmen
 
 ## 17. Instalação da versão beta no Linux
 
-Em sistemas amd64 compatíveis com Linux Mint, Ubuntu ou Debian, instale o pacote
+Em sistemas amd64 com base Ubuntu 22.04 ou 24.04, incluindo versões compatíveis
+do Linux Mint e Zorin OS, instale o pacote
 baixado na página permanente da
 [Release 0.9.0 Beta 2](https://github.com/boente66/SmartFile/releases/tag/v0.9.0-beta.2).
 O usuário também pode abrir o `.deb` pelo gerenciador de arquivos e selecionar

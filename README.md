@@ -252,8 +252,10 @@ Windows, instale o driver TWAIN x64 fornecido pelo fabricante do scanner.
 
 ## Pacote Linux beta
 
-O pacote Linux amd64 é destinado a testes em sistemas compatíveis baseados em
-Linux Mint, Zorin OS, Ubuntu e Debian. Baixe sempre pela página permanente de
+O pacote Linux amd64 é destinado a testes em Linux Mint, Zorin OS e Ubuntu com
+base Ubuntu 22.04 ou 24.04, além de derivados Debian amd64 compatíveis. O mesmo
+artefato é compilado em 22.04 e testado em 22.04/24.04. Baixe sempre pela
+página permanente de
 [Releases do SmartFile](https://github.com/boente66/SmartFile/releases/tag/v0.9.0-beta.2),
 nunca renomeando uma página HTML ou um ZIP do GitHub Actions para `.deb`.
 [Baixe diretamente o instalador Linux amd64](https://github.com/boente66/SmartFile/releases/download/v0.9.0-beta.2/smartfile_0.9.0.beta2_amd64.deb)

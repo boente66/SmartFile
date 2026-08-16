@@ -13,7 +13,8 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    # O .deb nasce uma única vez na baseline mais antiga suportada.
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -25,6 +26,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             appstream \
+            binutils \
             desktop-file-utils \
             dpkg-dev \
             fakeroot \
@@ -52,7 +54,12 @@ jobs:
 
   install-test:
     needs: build
-    runs-on: ubuntu-24.04
+    name: install-test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
