@@ -130,6 +130,7 @@ done
 run_diagnostic_smoke "$BINARY" "binary"
 run_diagnostic_smoke "$WRAPPER" "wrapper"
 run_diagnostic_smoke "$desktop_exec" "desktop"
+run_persistent_startup_smoke "$BINARY"
 run_persistent_startup_smoke "$WRAPPER"
 
 echo "Pacote SmartFile instalado e validado com sucesso."
