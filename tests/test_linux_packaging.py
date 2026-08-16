@@ -1,4 +1,5 @@
 from pathlib import Path
+from xml.etree import ElementTree
 
 import pytest
 
@@ -35,6 +36,81 @@ def test_debian_integration_does_not_claim_pdf_mime_association():
     assert "MimeType=" not in desktop
 
 
+def test_desktop_launcher_has_complete_xdg_contract():
+    desktop = (
+        ROOT / "packaging/debian/usr/share/applications/smartfile.desktop"
+    ).read_text(encoding="utf-8")
+    expected = (
+        "Type=Application",
+        "Name=SmartFile",
+        "GenericName=Gerenciador de Documentos",
+        "Exec=smartfile",
+        "Icon=smartfile",
+        "Terminal=false",
+        "Categories=Office;Utility;",
+        "StartupNotify=true",
+    )
+    assert all(item in desktop for item in expected)
+    assert "StartupWMClass=" not in desktop
+
+
+def test_linux_wrapper_uses_absolute_bundle_and_forwards_arguments():
+    wrapper = (ROOT / "packaging/debian/usr/bin/smartfile").read_text(
+        encoding="utf-8"
+    )
+    assert "exec /opt/smartfile/smartfile \"$@\"" in wrapper
+    assert "cd " not in wrapper
+    assert "PYTHONPATH" not in wrapper
+
+
+def test_application_identity_matches_desktop_file():
+    startup = (ROOT / "run.py").read_text(encoding="utf-8")
+    assert 'app.setApplicationName("SmartFile")' in startup
+    assert 'app.setApplicationDisplayName("SmartFile")' in startup
+    assert 'app.setDesktopFileName("smartfile")' in startup
+
+
+def test_appstream_metadata_identifies_desktop_launcher_and_beta():
+    metadata = (
+        ROOT
+        / "packaging/debian/usr/share/metainfo"
+        / "io.github.boente66.SmartFile.metainfo.xml"
+    )
+    component = ElementTree.parse(metadata).getroot()
+    assert component.attrib["type"] == "desktop-application"
+    assert component.findtext("id") == "io.github.boente66.SmartFile"
+    assert component.findtext("project_license") == "MIT"
+    assert component.findtext("launchable") == "smartfile.desktop"
+    assert component.find("launchable").attrib["type"] == "desktop-id"
+    release = component.find("./releases/release")
+    assert release is not None
+    assert release.attrib == {
+        "version": "0.9.0-beta.2",
+        "date": "2026-08-07",
+        "type": "development",
+    }
+
+
+def test_package_control_keeps_heavy_integrations_optional():
+    control = (ROOT / "packaging/debian/DEBIAN/control.in").read_text(
+        encoding="utf-8"
+    )
+    depends = next(line for line in control.splitlines() if line.startswith("Depends:"))
+    recommends = next(
+        line for line in control.splitlines() if line.startswith("Recommends:")
+    )
+    suggests = next(
+        line for line in control.splitlines() if line.startswith("Suggests:")
+    )
+    assert "libc6" in depends
+    assert "libegl1" in depends
+    assert recommends == "Recommends: libsecret-1-0"
+    assert all(
+        package in suggests
+        for package in ("sane-utils", "libsane1", "poppler-utils", "libreoffice")
+    )
+
+
 def test_package_scripts_never_remove_user_directories():
     scripts = [
         ROOT / "packaging/debian/DEBIAN/postinst",
@@ -54,3 +130,60 @@ def test_linux_bundle_includes_system_credential_vault_backends():
     assert 'collect_submodules("keyring.backends")' in spec
     assert '"keyring"' in spec
     assert "keyring>=" in requirements
+
+
+def test_linux_build_validates_package_format_desktop_and_appstream():
+    build = (ROOT / "scripts/build_linux_deb.sh").read_text(encoding="utf-8")
+    assert "file \"$RELEASE_DIR/$ARTIFACT\"" in build
+    assert "dpkg-deb --info" in build
+    assert "dpkg-deb --contents" in build
+    assert "desktop-file-validate" in build
+    assert "appstreamcli validate --no-net --strict" in build
+    assert "diagnostic_smoke_test" in build
+    assert "startup_smoke_test" in build
+    assert "LINTIAN_STATUS=${PIPESTATUS[0]}" in build
+    assert "o relatório foi preservado" in build
+    assert "cd /tmp" in build
+    assert "env -u PYTHONPATH -u PYTHONHOME -u VIRTUAL_ENV" in build
+
+
+def test_installed_package_check_covers_real_entry_points():
+    check = (ROOT / "scripts/test_installed_linux_package.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "dpkg-query -W" in check
+    assert 'WRAPPER="/usr/bin/smartfile"' in check
+    assert 'BINARY="/opt/smartfile/smartfile"' in check
+    assert 'DESKTOP_FILE="/usr/share/applications/smartfile.desktop"' in check
+    assert "desktop_exec" in check
+    assert "cd /tmp" in check
+    assert '"$command_path" --smoke-test' in check
+    assert "run_persistent_startup_smoke" in check
+
+
+def test_linux_ci_installs_reinstalls_and_removes_real_package():
+    workflow = (ROOT / ".github/workflows/build-linux-deb.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "install-test:" in workflow
+    assert "sudo apt-get install -y \"$PWD/$package\"" in workflow
+    assert "dpkg-query -W" in workflow
+    assert "./scripts/test_installed_linux_package.sh" in workflow
+    assert "sudo apt-get install --reinstall -y" in workflow
+    assert "sudo apt-get remove -y smartfile" in workflow
+    assert "package-removal-preserves-user-data" in workflow
+
+
+def test_linux_package_templates_do_not_contain_credentials():
+    paths = [
+        ROOT / "packaging/debian/DEBIAN/control.in",
+        ROOT / "packaging/debian/usr/bin/smartfile",
+        ROOT / "packaging/debian/usr/share/applications/smartfile.desktop",
+        ROOT
+        / "packaging/debian/usr/share/metainfo"
+        / "io.github.boente66.SmartFile.metainfo.xml",
+    ]
+    contents = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+    assert "access_token" not in contents
+    assert "refresh_token" not in contents
+    assert "client_secret" not in contents

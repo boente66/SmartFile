@@ -46,7 +46,8 @@ substituída pelo transporte corporativo.
 
 ## Artefatos beta
 
-- `smartfile_0.9.0~beta2_amd64.deb`;
+- `smartfile_0.9.0.beta2_amd64.deb` no GitHub Releases
+  (`smartfile_0.9.0~beta2_amd64.deb` no build local);
 - `SmartFile-0.9.0-beta.2-Windows-x64-Setup.exe`;
 - `SmartFile-0.9.0-beta.2-Windows-x64-Portable.zip`;
 - arquivos `.sha256` correspondentes.

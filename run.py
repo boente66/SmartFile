@@ -7,6 +7,7 @@ from app.database.database import Database
 from app.system.app_paths import AppPaths
 from app.system.logging_config import configure_logging
 from app.system.resources import resource_path
+from app.version import __version__
 
 
 # load stylesheet if present
@@ -16,10 +17,21 @@ def _load_stylesheet(app: QApplication):
         app.setStyleSheet(qss_path.read_text(encoding='utf-8'))
 
 
+def _configure_application_identity(app: QApplication) -> None:
+    """Expõe ao desktop Linux a identidade usada pelo launcher XDG."""
+
+    app.setApplicationName("SmartFile")
+    app.setApplicationDisplayName("SmartFile")
+    app.setApplicationVersion(__version__)
+    app.setOrganizationName("SmartFile")
+    app.setDesktopFileName("smartfile")
+
+
 def smoke_test() -> int:
     """Valida o bundle sem abrir uma janela ou tocar nos dados reais do usuário."""
 
     app = QApplication.instance() or QApplication(["SmartFile", "--smoke-test"])
+    _configure_application_identity(app)
     with TemporaryDirectory(prefix="smartfile-smoke-") as directory:
         paths = AppPaths(directory)
         paths.ensure_directories()
@@ -52,6 +64,7 @@ def main():
         raise SystemExit(smoke_test())
     configure_logging()
     app = QApplication(sys.argv)
+    _configure_application_identity(app)
     _load_stylesheet(app)
 
     database = Database()
