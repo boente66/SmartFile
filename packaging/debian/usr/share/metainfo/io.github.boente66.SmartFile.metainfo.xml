@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.boente66.SmartFile</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>SmartFile</name>
+  <summary>Gerencie, organize e processe documentos localmente</summary>
+  <description>
+    <p>
+      O SmartFile é um gerenciador de documentos desktop com organização
+      lógica, scanner, ferramentas de PDF e sincronização opcional em nuvem.
+    </p>
+    <p>
+      Esta versão é um protótipo beta para avaliação. Mantenha cópias de
+      segurança independentes e relate eventuais incompatibilidades.
+    </p>
+  </description>
+  <developer id="io.github.boente66">
+    <name>SmartFile contributors</name>
+  </developer>
+  <url type="homepage">https://github.com/boente66/SmartFile</url>
+  <url type="bugtracker">https://github.com/boente66/SmartFile/issues</url>
+  <launchable type="desktop-id">smartfile.desktop</launchable>
+  <provides>
+    <binary>smartfile</binary>
+  </provides>
+  <categories>
+    <category>Office</category>
+    <category>Utility</category>
+  </categories>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="0.9.0-beta.2" date="2026-08-07" type="development">
+      <description>
+        <p>Versão beta para testes em Linux amd64.</p>
+      </description>
+    </release>
+  </releases>
+</component>

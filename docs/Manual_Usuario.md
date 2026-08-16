@@ -989,15 +989,24 @@ retorna à tela de login. Depois disso, a aplicação pode ser fechada normalmen
 ## 17. Instalação da versão beta no Linux
 
 Em sistemas amd64 compatíveis com Linux Mint, Ubuntu ou Debian, instale o pacote
-baixado usando o APT:
+baixado na página permanente da
+[Release 0.9.0 Beta 2](https://github.com/boente66/SmartFile/releases/tag/v0.9.0-beta.2).
+O usuário também pode abrir o `.deb` pelo gerenciador de arquivos e selecionar
+**Instalar**. Pelo terminal:
 
 ```bash
-sudo apt install ./smartfile_0.9.0~beta2_amd64.deb
+cd ~/Downloads
+sha256sum -c smartfile_0.9.0.beta2_amd64.deb.sha256
+sudo apt install ./smartfile_0.9.0.beta2_amd64.deb
 ```
 
 O SmartFile pode ser aberto pelo menu de aplicativos ou pelo comando
 `smartfile`. Scanner, conversões e integração com o cofre de credenciais podem
 depender de componentes opcionais do sistema; consulte `BETA_LINUX.md`.
+
+Não utilize como instalador um ZIP baixado do GitHub Actions. Se o APT informar
+que o arquivo não é um pacote Debian, baixe-o novamente pela seção **Assets**
+da Release e confirme o SHA-256 antes de instalar.
 
 Para remover somente o aplicativo:
 

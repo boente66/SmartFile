@@ -24,9 +24,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
+            appstream \
             desktop-file-utils \
             dpkg-dev \
             fakeroot \
+            lintian \
             libegl1 \
             libgl1 \
             libsane-dev \
@@ -46,10 +48,52 @@ jobs:
             release/*.sha256
             docs/RELEASE_NOTES_0.9.0-beta.2.md
           if-no-files-found: error
+          retention-days: 30
+
+  install-test:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: smartfile-linux-amd64
+          path: artifacts
+      - name: Validate downloaded artifact
+        run: |
+          package="$(find artifacts -name '*.deb' -print -quit)"
+          checksum="$(find artifacts -name '*.sha256' -print -quit)"
+          test -n "$package"
+          test -n "$checksum"
+          file "$package" | grep -q 'Debian binary package'
+          dpkg-deb --info "$package"
+          dpkg-deb --contents "$package" > /tmp/smartfile-package-contents.txt
+          (cd "$(dirname "$checksum")" && sha256sum -c "$(basename "$checksum")")
+      - name: Install validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y appstream desktop-file-utils
+      - name: Install package for real
+        run: |
+          package="$(find artifacts -name '*.deb' -print -quit)"
+          sudo apt-get install -y "$PWD/$package"
+          dpkg-query -W -f='${Package} ${Version} ${db:Status-Status}\n' smartfile
+          ./scripts/test_installed_linux_package.sh
+      - name: Reinstall and preserve user data on removal
+        run: |
+          package="$(find artifacts -name '*.deb' -print -quit)"
+          sudo apt-get install --reinstall -y "$PWD/$package"
+          ./scripts/test_installed_linux_package.sh
+          mkdir -p "$HOME/.local/share/SmartFile"
+          touch "$HOME/.local/share/SmartFile/package-removal-preserves-user-data"
+          sudo apt-get remove -y smartfile
+          test -f "$HOME/.local/share/SmartFile/package-removal-preserves-user-data"
+          test ! -e /opt/smartfile/smartfile
+          test ! -e /usr/bin/smartfile
 
   draft-release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [build, install-test]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -63,8 +107,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           NOTES="$(find artifacts -name 'RELEASE_NOTES_*.md' -print -quit)"
+          PACKAGE="$(find artifacts -name '*.deb' -print -quit)"
+          CHECKSUM="$(find artifacts -name '*.sha256' -print -quit)"
           gh release create "${GITHUB_REF_NAME}" \
             --draft --prerelease \
             --title "SmartFile 0.9.0 Beta 2" \
             --notes-file "$NOTES" \
-            artifacts/*.deb artifacts/*.sha256
+            "$PACKAGE" "$CHECKSUM"

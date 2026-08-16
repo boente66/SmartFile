@@ -86,20 +86,24 @@ if [[ -s "$MISSING_LIBS" ]]; then
     exit 1
 fi
 
-smoke_test() {
+startup_smoke_test() {
     local executable="$1"
     local sandbox="$2"
     local log_file="$3"
     mkdir -p "$sandbox/data" "$sandbox/config" "$sandbox/cache" "$sandbox/runtime"
     chmod 700 "$sandbox/runtime"
     set +e
-    timeout 8 env \
-        QT_QPA_PLATFORM=offscreen \
-        XDG_DATA_HOME="$sandbox/data" \
-        XDG_CONFIG_HOME="$sandbox/config" \
-        XDG_CACHE_HOME="$sandbox/cache" \
-        XDG_RUNTIME_DIR="$sandbox/runtime" \
-        "$executable" >"$log_file" 2>&1
+    (
+        cd /tmp
+        timeout 8 env -u PYTHONPATH -u PYTHONHOME -u VIRTUAL_ENV \
+            PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+            QT_QPA_PLATFORM=offscreen \
+            XDG_DATA_HOME="$sandbox/data" \
+            XDG_CONFIG_HOME="$sandbox/config" \
+            XDG_CACHE_HOME="$sandbox/cache" \
+            XDG_RUNTIME_DIR="$sandbox/runtime" \
+            "$executable"
+    ) >"$log_file" 2>&1
     local status=$?
     set -e
     if [[ $status -ne 124 ]]; then
@@ -107,23 +111,61 @@ smoke_test() {
         cat "$log_file" >&2
         return 1
     fi
-    if grep -Eq 'Traceback|ModuleNotFoundError|ImportError' "$log_file"; then
+    if grep -Eiq 'Traceback|ModuleNotFoundError|ImportError|cannot open shared object file|Could not load the Qt platform plugin|No such file or directory.*(assets|schema\.sql)' "$log_file"; then
+        cat "$log_file" >&2
+        return 1
+    fi
+}
+
+diagnostic_smoke_test() {
+    local executable="$1"
+    local sandbox="$2"
+    local log_file="$3"
+    mkdir -p "$sandbox/data" "$sandbox/config" "$sandbox/cache" "$sandbox/runtime"
+    chmod 700 "$sandbox/runtime"
+    set +e
+    (
+        cd /tmp
+        timeout 60 env -u PYTHONPATH -u PYTHONHOME -u VIRTUAL_ENV \
+            PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+            QT_QPA_PLATFORM=offscreen \
+            XDG_DATA_HOME="$sandbox/data" \
+            XDG_CONFIG_HOME="$sandbox/config" \
+            XDG_CACHE_HOME="$sandbox/cache" \
+            XDG_RUNTIME_DIR="$sandbox/runtime" \
+            "$executable" --smoke-test
+    ) >"$log_file" 2>&1
+    local status=$?
+    set -e
+    if [[ $status -ne 0 ]]; then
+        echo "Erro: smoke test diagnóstico encerrou com status $status." >&2
+        cat "$log_file" >&2
+        return 1
+    fi
+    if grep -Eiq 'Traceback|ModuleNotFoundError|ImportError|cannot open shared object file|Could not load the Qt platform plugin|No such file or directory.*(assets|schema\.sql)' "$log_file"; then
         cat "$log_file" >&2
         return 1
     fi
 }
 
 echo "==> Smoke test fora do venv"
-smoke_test "$DIST_DIR/SmartFile/smartfile" "$BUILD_ROOT/smoke-dist" "$BUILD_ROOT/smoke-dist.log"
+diagnostic_smoke_test "$DIST_DIR/SmartFile/smartfile" \
+    "$BUILD_ROOT/smoke-dist-diagnostic" "$BUILD_ROOT/smoke-dist-diagnostic.log"
+startup_smoke_test "$DIST_DIR/SmartFile/smartfile" \
+    "$BUILD_ROOT/smoke-dist" "$BUILD_ROOT/smoke-dist.log"
 
 echo "==> Montando árvore Debian"
 install -d "$STAGE/DEBIAN" "$STAGE/opt/smartfile" \
     "$STAGE/usr/bin" "$STAGE/usr/share/applications" \
-    "$STAGE/usr/share/icons/hicolor" "$STAGE/usr/share/doc/smartfile"
+    "$STAGE/usr/share/icons/hicolor" "$STAGE/usr/share/doc/smartfile" \
+    "$STAGE/usr/share/metainfo"
 cp -a "$DIST_DIR/SmartFile/." "$STAGE/opt/smartfile/"
 install -m 0755 packaging/debian/usr/bin/smartfile "$STAGE/usr/bin/smartfile"
 install -m 0644 packaging/debian/usr/share/applications/smartfile.desktop \
     "$STAGE/usr/share/applications/smartfile.desktop"
+install -m 0644 \
+    packaging/debian/usr/share/metainfo/io.github.boente66.SmartFile.metainfo.xml \
+    "$STAGE/usr/share/metainfo/io.github.boente66.SmartFile.metainfo.xml"
 install -m 0755 packaging/debian/DEBIAN/postinst packaging/debian/DEBIAN/prerm \
     packaging/debian/DEBIAN/postrm "$STAGE/DEBIAN/"
 install -m 0644 LICENSE README.md docs/Manual_Usuario.md docs/Manual_Usuario.pdf \
@@ -143,7 +185,10 @@ sed \
 chmod 0644 "$STAGE/DEBIAN/control"
 find "$STAGE/opt/smartfile" -type d -exec chmod 0755 {} +
 find "$STAGE/opt/smartfile" -type f -exec chmod go-w {} +
+find "$STAGE/usr" -type d -exec chmod 0755 {} +
+find "$STAGE/usr" -type f -exec chmod 0644 {} +
 chmod 0755 "$STAGE/opt/smartfile/smartfile"
+chmod 0755 "$STAGE/usr/bin/smartfile"
 
 echo "==> Auditoria de conteúdo sensível"
 sensitive_found=0
@@ -167,10 +212,18 @@ if [[ $sensitive_found -ne 0 ]]; then
 fi
 
 desktop-file-validate "$STAGE/usr/share/applications/smartfile.desktop"
+appstreamcli validate --no-net --strict \
+    "$STAGE/usr/share/metainfo/io.github.boente66.SmartFile.metainfo.xml"
 rm -f "$RELEASE_DIR/$ARTIFACT" "$RELEASE_DIR/$ARTIFACT.sha256"
 dpkg-deb --root-owner-group -Zgzip -z6 --build "$STAGE" "$RELEASE_DIR/$ARTIFACT"
+file "$RELEASE_DIR/$ARTIFACT" | grep -q 'Debian binary package'
 dpkg-deb --info "$RELEASE_DIR/$ARTIFACT"
 dpkg-deb --contents "$RELEASE_DIR/$ARTIFACT" > "$BUILD_ROOT/package-contents.txt"
+grep -Eq '[.]?/usr/bin/smartfile$' "$BUILD_ROOT/package-contents.txt"
+grep -Eq '[.]?/opt/smartfile/smartfile$' "$BUILD_ROOT/package-contents.txt"
+grep -Eq '[.]?/usr/share/applications/smartfile.desktop$' "$BUILD_ROOT/package-contents.txt"
+grep -Eq '[.]?/usr/share/metainfo/io.github.boente66.SmartFile.metainfo.xml$' \
+    "$BUILD_ROOT/package-contents.txt"
 
 if command -v lintian >/dev/null 2>&1; then
     lintian "$RELEASE_DIR/$ARTIFACT" | tee "$BUILD_ROOT/lintian.log"
@@ -179,7 +232,9 @@ else
 fi
 
 dpkg-deb -x "$RELEASE_DIR/$ARTIFACT" "$EXTRACTED"
-smoke_test "$EXTRACTED/opt/smartfile/smartfile" \
+diagnostic_smoke_test "$EXTRACTED/opt/smartfile/smartfile" \
+    "$BUILD_ROOT/smoke-package-diagnostic" "$BUILD_ROOT/smoke-package-diagnostic.log"
+startup_smoke_test "$EXTRACTED/opt/smartfile/smartfile" \
     "$BUILD_ROOT/smoke-package" "$BUILD_ROOT/smoke-package.log"
 
 (cd "$RELEASE_DIR" && sha256sum "$ARTIFACT" > "$ARTIFACT.sha256")
