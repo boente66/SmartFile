@@ -149,6 +149,10 @@ workflow oficial e não substituem uma execução integral antes da publicação
 
 Instale `lintian` no host de build para obter a análise adicional. Ausência dessa
 ferramenta é reportada e deve constar no relatório de validação.
+O relatório é sempre preservado em `build/linux/lintian.log`. Bundles PyInstaller
+incluem binários de terceiros e podem gerar apontamentos de empacotamento Debian;
+esses apontamentos são documentados, enquanto formato, dependências, instalação
+real e startup são tratados como bloqueios obrigatórios pelo CI.
 
 ## Relato de bugs
 

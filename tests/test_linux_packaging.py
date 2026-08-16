@@ -141,6 +141,8 @@ def test_linux_build_validates_package_format_desktop_and_appstream():
     assert "appstreamcli validate --no-net --strict" in build
     assert "diagnostic_smoke_test" in build
     assert "startup_smoke_test" in build
+    assert "LINTIAN_STATUS=${PIPESTATUS[0]}" in build
+    assert "o relatório foi preservado" in build
     assert "cd /tmp" in build
     assert "env -u PYTHONPATH -u PYTHONHOME -u VIRTUAL_ENV" in build
 

@@ -226,7 +226,14 @@ grep -Eq '[.]?/usr/share/metainfo/io.github.boente66.SmartFile.metainfo.xml$' \
     "$BUILD_ROOT/package-contents.txt"
 
 if command -v lintian >/dev/null 2>&1; then
+    set +e
     lintian "$RELEASE_DIR/$ARTIFACT" | tee "$BUILD_ROOT/lintian.log"
+    LINTIAN_STATUS=${PIPESTATUS[0]}
+    set -e
+    if [[ $LINTIAN_STATUS -ne 0 ]]; then
+        echo "Aviso: Lintian retornou $LINTIAN_STATUS; o relatório foi preservado." >&2
+        echo "Bundles PyInstaller podem produzir apontamentos sobre binários de terceiros." >&2
+    fi
 else
     echo "Aviso: lintian não está instalado; validação Lintian não executada."
 fi
