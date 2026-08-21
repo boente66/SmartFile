@@ -23,6 +23,7 @@ hiddenimports = [
     "keyring.backends.chainer",
     "keyring.backends.null",
     "msal",
+    "zeroconf",
 ]
 if find_spec("twain") is not None:
     hiddenimports.append("twain")

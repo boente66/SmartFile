@@ -7,7 +7,7 @@ class VersionNotificationService:
     """Controla a notificação local exibida uma vez após cada atualização."""
 
     SETTING_KEY = "last_notified_version"
-    NOTIFICATION_REVISION = "corporate-nas-1"
+    NOTIFICATION_REVISION = "basket-lan-discovery-1"
 
     def __init__(self, database):
         self.database = database
@@ -32,9 +32,10 @@ class VersionNotificationService:
     @staticmethod
     def message() -> str:
         return (
-            "O transporte corporativo NAS agora possui fila persistente, execução em "
-            "background, retry automático e validação SHA-256, mantendo o documento "
-            "local preservado quando o destino estiver indisponível."
+            "A seleção da cesta agora navega pelas pastas lógicas do SmartFile, mantém "
+            "seleções em várias pastas e não expõe caminhos internos. A configuração LAN "
+            "também ganhou descoberta automática de instalações, validação de identidade "
+            "e autorização explícita, preservando a configuração manual."
         )
 
     @classmethod

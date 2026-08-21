@@ -18,6 +18,19 @@ Versão beta publicada em 7 de agosto de 2026 para avaliação técnica.
 - migração incremental do banco para a versão 15, preservando configurações em uso;
 - aviso não bloqueante de novidades exibido uma vez por versão instalada.
 
+### Incremento de cesta e descoberta LAN
+
+- explorador da cesta com navegação real por pastas lógicas, breadcrumb, busca,
+  retorno por nível e seleção múltipla persistente;
+- caminhos físicos e nomes internos do storage permanecem ocultos;
+- descoberta local mDNS/DNS-SD em background, sem port scanning;
+- autorização sempre explícita, validação remota de UUID e protocolo e ação de
+  teste de conexão;
+- atualização de IP pelo UUID para peers já autorizados, sem duplicação;
+- configuração manual preservada como fallback;
+- aviso desta revisão exibido uma vez também nas instalações existentes da mesma
+  versão beta.
+
 ### Incremento de transporte NAS
 
 - fila corporativa persistente e independente da Cloud Layer;

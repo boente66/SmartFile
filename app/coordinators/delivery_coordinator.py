@@ -15,8 +15,8 @@ logger=logging.getLogger(__name__)
 
 class DeliveryCoordinator(QObject):
     notification=pyqtSignal(str,str); status_changed=pyqtSignal(str)
-    def __init__(self, service, context=None, parent=None, client=None):
-        super().__init__(parent); self.service=service; self.context=context; self.client=client or DeliveryHttpClient(); self.server=None
+    def __init__(self, service, context=None, parent=None, client=None, discovery_service=None):
+        super().__init__(parent); self.service=service; self.context=context; self.client=client or DeliveryHttpClient(); self.server=None; self.discovery_service=discovery_service
         self.service.notification_callback = self.notification.emit; self.queue_worker=None
         self.timer=QTimer(self); self.timer.setInterval(30_000); self.timer.timeout.connect(self.process_pending)
 
@@ -25,12 +25,20 @@ class DeliveryCoordinator(QObject):
         selected_port=local.http_port if port is None else port
         self.server=DeliveryHttpServer(host,selected_port,self.service); actual=self.server.start()
         if actual != local.http_port: local.http_port=actual; self.service.instances.repository.save(local)
+        if self.discovery_service is not None:
+            local.http_port = actual
+            try:
+                self.discovery_service.start_advertising(local)
+            except Exception:
+                logger.warning("delivery.discovery.advertising_failed", exc_info=True)
         if background:
             self.timer.start(); self.process_pending()
         return actual
 
     def stop(self):
         self.timer.stop()
+        if self.discovery_service is not None:
+            self.discovery_service.stop_advertising()
         if self.queue_worker and self.queue_worker.isRunning():
             self.queue_worker.requestInterruption();self.queue_worker.wait(25_000)
         if self.server: self.server.stop(); self.server=None

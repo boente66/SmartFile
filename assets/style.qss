@@ -779,6 +779,42 @@ QWidget#deliveryWorkspace QListWidget { background: #ffffff; color: #172033; bor
 QWidget#deliveryWorkspace QLineEdit, QWidget#deliveryWorkspace QTextEdit, QWidget#deliveryWorkspace QComboBox { background: #ffffff; color: #172033; border: 1px solid #cbd5e1; border-radius: 5px; padding: 5px; }
 QPushButton#deliveryPrimary { background: #1f9d4d; color: white; border: none; min-height: 40px; font-weight: 700; }
 
+/* Explorador lógico da cesta */
+QDialog#deliveryDocumentPicker, QDialog#deliveryNetworkDialog { background: #f7f9fb; color: #172033; }
+QDialog#deliveryDocumentPicker QLabel, QDialog#deliveryNetworkDialog QLabel { color: #334155; }
+QDialog#deliveryDocumentPicker QLabel#dialogTitle,
+QDialog#deliveryNetworkDialog QLabel#dialogTitle { color: #101c2c; font-size: 24px; font-weight: 800; }
+QDialog#deliveryDocumentPicker QLabel#pickerBreadcrumb { color: #145f35; font-size: 15px; font-weight: 650; padding: 6px; }
+QDialog#deliveryDocumentPicker QLabel#pickerFolderTitle,
+QDialog#deliveryNetworkDialog QLabel#sectionTitle { color: #101c2c; font-size: 18px; font-weight: 750; }
+QDialog#deliveryDocumentPicker QTreeWidget,
+QDialog#deliveryDocumentPicker QTableWidget { background: #ffffff; color: #172033; border: 1px solid #d8e0e8; border-radius: 7px; gridline-color: #e3e8ee; }
+QDialog#deliveryDocumentPicker QTreeWidget::item { min-height: 30px; padding: 2px 5px; }
+QDialog#deliveryDocumentPicker QTreeWidget::item:selected,
+QDialog#deliveryDocumentPicker QTableWidget::item:selected { background: #dff4e6; color: #11652f; }
+QDialog#deliveryDocumentPicker QHeaderView::section { background: #f4f7f9; color: #334155; border: none; border-bottom: 1px solid #d8e0e8; padding: 8px; font-weight: 700; }
+QDialog#deliveryDocumentPicker QLineEdit,
+QDialog#deliveryNetworkDialog QLineEdit,
+QDialog#deliveryNetworkDialog QComboBox,
+QDialog#deliveryNetworkDialog QSpinBox { background: #ffffff; color: #172033; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px; }
+QLabel#pickerEmptyState { color: #64748b; padding: 24px; }
+
+/* Descoberta e autorização de instalações LAN */
+QDialog#deliveryNetworkDialog QScrollArea,
+QDialog#deliveryNetworkDialog QScrollArea > QWidget > QWidget { background: transparent; border: none; }
+QFrame#networkDeviceCard { background: #ffffff; border: 1px solid #d8e0e8; border-radius: 9px; }
+QLabel#deviceName { color: #101c2c; font-size: 16px; font-weight: 750; }
+QLabel#secondaryText { color: #64748b; }
+QLabel#statusOnline { background: #dff4e6; color: #117338; border-radius: 10px; padding: 3px 9px; font-weight: 650; }
+QLabel#statusFound { background: #e7efff; color: #2454b8; border-radius: 10px; padding: 3px 9px; font-weight: 650; }
+QLabel#statusNeutral { background: #eef1f4; color: #526172; border-radius: 10px; padding: 3px 9px; font-weight: 650; }
+QLabel#statusError { background: #fee8e8; color: #b42318; border-radius: 10px; padding: 3px 9px; font-weight: 650; }
+QLabel#networkInfoState, QLabel#networkSuccessState, QLabel#networkErrorState { border-radius: 6px; padding: 9px 12px; }
+QLabel#networkInfoState { background: #eaf2ff; color: #2454b8; border: 1px solid #bfd2f7; }
+QLabel#networkSuccessState { background: #e6f6eb; color: #117338; border: 1px solid #addcba; }
+QLabel#networkErrorState { background: #fff0f0; color: #b42318; border: 1px solid #f1b8b8; }
+QDialog#deliveryNetworkDialog QGroupBox { background: #ffffff; color: #334155; border: 1px solid #d8e0e8; border-radius: 7px; margin-top: 10px; padding: 10px; font-weight: 650; }
+
 /* Captura e PDF */
 QWidget#capturePdf { background: #171c22; color: #e5e7eb; }
 QWidget#capturePdf QLabel { color: #e5e7eb; }

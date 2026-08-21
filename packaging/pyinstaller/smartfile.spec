@@ -16,6 +16,7 @@ datas = [
 hiddenimports = [
     "google_auth_oauthlib.flow",
     "msal",
+    "zeroconf",
 ]
 hiddenimports += collect_submodules("keyring.backends")
 if find_spec("sane") is not None:

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Added logical-folder navigation, search, persistent multi-selection, and safe
+  storage-path hiding to the delivery basket document picker
+- Added non-blocking mDNS/DNS-SD discovery for SmartFile LAN installations with
+  explicit authorization, UUID/protocol handshake, connection tests, and manual fallback
+- Added a revision-aware in-app notice so existing beta installations receive
+  the update alert without changing the public beta version
 - Added the integrated Captura e PDF workspace for scanner acquisition, image
   import, PDF composition, persistent rotation, drag-and-drop ordering, export,
   and managed GED import without intermediate files

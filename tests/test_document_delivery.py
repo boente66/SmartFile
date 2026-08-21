@@ -13,6 +13,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from app.auth.session_context import SessionContext
 from app.coordinators.delivery_coordinator import DeliveryCoordinator
+from app.delivery.delivery_http_client import DeliveryHttpClient
 from app.database.database import Database
 from app.database.migrations import CURRENT_SCHEMA_VERSION
 from app.entities.organization_member_entity import OrganizationMemberEntity
@@ -87,6 +88,31 @@ def test_schema_18_and_instance_uuid_survives_ip_change(tmp_path: Path, monkeypa
     second = service.instances.local(context.active_organization.id)
     assert first.instance_id == second.instance_id
     assert second.current_ip == "192.168.1.99"
+
+
+def test_public_identity_endpoint_validates_uuid_and_protocol(tmp_path: Path):
+    database, context, documents, _worker, _membership = _installation(tmp_path)
+    service = DocumentDeliveryService(database, context, documents)
+    coordinator = DeliveryCoordinator(service, context)
+    port = coordinator.start(
+        context.active_organization.id, "127.0.0.1", 0, background=False,
+    )
+    try:
+        local = service.instances.local(context.active_organization.id)
+        payload = DeliveryHttpClient(timeout=2).identity(
+            "127.0.0.1", port, expected_instance_id=local.instance_id,
+        )
+        assert payload == {
+            "instance_id": local.instance_id,
+            "device_name": local.device_name,
+            "protocol_version": "1",
+        }
+        with pytest.raises(Exception, match="identidade retornada"):
+            DeliveryHttpClient(timeout=2).identity(
+                "127.0.0.1", port, expected_instance_id="SF-wrong",
+            )
+    finally:
+        coordinator.stop()
 
 
 def test_migration_17_preserves_legacy_requests(tmp_path: Path):

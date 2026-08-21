@@ -54,6 +54,33 @@ class DeliveryHttpClient:
         finally:
             connection.close()
 
+    def identity(
+        self, host: str, port: int, *, expected_instance_id: str | None = None,
+    ) -> dict:
+        connection = self._connection(host, port)
+        try:
+            connection.request("GET", "/api/v1/identity")
+            payload = self._response(connection)
+            instance_id = str(payload.get("instance_id", ""))
+            protocol = str(payload.get("protocol_version", ""))
+            if expected_instance_id and instance_id != expected_instance_id:
+                raise DeliveryNetworkError(
+                    "A identidade retornada não corresponde ao SmartFile autorizado."
+                )
+            if protocol != "1":
+                raise DeliveryNetworkError(
+                    f"Versão de protocolo incompatível: {protocol or 'ausente'}."
+                )
+            return payload
+        except DeliveryNetworkError:
+            raise
+        except (OSError, TimeoutError, http.client.HTTPException, ValueError) as exc:
+            raise DeliveryNetworkError(
+                f"Não foi possível conectar ao dispositivo: {exc}"
+            ) from exc
+        finally:
+            connection.close()
+
     def status(self, delivery) -> dict:
         connection = self._connection(delivery.recipient_host, delivery.recipient_port)
         try:

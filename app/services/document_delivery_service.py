@@ -19,6 +19,7 @@ from app.utils.file_naming import safe_output_path
 
 
 class DocumentDeliveryService:
+    PROTOCOL_VERSION = "1"
     MAX_ITEM_SIZE = 4 * 1024 * 1024 * 1024
     CHUNK_SIZE = 1024 * 1024
     MAX_RETRY_ATTEMPTS = 8
@@ -314,6 +315,19 @@ class DocumentDeliveryService:
     def status_payload(self, protocol: str) -> dict:
         delivery = self._protocol_delivery(protocol)
         return {key: getattr(delivery, key) for key in ("protocol_number","status","delivered_at","viewed_at","acknowledged_at")}
+
+    def identity_payload(self) -> dict:
+        organization_id = getattr(
+            getattr(self.context, "active_organization", None), "id", None,
+        )
+        if not organization_id:
+            raise DeliveryValidationError("Nenhuma organização ativa para a recepção LAN.")
+        local = self.instances.local(int(organization_id))
+        return {
+            "instance_id": local.instance_id,
+            "device_name": local.device_name,
+            "protocol_version": self.PROTOCOL_VERSION,
+        }
 
     def mark_request_dispatched(self, request_id: int) -> None:
         request = self.requests.find_by_id(request_id)
