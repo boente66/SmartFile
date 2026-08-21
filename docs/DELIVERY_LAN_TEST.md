@@ -42,11 +42,24 @@ sudo ufw allow from 192.168.0.0/24 to any port 8765 proto tcp
 Adapte a sub-rede e a porta ao ambiente. Remova a regra quando o laboratório
 terminar, se ela não for mais necessária.
 
-## 2. Cadastrar os peers
+## 2. Descobrir e autorizar os peers
 
-Em cada instalação, cadastre manualmente o UUID SmartFile, nome, IP, porta e
-usuário proprietário da outra máquina. O UUID identifica; o IP apenas localiza.
-Depois de DHCP ou troca de rede, atualize somente o IP/porta.
+1. Com os dois aplicativos abertos, selecione **Procurar SmartFiles** no Mint.
+2. Confirme que o Zorin aparece como **Encontrado** e selecione **Autorizar**.
+3. Associe a instalação ao membro correto e aguarde a validação de identidade.
+4. Repita o fluxo no Zorin para autorizar o Mint.
+5. Use **Testar conexão** nas duas instalações.
+
+Descoberta não significa autorização. Antes do clique explícito em **Autorizar**,
+o candidato não deve aparecer como peer autorizado. O teste compara o UUID e a
+versão do protocolo retornados pelo SmartFile remoto.
+
+### Fallback manual
+
+Se mDNS/multicast estiver indisponível, expanda **Configuração manual**. Em cada
+instalação, cadastre o UUID SmartFile, nome, IP, porta e usuário proprietário da
+outra máquina. O UUID identifica; o IP apenas localiza. Depois de DHCP ou troca
+de rede, atualize somente o IP/porta.
 
 ## 3. Fluxo de solicitação
 

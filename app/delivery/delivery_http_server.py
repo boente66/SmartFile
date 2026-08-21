@@ -32,6 +32,9 @@ class DeliveryHttpServer:
                     logger.exception("delivery.http.server.failed"); self._json(500, {"error":"Falha interna ao processar entrega."})
             def do_GET(self):
                 try:
+                    if urlparse(self.path).path == "/api/v1/identity":
+                        self._json(200, service.identity_payload())
+                        return
                     protocol = self._protocol_path()
                     self._validate_peer(protocol)
                     self._json(200, service.status_payload(protocol))

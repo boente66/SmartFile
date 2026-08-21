@@ -1,84 +1,351 @@
+from __future__ import annotations
+
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
-    QComboBox, QDialog, QDialogButtonBox, QFormLayout, QGroupBox, QHBoxLayout,
-    QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QSpinBox,
-    QVBoxLayout,
+    QApplication, QComboBox, QDialog, QFormLayout, QFrame, QGroupBox,
+    QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSpinBox,
+    QVBoxLayout, QWidget,
 )
+
+from app.ui.icon_provider import IconProvider
 
 
 class DeliveryNetworkDialog(QDialog):
-    """Configuração explícita da identidade local e dos peers autorizados."""
+    """Configuração visual de descoberta e autorização explícita de peers LAN."""
 
     save_local_requested = pyqtSignal(dict)
     save_peer_requested = pyqtSignal(dict)
     remove_peer_requested = pyqtSignal(str)
+    discover_requested = pyqtSignal()
+    authorize_requested = pyqtSignal(object)
+    test_peer_requested = pyqtSignal(object)
 
     def __init__(self, local, peers, members, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Configurar entrega SmartFile na LAN")
-        self.resize(760, 590)
-        root = QVBoxLayout(self)
-        note = QLabel(
-            "O UUID identifica esta instalação. O IP e a porta apenas indicam "
-            "onde ela está disponível na rede local confiável."
-        )
-        note.setWordWrap(True); root.addWidget(note)
-
-        local_box = QGroupBox("Esta instalação")
-        local_form = QFormLayout(local_box)
-        identity = QLineEdit(local.instance_id); identity.setReadOnly(True)
-        self.local_name = QLineEdit(local.device_name)
-        self.local_host = QLineEdit(local.current_ip)
-        self.local_port = QSpinBox(); self.local_port.setRange(1024, 65535); self.local_port.setValue(local.http_port)
-        local_form.addRow("SmartFile ID", identity); local_form.addRow("Nome", self.local_name)
-        local_form.addRow("IP/endereço atual", self.local_host); local_form.addRow("Porta", self.local_port)
-        save_local = QPushButton("Salvar configuração local")
-        save_local.clicked.connect(lambda: self.save_local_requested.emit(self.local_values()))
-        local_form.addRow(save_local); root.addWidget(local_box)
-
-        peers_box = QGroupBox("Instalações autorizadas")
-        peers_layout = QHBoxLayout(peers_box)
-        self.peers = QListWidget(); peers_layout.addWidget(self.peers, 1)
-        form = QFormLayout(); self.peer_id = QLineEdit(); self.peer_name = QLineEdit()
-        self.peer_host = QLineEdit(); self.peer_port = QSpinBox(); self.peer_port.setRange(1024, 65535); self.peer_port.setValue(8765)
-        self.peer_owner = QComboBox()
-        for member in members: self.peer_owner.addItem(member.display_name, member.id)
-        form.addRow("SmartFile ID", self.peer_id); form.addRow("Nome", self.peer_name)
-        form.addRow("IP/endereço", self.peer_host); form.addRow("Porta", self.peer_port)
-        form.addRow("Usuário desta instalação", self.peer_owner)
-        save_peer = QPushButton("Adicionar ou atualizar peer")
-        remove_peer = QPushButton("Remover peer selecionado")
-        save_peer.clicked.connect(lambda: self.save_peer_requested.emit(self.peer_values()))
-        remove_peer.clicked.connect(self._remove_selected)
-        form.addRow(save_peer); form.addRow(remove_peer); peers_layout.addLayout(form, 2)
-        root.addWidget(peers_box, 1)
+        self.setObjectName("deliveryNetworkDialog")
+        self.setWindowTitle("Dispositivos SmartFile")
+        self.resize(960, 760)
+        self.setMinimumSize(760, 600)
+        self.local = local
+        self.members = list(members)
+        self._peers = list(peers)
+        self._discovered = []
+        self._connection_states = {}
+        self._setup_ui()
         self.set_peers(peers)
-        self.peers.currentItemChanged.connect(self._select_peer)
+        self.set_discovered([])
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        buttons.rejected.connect(self.accept); root.addWidget(buttons)
+    def _setup_ui(self) -> None:
+        root = QVBoxLayout(self)
+        root.setContentsMargins(24, 20, 24, 20)
+        root.setSpacing(12)
+        title = QLabel("Dispositivos SmartFile")
+        title.setObjectName("dialogTitle")
+        subtitle = QLabel(
+            "Encontre e autorize instalações SmartFile disponíveis na mesma rede local."
+        )
+        subtitle.setWordWrap(True)
+        root.addWidget(title)
+        root.addWidget(subtitle)
 
-    def local_values(self):
-        return {"device_name": self.local_name.text(), "host": self.local_host.text(), "port": self.local_port.value()}
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        body = QWidget()
+        body_layout = QVBoxLayout(body)
+        body_layout.setSpacing(14)
+        body_layout.addWidget(self._local_card())
 
-    def peer_values(self):
-        return {"instance_id": self.peer_id.text(), "device_name": self.peer_name.text(), "host": self.peer_host.text(), "port": self.peer_port.value(), "owner_user_id": self.peer_owner.currentData()}
+        found_header = QHBoxLayout()
+        found_title = QLabel("Dispositivos encontrados")
+        found_title.setObjectName("sectionTitle")
+        self.discover_button = QPushButton("Procurar SmartFiles")
+        IconProvider.apply(self.discover_button, "cloud_sync")
+        self.discover_button.clicked.connect(self.discover_requested.emit)
+        found_header.addWidget(found_title)
+        found_header.addStretch()
+        found_header.addWidget(self.discover_button)
+        body_layout.addLayout(found_header)
+        self.discovery_status = QLabel(
+            "Clique em Procurar SmartFiles para iniciar a descoberta local."
+        )
+        self.discovery_status.setObjectName("networkInfoState")
+        self.discovery_status.setWordWrap(True)
+        body_layout.addWidget(self.discovery_status)
+        self.discovered_container = QVBoxLayout()
+        body_layout.addLayout(self.discovered_container)
 
-    def set_peers(self, peers):
-        selected = self.peer_id.text().strip()
-        self.peers.clear()
-        for peer in peers:
-            item = QListWidgetItem(f"{peer.device_name} · {peer.current_ip}:{peer.http_port}")
-            item.setData(Qt.ItemDataRole.UserRole, peer)
-            self.peers.addItem(item)
-            if peer.instance_id == selected:self.peers.setCurrentItem(item)
+        authorized_title = QLabel("Instalações autorizadas")
+        authorized_title.setObjectName("sectionTitle")
+        body_layout.addWidget(authorized_title)
+        self.authorized_container = QVBoxLayout()
+        body_layout.addLayout(self.authorized_container)
+        body_layout.addWidget(self._manual_section())
+        body_layout.addStretch()
+        scroll.setWidget(body)
+        root.addWidget(scroll, 1)
+        close_button = QPushButton("Fechar")
+        close_button.clicked.connect(self.accept)
+        footer = QHBoxLayout()
+        footer.addStretch()
+        footer.addWidget(close_button)
+        root.addLayout(footer)
 
-    def _select_peer(self, current, _previous):
-        if current is None:return
-        peer=current.data(Qt.ItemDataRole.UserRole);self.peer_id.setText(peer.instance_id);self.peer_name.setText(peer.device_name);self.peer_host.setText(peer.current_ip);self.peer_port.setValue(peer.http_port)
-        index=self.peer_owner.findData(peer.owner_user_id)
-        if index>=0:self.peer_owner.setCurrentIndex(index)
+    def _local_card(self) -> QFrame:
+        card = self._card()
+        layout = QVBoxLayout(card)
+        heading = QHBoxLayout()
+        name = QLabel(self.local.device_name)
+        name.setObjectName("deviceName")
+        status = QLabel("● Online")
+        status.setObjectName("statusOnline")
+        heading.addWidget(name)
+        heading.addWidget(status)
+        heading.addStretch()
+        layout.addLayout(heading)
+        endpoint = QLabel(
+            f"Endereço atual: {self.local.current_ip}:{self.local.http_port}"
+        )
+        identity = QLabel(f"SmartFile ID: {self.local.instance_id}")
+        identity.setObjectName("secondaryText")
+        copy_button = QPushButton("Copiar identificação")
+        IconProvider.apply(copy_button, "copy")
+        copy_button.clicked.connect(
+            lambda: QApplication.clipboard().setText(self.local.instance_id)
+        )
+        row = QHBoxLayout()
+        row.addWidget(endpoint)
+        row.addStretch()
+        row.addWidget(copy_button)
+        layout.addLayout(row)
+        layout.addWidget(identity)
+        group = QGroupBox("Editar esta instalação")
+        group.setCheckable(True)
+        group.setChecked(False)
+        form_widget = QWidget()
+        form = QFormLayout(form_widget)
+        self.local_name = QLineEdit(self.local.device_name)
+        self.local_host = QLineEdit(self.local.current_ip)
+        self.local_port = QSpinBox()
+        self.local_port.setRange(1024, 65535)
+        self.local_port.setValue(self.local.http_port)
+        save = QPushButton("Salvar configuração local")
+        save.clicked.connect(
+            lambda: self.save_local_requested.emit(self.local_values())
+        )
+        form.addRow("Nome", self.local_name)
+        form.addRow("IP/endereço atual", self.local_host)
+        form.addRow("Porta", self.local_port)
+        form.addRow(save)
+        group_layout = QVBoxLayout(group)
+        group_layout.addWidget(form_widget)
+        form_widget.setVisible(False)
+        group.toggled.connect(form_widget.setVisible)
+        layout.addWidget(group)
+        return card
 
-    def _remove_selected(self):
-        item=self.peers.currentItem()
-        if item:self.remove_peer_requested.emit(item.data(Qt.ItemDataRole.UserRole).instance_id)
+    def _manual_section(self) -> QGroupBox:
+        group = QGroupBox("Configuração manual")
+        group.setCheckable(True)
+        group.setChecked(False)
+        content = QWidget()
+        form = QFormLayout(content)
+        self.peer_id = QLineEdit()
+        self.peer_name = QLineEdit()
+        self.peer_host = QLineEdit()
+        self.peer_port = QSpinBox()
+        self.peer_port.setRange(1024, 65535)
+        self.peer_port.setValue(8765)
+        self.peer_owner = QComboBox()
+        for member in self.members:
+            self.peer_owner.addItem(member.display_name, member.id)
+        save = QPushButton("Adicionar ou atualizar peer")
+        save.setObjectName("deliveryPrimary")
+        save.clicked.connect(
+            lambda: self.save_peer_requested.emit(self.peer_values())
+        )
+        form.addRow("SmartFile ID", self.peer_id)
+        form.addRow("Nome", self.peer_name)
+        form.addRow("IP/endereço", self.peer_host)
+        form.addRow("Porta", self.peer_port)
+        form.addRow("Usuário desta instalação", self.peer_owner)
+        form.addRow(save)
+        layout = QVBoxLayout(group)
+        layout.addWidget(content)
+        content.setVisible(False)
+        group.toggled.connect(content.setVisible)
+        self.manual_group = group
+        return group
+
+    def local_values(self) -> dict:
+        return {
+            "device_name": self.local_name.text(),
+            "host": self.local_host.text(),
+            "port": self.local_port.value(),
+        }
+
+    def peer_values(self) -> dict:
+        return {
+            "instance_id": self.peer_id.text(),
+            "device_name": self.peer_name.text(),
+            "host": self.peer_host.text(),
+            "port": self.peer_port.value(),
+            "owner_user_id": self.peer_owner.currentData(),
+        }
+
+    def set_discovery_state(self, searching: bool, message: str) -> None:
+        self.discover_button.setEnabled(not searching)
+        self.discover_button.setText(
+            "Procurando..." if searching else "Procurar SmartFiles"
+        )
+        self.discovery_status.setText(message)
+        self.discovery_status.setObjectName("networkInfoState")
+        self.discovery_status.style().unpolish(self.discovery_status)
+        self.discovery_status.style().polish(self.discovery_status)
+
+    def set_discovered(self, devices) -> None:
+        self._discovered = list(devices)
+        self._clear_layout(self.discovered_container)
+        authorized = {peer.instance_id for peer in self._peers}
+        visible = [
+            device for device in self._discovered
+            if device.instance_id != self.local.instance_id
+        ]
+        if not visible:
+            panel = self._card()
+            layout = QVBoxLayout(panel)
+            title = QLabel("Nenhum SmartFile encontrado nesta rede.")
+            title.setObjectName("deviceName")
+            hint = QLabel(
+                "Verifique se os outros dispositivos estão ligados e conectados à mesma rede."
+            )
+            hint.setWordWrap(True)
+            manual = QPushButton("Configurar manualmente")
+            manual.clicked.connect(lambda: self.manual_group.setChecked(True))
+            layout.addWidget(title)
+            layout.addWidget(hint)
+            layout.addWidget(manual, alignment=Qt.AlignmentFlag.AlignLeft)
+            self.discovered_container.addWidget(panel)
+            return
+        for device in visible:
+            compatible = device.protocol_version == "1"
+            card = self._device_card(
+                device.device_name, device.host, device.port, device.instance_id,
+                "● Encontrado" if compatible else "⚠ Incompatível",
+                "statusFound" if compatible else "statusError",
+            )
+            button = QPushButton(
+                "Já autorizado" if device.instance_id in authorized else "Autorizar"
+            )
+            button.setEnabled(compatible and device.instance_id not in authorized)
+            button.clicked.connect(
+                lambda _checked=False, value=device: self.authorize_requested.emit(value)
+            )
+            card.layout().itemAt(0).layout().addWidget(button)
+            self.discovered_container.addWidget(card)
+
+    def set_peers(self, peers) -> None:
+        selected = self.peer_id.text().strip() if hasattr(self, "peer_id") else ""
+        self._peers = list(peers)
+        self._clear_layout(self.authorized_container)
+        if not self._peers:
+            label = QLabel("Nenhuma instalação foi autorizada.")
+            label.setObjectName("secondaryText")
+            self.authorized_container.addWidget(label)
+        for peer in self._peers:
+            state_text, state_object = self._connection_states.get(
+                peer.instance_id, ("○ Não verificado", "statusNeutral"),
+            )
+            card = self._device_card(
+                peer.device_name, peer.current_ip, peer.http_port,
+                peer.instance_id, state_text, state_object,
+            )
+            test = QPushButton("Testar conexão")
+            test.clicked.connect(
+                lambda _checked=False, value=peer: self.test_peer_requested.emit(value)
+            )
+            edit = QPushButton("Editar")
+            edit.clicked.connect(
+                lambda _checked=False, value=peer: self._edit_peer(value)
+            )
+            remove = QPushButton("Remover")
+            IconProvider.apply(remove, "trash")
+            remove.clicked.connect(
+                lambda _checked=False, value=peer:
+                self.remove_peer_requested.emit(value.instance_id)
+            )
+            actions = card.layout().itemAt(0).layout()
+            actions.addWidget(test)
+            actions.addWidget(edit)
+            actions.addWidget(remove)
+            self.authorized_container.addWidget(card)
+            if peer.instance_id == selected:
+                self._edit_peer(peer)
+        if hasattr(self, "_discovered"):
+            self.set_discovered(self._discovered)
+
+    def show_connection_result(
+        self, instance_id: str, success: bool, message: str,
+    ) -> None:
+        if any(peer.instance_id == instance_id for peer in self._peers):
+            self._connection_states[instance_id] = (
+                ("● Online", "statusOnline")
+                if success else ("○ Offline", "statusError")
+            )
+            self.set_peers(self._peers)
+        self.discovery_status.setObjectName(
+            "networkSuccessState" if success else "networkErrorState"
+        )
+        self.discovery_status.style().unpolish(self.discovery_status)
+        self.discovery_status.style().polish(self.discovery_status)
+        self.discovery_status.setText(message)
+
+    def show_connection_pending(self, instance_id: str, message: str) -> None:
+        self._connection_states[instance_id] = ("⟳ Verificando...", "statusFound")
+        self.set_peers(self._peers)
+        self.set_discovery_state(False, message)
+
+    def _edit_peer(self, peer) -> None:
+        self.manual_group.setChecked(True)
+        self.peer_id.setText(peer.instance_id)
+        self.peer_name.setText(peer.device_name)
+        self.peer_host.setText(peer.current_ip)
+        self.peer_port.setValue(peer.http_port)
+        index = self.peer_owner.findData(peer.owner_user_id)
+        if index >= 0:
+            self.peer_owner.setCurrentIndex(index)
+
+    @staticmethod
+    def _card() -> QFrame:
+        card = QFrame()
+        card.setObjectName("networkDeviceCard")
+        card.setFrameShape(QFrame.Shape.StyledPanel)
+        return card
+
+    def _device_card(
+        self, name, host, port, instance_id, status, status_object,
+    ) -> QFrame:
+        card = self._card()
+        layout = QVBoxLayout(card)
+        heading = QHBoxLayout()
+        name_label = QLabel(name)
+        name_label.setObjectName("deviceName")
+        state = QLabel(status)
+        state.setObjectName(status_object)
+        heading.addWidget(name_label)
+        heading.addWidget(state)
+        heading.addStretch()
+        layout.addLayout(heading)
+        layout.addWidget(QLabel(f"Endereço atual: {host}:{port}"))
+        identity = QLabel(f"SmartFile ID: {instance_id}")
+        identity.setObjectName("secondaryText")
+        layout.addWidget(identity)
+        return card
+
+    @staticmethod
+    def _clear_layout(layout) -> None:
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()

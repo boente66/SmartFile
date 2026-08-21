@@ -476,9 +476,15 @@ Ele não substitui a sincronização em nuvem nem o transporte NAS empresarial.
 ### Caso de uso: envio direto
 
 1. Abra a aba **Cesta de documentos**.
-2. Selecione um ou mais documentos do GED.
-3. Escolha o destinatário e a instalação SmartFile cadastrada.
-4. Informe uma mensagem opcional e envie. O protocolo é criado sem uma
+2. Use **Selecionar documentos**. Na raiz, escolha uma pasta lógica na árvore ou
+   abra uma pasta na lista central. O caminho no topo mostra a localização atual.
+3. Use clique simples, `Ctrl+clique` ou `Shift+clique` para selecionar um ou mais
+   documentos. A seleção é preservada ao navegar entre pastas; pastas nunca são
+   adicionadas à cesta. **Voltar** retorna um nível e fica desabilitado na raiz.
+4. Confirme em **Adicionar à cesta**. O botão permanece desabilitado sem seleção,
+   e um documento já presente não é duplicado.
+5. Escolha o destinatário e a instalação SmartFile cadastrada.
+6. Informe uma mensagem opcional e envie. O protocolo é criado sem uma
    solicitação associada.
 
 ### Destinatário offline
@@ -494,6 +500,21 @@ OWNER ou ADMIN pode usar **Configurar LAN** para definir o endereço atual e a
 porta de recepção. Cada instalação possui um UUID permanente; a mudança de IP
 não muda sua identidade. A versão beta usa HTTP em laboratório de rede local
 confiável. Não exponha a porta diretamente à Internet.
+
+Para localizar outra instalação:
+
+1. mantenha os dois SmartFiles abertos na mesma rede local;
+2. selecione **Procurar SmartFiles**;
+3. aguarde a conclusão da busca em segundo plano;
+4. selecione **Autorizar** no dispositivo encontrado e associe-o a um membro
+   ativo da organização;
+5. use **Testar conexão**. O SmartFile confirma endpoint, UUID e versão do
+   protocolo — uma porta aberta, sozinha, não é aceita como identidade.
+
+Um dispositivo descoberto não é autorizado automaticamente. Se um peer já
+autorizado reaparecer com o mesmo UUID e outro IP, somente sua localização é
+atualizada. Quando multicast/mDNS estiver bloqueado, expanda **Configuração
+manual** e informe os mesmos dados usados anteriormente.
 
 Consulte [Teste de entrega LAN](DELIVERY_LAN_TEST.md) para configurar duas
 máquinas e diagnosticar firewall, porta e conectividade.

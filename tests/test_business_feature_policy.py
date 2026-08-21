@@ -267,3 +267,17 @@ def test_version_notification_is_shown_once_per_version(tmp_path: Path):
     from app.version import __version__
     service.acknowledge(__version__)
     assert not service.should_notify()
+
+
+def test_version_notification_revision_alerts_existing_beta_installation(tmp_path: Path):
+    database = Database(str(tmp_path / "version-revision.db"))
+    from app.version import __version__
+    database.execute_query(
+        "INSERT INTO app_settings(key,value) VALUES(?,?)",
+        (VersionNotificationService.SETTING_KEY, f"{__version__}:corporate-nas-1"),
+    )
+    service = VersionNotificationService(database)
+    assert service.should_notify()
+    assert "descoberta automática" in service.message()
+    service.acknowledge(__version__)
+    assert not service.should_notify()

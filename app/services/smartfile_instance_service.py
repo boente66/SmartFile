@@ -54,6 +54,32 @@ class SmartFileInstanceService:
             created_at=self._now(), last_seen_at=None,
         ))
 
+    def apply_discovery(self, organization_id: int, device):
+        """Atualiza localização de peer já autorizado, identificado pelo UUID."""
+
+        existing = self.repository.find_by_instance_id(device.instance_id)
+        if existing is None or existing.organization_id != organization_id or existing.is_local:
+            return None
+        existing.device_name = " ".join(device.device_name.split()) or existing.device_name
+        existing.current_ip = self._host(device.host)
+        existing.http_port = self._port(device.port)
+        existing.last_seen_at = self._now()
+        return self.repository.save(existing)
+
+    def test_connection(self, peer) -> dict:
+        """Valida endpoint, UUID e versão do protocolo; porta aberta não basta."""
+
+        from app.delivery.delivery_http_client import DeliveryHttpClient
+
+        result = DeliveryHttpClient(timeout=5.0).identity(
+            peer.current_ip, peer.http_port, expected_instance_id=peer.instance_id,
+        )
+        persisted = self.repository.find_by_instance_id(peer.instance_id)
+        if persisted is not None and persisted.organization_id == peer.organization_id:
+            persisted.last_seen_at = self._now()
+            self.repository.save(persisted)
+        return result
+
     @staticmethod
     def current_ip() -> str:
         probe = None

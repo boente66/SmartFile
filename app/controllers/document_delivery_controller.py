@@ -2,17 +2,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6.QtWidgets import QDialog,QFileDialog,QMessageBox
+from PyQt6.QtWidgets import QDialog,QFileDialog,QInputDialog,QMessageBox
 
 from app.coordinators.delivery_coordinator import DeliveryCoordinator
 from app.services.delivery_basket_service import DeliveryBasketService
 from app.services.document_delivery_service import DocumentDeliveryService
 from app.services.document_request_service import DocumentRequestService
+from app.services.lan_device_discovery_service import LanDeviceDiscoveryService
+from app.entities.smartfile_instance_entity import SmartFileInstanceEntity
 from app.views.delivery_document_picker_dialog import DeliveryDocumentPickerDialog
 from app.views.delivery_workspace_view import DeliveryWorkspaceView
 from app.views.delivery_network_dialog import DeliveryNetworkDialog
 from app.workers.delivery_send_worker import DeliverySendWorker
 from app.workers.request_send_worker import RequestSendWorker
+from app.workers.lan_discovery_worker import LanConnectionWorker, LanDiscoveryWorker
 
 
 class DocumentDeliveryController:
@@ -20,8 +23,10 @@ class DocumentDeliveryController:
         self.workspace=workspace; self.documents=document_service; self.context=context; self.parent=parent
         self.view=DeliveryWorkspaceView(); self.requests=DocumentRequestService(document_service.database,context)
         self.service=DocumentDeliveryService(document_service.database,context,document_service)
-        self.basket=DeliveryBasketService(document_service,context); self.coordinator=DeliveryCoordinator(self.service,context,self.view)
-        self.worker=None; self.request_worker=None; self.workspace.register_view("deliveries",self.view); self._connect()
+        self.discovery=LanDeviceDiscoveryService()
+        self.basket=DeliveryBasketService(document_service,context); self.coordinator=DeliveryCoordinator(self.service,context,self.view,discovery_service=self.discovery)
+        self.worker=None; self.request_worker=None; self.discovery_worker=None; self.connection_workers=set(); self.network_dialog=None
+        self.workspace.register_view("deliveries",self.view); self._connect()
         self.coordinator.notification.connect(self._notification)
     def _connect(self):
         self.view.create_request_requested.connect(self.create_request); self.view.request_status_requested.connect(self.update_request); self.view.prepare_request_requested.connect(self.prepare_request)
@@ -39,6 +44,10 @@ class DocumentDeliveryController:
     def shutdown(self):
         if self.worker and self.worker.isRunning():self.worker.requestInterruption();self.worker.wait(5000)
         if self.request_worker and self.request_worker.isRunning():self.request_worker.requestInterruption();self.request_worker.wait(5000)
+        self._stop_discovery()
+        for worker in tuple(self.connection_workers):
+            if worker.isRunning(): worker.requestInterruption(); worker.wait(6000)
+        self.connection_workers.clear()
         self.coordinator.stop()
     def refresh(self):
         try:
@@ -62,15 +71,23 @@ class DocumentDeliveryController:
         try:self.requests.set_status(self.documents.active_organization_id,request_id,status);self.refresh()
         except Exception as exc:self._error(exc)
     def select_documents(self):
-        dialog=DeliveryDocumentPickerDialog(self.documents.list_documents(),self.documents.folder_service.list_folders(self.documents.active_organization_id),self.view)
-        if dialog.exec()==QDialog.DialogCode.Accepted:
-            try:
+        try:
+            self.context.require_permission("delivery.create"); self.context.require_permission("document.view")
+            organization=self.context.active_organization
+            dialog=DeliveryDocumentPickerDialog(
+                self.documents.list_documents(),
+                self.documents.folder_service.list_folders(self.documents.active_organization_id),
+                self.view,
+                organization_name=organization.name,
+                already_selected=[item.document_id for item in self.basket.basket.items],
+            )
+            if dialog.exec()==QDialog.DialogCode.Accepted:
                 for document_id in dialog.selected_document_ids():
                     self.basket.add_document(document_id)
                     if self.basket.basket.request_id:
                         self.requests.link_document(self.documents.active_organization_id,self.basket.basket.request_id,document_id)
                 self.view.set_basket(self.basket.basket)
-            except Exception as exc:self._error(exc)
+        except Exception as exc:self._error(exc)
     def prepare_request(self,request_id):
         try:
             organization_id=self.documents.active_organization_id
@@ -127,15 +144,89 @@ class DocumentDeliveryController:
         try:
             self.context.require_permission("delivery.configure");organization_id=self.documents.active_organization_id
             dialog=DeliveryNetworkDialog(self.service.instances.local(organization_id),self.service.instances.repository.list_peers(organization_id),self.requests.list_assignable_members(organization_id),self.view)
+            self.network_dialog=dialog
             def save_local(values):
                 self.service.instances.configure_local(organization_id,**values);dialog.set_peers(self.service.instances.repository.list_peers(organization_id));dialog.setWindowTitle("Configuração salva — reinicie a recepção ao fechar")
             def save_peer(values):
                 self.service.instances.register_peer(organization_id,**values);dialog.set_peers(self.service.instances.repository.list_peers(organization_id))
             def remove_peer(instance_id):
                 self.service.instances.repository.delete_peer(organization_id,instance_id);dialog.set_peers(self.service.instances.repository.list_peers(organization_id))
-            dialog.save_local_requested.connect(save_local);dialog.save_peer_requested.connect(save_peer);dialog.remove_peer_requested.connect(remove_peer);dialog.exec()
+            dialog.save_local_requested.connect(save_local);dialog.save_peer_requested.connect(save_peer);dialog.remove_peer_requested.connect(remove_peer)
+            dialog.discover_requested.connect(lambda:self._discover(dialog,organization_id))
+            dialog.authorize_requested.connect(lambda device:self._authorize_device(dialog,organization_id,device))
+            dialog.test_peer_requested.connect(lambda peer:self._test_peer(dialog,peer))
+            dialog.finished.connect(lambda _result:self._network_dialog_closed(dialog))
+            dialog.exec(); self.network_dialog=None
             self.coordinator.stop();self.start();self.refresh()
         except Exception as exc:self._error(exc)
+
+    def _discover(self, dialog, organization_id):
+        if self.discovery_worker is not None:return
+        dialog.set_discovery_state(True,"Procurando SmartFiles na rede local...")
+        worker=LanDiscoveryWorker(self.discovery,3.0,self.view);self.discovery_worker=worker
+        worker.progress.connect(lambda _value,message:dialog.set_discovery_state(True,message))
+        worker.succeeded.connect(lambda devices:self._discovery_succeeded(dialog,organization_id,devices))
+        worker.failed.connect(lambda message:self._discovery_failed(dialog,message))
+        worker.finished.connect(self._discovery_finished);worker.finished.connect(worker.deleteLater);worker.start()
+
+    def _discovery_succeeded(self,dialog,organization_id,devices):
+        if dialog is not self.network_dialog:return
+        local=self.service.instances.local(organization_id)
+        visible=[]
+        for device in devices:
+            if device.instance_id==local.instance_id:continue
+            visible.append(device)
+            if device.protocol_version==self.service.PROTOCOL_VERSION:
+                self.service.instances.apply_discovery(organization_id,device)
+        dialog.set_peers(self.service.instances.repository.list_peers(organization_id));dialog.set_discovered(visible)
+        message=(f"{len(visible)} SmartFile(s) encontrado(s)." if visible else "Nenhum SmartFile encontrado nesta rede.")
+        dialog.set_discovery_state(False,message)
+
+    def _discovery_failed(self,dialog,message):
+        if dialog is self.network_dialog:
+            dialog.set_discovery_state(False,message)
+
+    def _discovery_finished(self):self.discovery_worker=None
+
+    def _stop_discovery(self):
+        worker=self.discovery_worker
+        if worker is not None and worker.isRunning():worker.requestInterruption();worker.wait(5000)
+        self.discovery_worker=None
+
+    def _network_dialog_closed(self,dialog):
+        if dialog is self.network_dialog:self._stop_discovery()
+
+    def _authorize_device(self,dialog,organization_id,device):
+        if device.protocol_version!=self.service.PROTOCOL_VERSION:
+            dialog.show_connection_result(device.instance_id,False,"A versão de protocolo do dispositivo é incompatível.");return
+        members=self.requests.list_assignable_members(organization_id)
+        if not members:
+            dialog.show_connection_result(device.instance_id,False,"Não há membro ativo para associar à instalação.");return
+        labels=[member.display_name for member in members]
+        selected,ok=QInputDialog.getItem(dialog,"Autorizar SmartFile","Associe esta instalação a um membro:",labels,0,False)
+        if not ok:return
+        member=members[labels.index(selected)]
+        candidate=SmartFileInstanceEntity(instance_id=device.instance_id,organization_id=organization_id,device_name=device.device_name,owner_user_id=member.id,current_ip=device.host,http_port=device.port,is_local=False)
+        self._start_connection_worker(dialog,candidate,lambda _payload:self._authorization_verified(dialog,organization_id,device,member.id))
+
+    def _authorization_verified(self,dialog,organization_id,device,owner_user_id):
+        if dialog is not self.network_dialog:return
+        self.service.instances.register_peer(organization_id,device.instance_id,device.device_name,device.host,device.port,owner_user_id)
+        dialog.set_peers(self.service.instances.repository.list_peers(organization_id));dialog.show_connection_result(device.instance_id,True,"Instalação validada e autorizada com sucesso.")
+
+    def _test_peer(self,dialog,peer):
+        dialog.show_connection_pending(peer.instance_id,"Verificando identidade e versão do protocolo...")
+        self._start_connection_worker(dialog,peer,lambda _payload:dialog.show_connection_result(peer.instance_id,True,"Conexão estabelecida e identidade confirmada."))
+
+    def _start_connection_worker(self,dialog,peer,on_success):
+        worker=LanConnectionWorker(self.service.instances,peer,self.view);self.connection_workers.add(worker)
+        worker.succeeded.connect(lambda payload:self._connection_succeeded(dialog,on_success,payload))
+        worker.failed.connect(lambda message:self._connection_failed(dialog,peer.instance_id,message))
+        worker.finished.connect(lambda:self.connection_workers.discard(worker));worker.finished.connect(worker.deleteLater);worker.start()
+    def _connection_succeeded(self,dialog,on_success,payload):
+        if dialog is self.network_dialog:on_success(payload)
+    def _connection_failed(self,dialog,instance_id,message):
+        if dialog is self.network_dialog:dialog.show_connection_result(instance_id,False,f"Não foi possível conectar ao dispositivo: {message}")
     def _sent(self):self.basket.clear();self.view.show_status("Entrega confirmada pelo destinatário.");self.refresh()
     def _send_failed(self,message):self.view.show_status(f"Destinatário indisponível; entrega mantida na fila: {message}");self.refresh()
     def _worker_done(self):self.worker=None

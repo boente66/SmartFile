@@ -75,6 +75,12 @@ cadastrado. Uma entrega gera protocolo legível, envia os arquivos em chunks,
 valida tamanho e SHA-256 no destinatário e somente então assume `DELIVERED`. Se o
 peer estiver offline, o protocolo permanece `QUEUED` para retry com backoff.
 
+A configuração LAN oferece descoberta mDNS/DNS-SD (`_smartfile._tcp.local.`)
+em worker de background, seguida de autorização explícita e validação do UUID e
+da versão do protocolo. O cadastro manual permanece disponível quando multicast
+estiver bloqueado. A cesta usa um explorador de pastas lógicas, permite seleção
+múltipla entre pastas e nunca exibe caminhos do storage gerenciado.
+
 O HTTP local desta beta é destinado a laboratório em rede confiável. HTTPS e
 autenticação criptográfica entre instalações estão preparados como evolução,
 mas ainda não estão declarados como implementados. Consulte o

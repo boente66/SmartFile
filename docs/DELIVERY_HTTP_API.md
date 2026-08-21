@@ -15,6 +15,7 @@ evoluções futuras e não estão declaradas como implementadas nesta beta.
 
 | Método | Endpoint | Função |
 |---|---|---|
+| `GET` | `/api/v1/identity` | Retorna UUID, nome do dispositivo e versão do protocolo para o handshake LAN |
 | `POST` | `/api/v1/requests` | Replica uma solicitação para a instalação responsável |
 | `POST` | `/api/v1/deliveries` | Cria a entrega remota e seus itens pendentes |
 | `POST` | `/api/v1/deliveries/{protocol}/items/{item_uuid}` | Transfere um item em streaming |
@@ -53,3 +54,8 @@ ficam em `QUEUED`, com backoff crescente até uma hora e limite de oito falhas
 automáticas. Depois disso entram em `FAILED`; o retry manual zera a contagem.
 Solicitações ainda não entregues são reenviadas de forma idempotente, usando o
 UUID para impedir duplicação.
+
+O endpoint de identidade é usado somente depois que o usuário solicita uma
+autorização ou um teste de conexão. Sua resposta é limitada a `instance_id`,
+`device_name` e `protocol_version`; ela não contém usuário, organização, token,
+caminho ou documento.

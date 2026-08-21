@@ -43,10 +43,11 @@ entregas, itens e histórico de domínio.
 
 ## Limitações declaradas
 
-Esta beta fornece HTTP para laboratório LAN confiável. HTTPS, chaves/certificados
-por instalação, descoberta automática, Socket.IO, múltiplos destinatários e
-servidor central são evoluções futuras. Não se deve expor a porta diretamente à
-Internet.
+Esta beta fornece HTTP para laboratório LAN confiável. Um incremento posterior
+da mesma beta adicionou descoberta mDNS local e autorização explícita, sem mudar
+o protocolo de transferência desta fase. HTTPS, chaves/certificados por
+instalação, Socket.IO, múltiplos destinatários e servidor central continuam como
+evoluções futuras. Não se deve expor a porta diretamente à Internet.
 
 ## Validação
 
