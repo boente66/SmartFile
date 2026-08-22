@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app.ui.icon_provider import IconProvider
+from app.delivery.protocol import DELIVERY_PROTOCOL_VERSION
 
 
 class DeliveryNetworkDialog(QDialog):
@@ -228,7 +229,7 @@ class DeliveryNetworkDialog(QDialog):
             self.discovered_container.addWidget(panel)
             return
         for device in visible:
-            compatible = device.protocol_version == "1"
+            compatible = device.protocol_version == DELIVERY_PROTOCOL_VERSION
             card = self._device_card(
                 device.device_name, device.host, device.port, device.instance_id,
                 "● Encontrado" if compatible else "⚠ Incompatível",

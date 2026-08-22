@@ -8,6 +8,7 @@ import time
 from collections.abc import Callable
 
 from app.models.lan_discovery import DiscoveredSmartFile
+from app.delivery.protocol import DELIVERY_PROTOCOL_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,6 @@ class LanDeviceDiscoveryService:
     """
 
     SERVICE_TYPE = "_smartfile._tcp.local."
-    PROTOCOL_VERSION = "1"
 
     def __init__(self, zeroconf_factory=None, browser_factory=None) -> None:
         self._zeroconf_factory = zeroconf_factory
@@ -104,7 +104,7 @@ class LanDeviceDiscoveryService:
             properties={
                 b"instance_id": local_instance.instance_id.encode("utf-8"),
                 b"device_name": local_instance.device_name.encode("utf-8"),
-                b"protocol_version": self.PROTOCOL_VERSION.encode("ascii"),
+                b"protocol_version": DELIVERY_PROTOCOL_VERSION.encode("ascii"),
             },
             server=f"{socket.gethostname().replace('.', '-')}.local.",
         )

@@ -16,6 +16,7 @@ from app.views.delivery_network_dialog import DeliveryNetworkDialog
 from app.workers.delivery_send_worker import DeliverySendWorker
 from app.workers.request_send_worker import RequestSendWorker
 from app.workers.lan_discovery_worker import LanConnectionWorker, LanDiscoveryWorker
+from app.delivery.protocol import DELIVERY_PROTOCOL_VERSION
 
 
 class DocumentDeliveryController:
@@ -176,7 +177,7 @@ class DocumentDeliveryController:
         for device in devices:
             if device.instance_id==local.instance_id:continue
             visible.append(device)
-            if device.protocol_version==self.service.PROTOCOL_VERSION:
+            if device.protocol_version == DELIVERY_PROTOCOL_VERSION:
                 self.service.instances.apply_discovery(organization_id,device)
         dialog.set_peers(self.service.instances.repository.list_peers(organization_id));dialog.set_discovered(visible)
         message=(f"{len(visible)} SmartFile(s) encontrado(s)." if visible else "Nenhum SmartFile encontrado nesta rede.")
@@ -197,7 +198,7 @@ class DocumentDeliveryController:
         if dialog is self.network_dialog:self._stop_discovery()
 
     def _authorize_device(self,dialog,organization_id,device):
-        if device.protocol_version!=self.service.PROTOCOL_VERSION:
+        if device.protocol_version != DELIVERY_PROTOCOL_VERSION:
             dialog.show_connection_result(device.instance_id,False,"A versão de protocolo do dispositivo é incompatível.");return
         members=self.requests.list_assignable_members(organization_id)
         if not members:

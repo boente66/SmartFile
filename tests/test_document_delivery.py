@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import io
+import http.client
+import json
 import os
 import socket
 from dataclasses import replace
@@ -14,6 +16,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from app.auth.session_context import SessionContext
 from app.coordinators.delivery_coordinator import DeliveryCoordinator
 from app.delivery.delivery_http_client import DeliveryHttpClient
+from app.delivery.delivery_http_server import DeliveryHttpServer
+from app.delivery.protocol import DELIVERY_PROTOCOL_VERSION
 from app.database.database import Database
 from app.database.migrations import CURRENT_SCHEMA_VERSION
 from app.entities.organization_member_entity import OrganizationMemberEntity
@@ -77,6 +81,16 @@ def _free_port() -> int:
         return int(probe.getsockname()[1])
 
 
+def _identity_response(port: int) -> tuple[int, dict]:
+    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+    try:
+        connection.request("GET", "/api/v1/identity")
+        response = connection.getresponse()
+        return response.status, json.loads(response.read().decode())
+    finally:
+        connection.close()
+
+
 def test_schema_18_and_instance_uuid_survives_ip_change(tmp_path: Path, monkeypatch):
     database, context, _documents, _worker, _membership = _installation(tmp_path)
     version = database.connect().execute("PRAGMA user_version").fetchone()[0]
@@ -105,7 +119,7 @@ def test_public_identity_endpoint_validates_uuid_and_protocol(tmp_path: Path):
         assert payload == {
             "instance_id": local.instance_id,
             "device_name": local.device_name,
-            "protocol_version": "1",
+            "protocol_version": DELIVERY_PROTOCOL_VERSION,
         }
         with pytest.raises(Exception, match="identidade retornada"):
             DeliveryHttpClient(timeout=2).identity(
@@ -113,6 +127,46 @@ def test_public_identity_endpoint_validates_uuid_and_protocol(tmp_path: Path):
             )
     finally:
         coordinator.stop()
+
+
+def test_identity_without_active_organization_returns_structured_conflict(tmp_path: Path):
+    database, context, documents, _worker, _membership = _installation(tmp_path)
+    context.active_organization = None
+    server = DeliveryHttpServer(
+        "127.0.0.1", 0, DocumentDeliveryService(database, context, documents)
+    )
+    port = server.start()
+    try:
+        status, payload = _identity_response(port)
+        assert status == 409
+        assert payload == {
+            "error": "organization_context_unavailable",
+            "message": "Nenhuma organização ativa está disponível.",
+        }
+    finally:
+        server.stop()
+
+
+def test_identity_unexpected_error_returns_safe_internal_error(tmp_path: Path, monkeypatch):
+    database, context, documents, _worker, _membership = _installation(tmp_path)
+    service = DocumentDeliveryService(database, context, documents)
+    monkeypatch.setattr(
+        service, "identity_payload",
+        lambda: (_ for _ in ()).throw(RuntimeError("/tmp/secret token traceback")),
+    )
+    server = DeliveryHttpServer("127.0.0.1", 0, service)
+    port = server.start()
+    try:
+        status, payload = _identity_response(port)
+        assert status == 500
+        assert payload == {
+            "error": "internal_error",
+            "message": "Não foi possível consultar a identidade da instalação.",
+        }
+        assert "secret" not in json.dumps(payload)
+        assert "traceback" not in json.dumps(payload).casefold()
+    finally:
+        server.stop()
 
 
 def test_migration_17_preserves_legacy_requests(tmp_path: Path):

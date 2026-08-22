@@ -16,10 +16,10 @@ from app.repositories.organization_member_repository import OrganizationMemberRe
 from app.repositories.user_repository import UserRepository
 from app.services.smartfile_instance_service import SmartFileInstanceService
 from app.utils.file_naming import safe_output_path
+from app.delivery.protocol import DELIVERY_PROTOCOL_VERSION
 
 
 class DocumentDeliveryService:
-    PROTOCOL_VERSION = "1"
     MAX_ITEM_SIZE = 4 * 1024 * 1024 * 1024
     CHUNK_SIZE = 1024 * 1024
     MAX_RETRY_ATTEMPTS = 8
@@ -326,7 +326,7 @@ class DocumentDeliveryService:
         return {
             "instance_id": local.instance_id,
             "device_name": local.device_name,
-            "protocol_version": self.PROTOCOL_VERSION,
+            "protocol_version": DELIVERY_PROTOCOL_VERSION,
         }
 
     def mark_request_dispatched(self, request_id: int) -> None:

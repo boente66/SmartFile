@@ -7,7 +7,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlparse
 
-from app.errors.delivery_exceptions import DeliveryError
+from app.errors.delivery_exceptions import DeliveryError, DeliveryValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -31,14 +31,32 @@ class DeliveryHttpServer:
                 except Exception:
                     logger.exception("delivery.http.server.failed"); self._json(500, {"error":"Falha interna ao processar entrega."})
             def do_GET(self):
-                try:
-                    if urlparse(self.path).path == "/api/v1/identity":
+                if urlparse(self.path).path == "/api/v1/identity":
+                    try:
                         self._json(200, service.identity_payload())
-                        return
+                    except DeliveryValidationError:
+                        self._json(409, {
+                            "error": "organization_context_unavailable",
+                            "message": "Nenhuma organização ativa está disponível.",
+                        })
+                    except Exception:
+                        logger.exception("delivery.http.identity.failed")
+                        self._json(500, {
+                            "error": "internal_error",
+                            "message": "Não foi possível consultar a identidade da instalação.",
+                        })
+                    return
+                try:
                     protocol = self._protocol_path()
                     self._validate_peer(protocol)
                     self._json(200, service.status_payload(protocol))
                 except (DeliveryError, ValueError) as exc: self._json(404, {"error":str(exc)})
+                except Exception:
+                    logger.exception("delivery.http.status.failed")
+                    self._json(500, {
+                        "error": "internal_error",
+                        "message": "Não foi possível consultar o protocolo da entrega.",
+                    })
             def _post(self):
                 path = urlparse(self.path).path
                 if path == "/api/v1/requests":

@@ -19,6 +19,7 @@ from app.services.lan_device_discovery_service import LanDeviceDiscoveryService
 from app.services.smartfile_instance_service import SmartFileInstanceService
 from app.views.delivery_network_dialog import DeliveryNetworkDialog
 from app.workers.lan_discovery_worker import LanDiscoveryWorker
+from app.delivery.protocol import DELIVERY_PROTOCOL_VERSION
 
 
 _APPLICATION = None
@@ -35,7 +36,7 @@ class _Info:
     properties = {
         b"instance_id": b"SF-remote-123",
         b"device_name": b"Notebook Financeiro",
-        b"protocol_version": b"1",
+        b"protocol_version": DELIVERY_PROTOCOL_VERSION.encode("ascii"),
         b"token": b"must-not-be-read",
     }
 
@@ -79,7 +80,8 @@ def test_discovery_normalizes_only_minimal_safe_metadata() -> None:
     device = LanDeviceDiscoveryService.normalize_service_info("service", _Info())
     assert device == DiscoveredSmartFile(
         instance_id="SF-remote-123", device_name="Notebook Financeiro",
-        host="192.168.1.22", port=8765, protocol_version="1",
+        host="192.168.1.22", port=8765,
+        protocol_version=DELIVERY_PROTOCOL_VERSION,
         service_name="service",
     )
     assert not hasattr(device, "token")
@@ -150,7 +152,8 @@ def test_discovery_updates_ip_only_for_previously_authorized_uuid(tmp_path) -> N
     )
     service.repository.save(authorized)
     candidate = DiscoveredSmartFile(
-        "SF-authorized", "Notebook Novo", "192.168.1.88", 9000, "1", "service",
+        "SF-authorized", "Notebook Novo", "192.168.1.88", 9000,
+        DELIVERY_PROTOCOL_VERSION, "service",
     )
     updated = service.apply_discovery(organization_id, candidate)
     assert updated.current_ip == "192.168.1.88"
@@ -169,7 +172,8 @@ def test_same_ip_with_different_uuid_does_not_replace_authorized_peer(tmp_path) 
         is_local=False, created_at="now",
     ))
     impostor = DiscoveredSmartFile(
-        "SF-other", "Outro", "192.168.1.5", 8765, "1", "service",
+        "SF-other", "Outro", "192.168.1.5", 8765,
+        DELIVERY_PROTOCOL_VERSION, "service",
     )
     assert service.apply_discovery(organization_id, impostor) is None
     assert service.repository.find_by_instance_id("SF-authorized").device_name == "Notebook"
@@ -183,7 +187,10 @@ def test_network_dialog_ignores_self_keeps_manual_fallback_and_incompatible_stat
     )
     dialog = DeliveryNetworkDialog(local, [], [])
     dialog.set_discovered([
-        DiscoveredSmartFile("SF-local", "LeoPc", "192.168.1.10", 8765, "1", "self"),
+        DiscoveredSmartFile(
+            "SF-local", "LeoPc", "192.168.1.10", 8765,
+            DELIVERY_PROTOCOL_VERSION, "self",
+        ),
         DiscoveredSmartFile("SF-new", "Zorin", "192.168.1.20", 8765, "2", "other"),
     ])
     buttons = dialog.findChildren(QPushButton)

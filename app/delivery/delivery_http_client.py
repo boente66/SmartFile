@@ -6,6 +6,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from app.errors.delivery_exceptions import DeliveryNetworkError
+from app.delivery.protocol import DELIVERY_PROTOCOL_VERSION
 
 
 class DeliveryHttpClient:
@@ -67,7 +68,7 @@ class DeliveryHttpClient:
                 raise DeliveryNetworkError(
                     "A identidade retornada não corresponde ao SmartFile autorizado."
                 )
-            if protocol != "1":
+            if protocol != DELIVERY_PROTOCOL_VERSION:
                 raise DeliveryNetworkError(
                     f"Versão de protocolo incompatível: {protocol or 'ausente'}."
                 )
