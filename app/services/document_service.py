@@ -23,6 +23,7 @@ from app.services.document_storage_service import DocumentStorageService
 from app.services.folder_service import FolderService
 from app.services.organization_service import OrganizationService
 from app.services.storage_quota_service import StorageQuotaService
+from app.services.cloud_storage_quota_service import CloudStorageQuotaService
 from app.services.corporate_transport_service import CorporateTransportService
 from app.cloud.cloud_manager import CloudManager
 from app.cloud.cloud_sync_service import CloudSyncService
@@ -48,6 +49,7 @@ class DocumentService:
         self.folder_service = FolderService(self.database)
         self.cloud_manager = CloudManager(self.database)
         self.cloud_sync_service = CloudSyncService(self.database, self.cloud_manager)
+        self.cloud_storage_quota_service = CloudStorageQuotaService(self.cloud_manager)
         self.storage_service = storage_service or DocumentStorageService(self.database.paths)
         self.storage_quota_service = StorageQuotaService(
             self.database, self.storage_service.paths.storage

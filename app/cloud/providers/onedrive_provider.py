@@ -10,7 +10,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote, urlencode
 
-from app.cloud.cloud_models import CloudAuthResult, CloudUploadRequest, RemoteMetadata
+from app.cloud.cloud_models import (
+    CloudAuthResult, CloudStorageQuota, CloudStorageQuotaStatus,
+    CloudUploadRequest, RemoteMetadata,
+)
 from app.cloud.cloud_provider import (
     CloudAuthenticationError,
     CloudError,
@@ -149,6 +152,26 @@ class OneDriveProvider(CloudProvider):
         data, _ = self._json_request("GET", f"{self.GRAPH}/me/drive/items/{quote(remote_id)}")
         return self._metadata(data)
 
+    def get_storage_quota(self) -> CloudStorageQuota:
+        data, _ = self._json_request(
+            "GET", f"{self.GRAPH}/me/drive?$select=quota"
+        )
+        quota = data.get("quota")
+        if not isinstance(quota, dict):
+            raise CloudError("O OneDrive retornou uma resposta de capacidade incompleta.")
+        total = self._quota_integer(quota, "total")
+        used = self._quota_integer(quota, "used")
+        remaining = self._quota_integer(quota, "remaining")
+        return CloudStorageQuota(
+            provider="ONEDRIVE",
+            total_bytes=total,
+            used_bytes=used,
+            available_bytes=remaining,
+            fetched_at=datetime.now(timezone.utc),
+            status=CloudStorageQuotaStatus.AVAILABLE,
+            provider_state=str(quota.get("state") or "normal"),
+        )
+
     def ensure_folder(self, name: str, parent_id: str | None = None) -> RemoteMetadata:
         clean_name = self._folder_name(name)
         parent_url = (
@@ -178,6 +201,18 @@ class OneDriveProvider(CloudProvider):
 
     def disconnect(self) -> None:
         self.access_token = ""
+
+    @staticmethod
+    def _quota_integer(quota: dict, key: str) -> int:
+        try:
+            value = int(quota[key])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise CloudError(
+                "O OneDrive retornou uma resposta de capacidade incompleta."
+            ) from exc
+        if value < 0:
+            raise CloudError("O OneDrive retornou uma capacidade inválida.")
+        return value
 
     @staticmethod
     def _folder_name(name: str) -> str:

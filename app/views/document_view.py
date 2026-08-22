@@ -165,6 +165,22 @@ class DocumentView(QWidget):
         left_layout.addLayout(cloud_row)
         self._responsive_rows.append(cloud_row)
 
+        cloud_quota_row = QHBoxLayout()
+        self.cloud_quota_label = QLabel("Nuvem: conecte uma conta para consultar a capacidade")
+        self.cloud_quota_label.setObjectName("cloudStorageQuotaLabel")
+        self.cloud_quota_label.setWordWrap(True)
+        self.cloud_quota_progress = QProgressBar()
+        self.cloud_quota_progress.setObjectName("cloudStorageQuotaProgress")
+        self.cloud_quota_progress.setRange(0, 100)
+        self.cloud_quota_progress.setTextVisible(True)
+        self.cloud_quota_progress.setMaximumWidth(220)
+        self.cloud_quota_progress.hide()
+        cloud_quota_row.addWidget(self.cloud_quota_label)
+        cloud_quota_row.addWidget(self.cloud_quota_progress)
+        cloud_quota_row.addStretch(1)
+        left_layout.addLayout(cloud_quota_row)
+        self._responsive_rows.append(cloud_quota_row)
+
         storage_row = QHBoxLayout()
         self.storage_label = QLabel("Armazenamento: carregando…")
         self.storage_label.setObjectName("storageUsageLabel")
@@ -548,6 +564,8 @@ class DocumentView(QWidget):
         can_configure = context is not None and context.is_system_admin()
         self.cloud_combo.setVisible(can_view)
         self.cloud_status_label.setVisible(can_view)
+        self.cloud_quota_label.setVisible(can_view)
+        self.cloud_quota_progress.setVisible(can_view and self.cloud_quota_progress.maximum() > 0)
         self.btn_add_cloud.setVisible(can_view and can_connect)
         self.btn_sync.setVisible(can_view and can_sync)
         self.oauth_settings_action.setVisible(can_configure)
@@ -596,6 +614,8 @@ class DocumentView(QWidget):
             self.cloud_combo.setEnabled(False)
             self.btn_add_cloud.setVisible(False)
             self.btn_sync.setVisible(False)
+            self.cloud_quota_label.setVisible(False)
+            self.cloud_quota_progress.setVisible(False)
         else:
             self.cloud_combo.setEnabled(True)
 
@@ -606,7 +626,7 @@ class DocumentView(QWidget):
         available = self._format_gb(summary.available_bytes)
         local_free = self._format_gb(summary.local_free_bytes)
         self.storage_label.setText(
-            f"{summary.plan_name}: {used} de {quota} · reservado {reserved} · disponível {available} "
+            f"SmartFile local — {summary.plan_name}: {used} de {quota} · reservado {reserved} · disponível {available} "
             f"· disco livre {local_free} · {summary.level}"
         )
         self.storage_progress.setValue(round(summary.percent))
@@ -614,6 +634,69 @@ class DocumentView(QWidget):
         self.storage_progress.setAccessibleName(
             f"Uso do armazenamento {summary.percent:.1f} por cento, estado {summary.level}"
         )
+
+    def set_cloud_quota_loading(self, provider: str) -> None:
+        name = self._cloud_provider_name(provider)
+        self.cloud_quota_label.setText(f"{name} — consultando capacidade…")
+        self.cloud_quota_progress.setRange(0, 0)
+        self.cloud_quota_progress.setVisible(True)
+
+    def clear_cloud_quota(self) -> None:
+        self.cloud_quota_label.setText(
+            "Nuvem: conecte uma conta para consultar a capacidade"
+        )
+        self.cloud_quota_progress.setRange(0, 100)
+        self.cloud_quota_progress.hide()
+
+    def set_cloud_quota(self, quota) -> None:
+        provider = self._cloud_provider_name(quota.provider)
+        status = getattr(quota.status, "value", quota.status)
+        snapshot = quota.used_bytes is not None
+        if status == "AUTHENTICATION_REQUIRED":
+            prefix = f"{provider} — autenticação necessária"
+        elif status == "PERMISSION_DENIED":
+            prefix = f"{provider} — sem permissão para consultar capacidade"
+        elif status == "NOT_SUPPORTED":
+            prefix = f"{provider} — capacidade não suportada"
+        elif status == "TEMPORARILY_UNAVAILABLE":
+            prefix = f"{provider} — capacidade temporariamente indisponível"
+        else:
+            prefix = provider
+
+        if snapshot and quota.total_bytes is not None:
+            details = (
+                f"{self._format_gb(quota.used_bytes)} de "
+                f"{self._format_gb(quota.total_bytes)}"
+            )
+            if quota.available_bytes is not None:
+                details += f" · {self._format_gb(quota.available_bytes)} disponíveis"
+        elif snapshot:
+            details = f"{self._format_gb(quota.used_bytes)} utilizados · plano sem limite informado"
+        else:
+            details = ""
+        if status == "TEMPORARILY_UNAVAILABLE" and snapshot:
+            details = f"última informação conhecida: {details}"
+        if quota.fetched_at is not None:
+            details += f" · atualizado {quota.fetched_at.astimezone().strftime('%d/%m %H:%M')}"
+        self.cloud_quota_label.setText(
+            prefix + (f" · {details}" if details else "")
+        )
+        self.cloud_quota_label.setToolTip(quota.message or "")
+        percent = quota.percent
+        self.cloud_quota_progress.setRange(0, 100)
+        if percent is None:
+            self.cloud_quota_progress.hide()
+        else:
+            self.cloud_quota_progress.setValue(round(percent))
+            self.cloud_quota_progress.setFormat(f"{percent:.1f}% remoto")
+            self.cloud_quota_progress.setVisible(True)
+
+    @staticmethod
+    def _cloud_provider_name(provider: str) -> str:
+        return {
+            "ONEDRIVE": "OneDrive",
+            "GOOGLE_DRIVE": "Google Drive",
+        }.get(str(provider), str(provider))
 
     def selected_folder_id(self) -> int | None:
         item = self.folder_tree.currentItem()

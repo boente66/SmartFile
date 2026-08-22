@@ -209,9 +209,22 @@ class CloudManager:
         self._audit(audit_action, organization_id, settings.cloud_account_id, description)
 
     def provider_for(self, organization_id: int) -> CloudProvider | None:
-        self._require("cloud.sync")
+        return self._provider_for(organization_id, "cloud.sync", respect_pause=True)
+
+    def quota_provider_for(self, organization_id: int) -> CloudProvider | None:
+        """Resolve somente a conta da organização solicitada, com permissão de leitura."""
+        return self._provider_for(organization_id, "cloud.view", respect_pause=False)
+
+    def _provider_for(
+        self, organization_id: int, permission: str, *, respect_pause: bool,
+    ) -> CloudProvider | None:
+        self._require(permission)
         settings = self.settings(organization_id)
-        if settings.sync_mode == "LOCAL" or settings.cloud_account_id is None or settings.paused:
+        if (
+            settings.sync_mode == "LOCAL"
+            or settings.cloud_account_id is None
+            or (respect_pause and settings.paused)
+        ):
             return None
         account = self.account(settings.cloud_account_id)
         if self._expired(account):

@@ -7,7 +7,7 @@ class VersionNotificationService:
     """Controla a notificação local exibida uma vez após cada atualização."""
 
     SETTING_KEY = "last_notified_version"
-    NOTIFICATION_REVISION = "basket-lan-discovery-1"
+    NOTIFICATION_REVISION = "cloud-quota-platform-update-1"
 
     def __init__(self, database):
         self.database = database
@@ -32,10 +32,12 @@ class VersionNotificationService:
     @staticmethod
     def message() -> str:
         return (
-            "A seleção da cesta agora navega pelas pastas lógicas do SmartFile, mantém "
-            "seleções em várias pastas e não expõe caminhos internos. A configuração LAN "
-            "também ganhou descoberta automática de instalações, validação de identidade "
-            "e autorização explícita, preservando a configuração manual."
+            "O cabeçalho de Documentos agora separa o armazenamento local do SmartFile da "
+            "capacidade real do OneDrive ou Google Drive. A consulta ocorre em segundo plano "
+            "e não interfere na sincronização. O SmartFile também pode avisar quando houver "
+            "uma nova versão compatível com Linux ou Windows e abrir o instalador oficial "
+            "no navegador, sempre mediante confirmação do usuário. A descoberta automática "
+            "de instalações LAN e a configuração manual continuam disponíveis."
         )
 
     @classmethod

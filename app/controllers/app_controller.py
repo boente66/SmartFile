@@ -1,5 +1,9 @@
 import logging
+import os
+import sys
 
+from PyQt6.QtCore import QUrl
+from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
 from app.controllers.corporate_transport_controller import CorporateTransportController
@@ -14,6 +18,8 @@ from app.controllers.pdf_signature_controller import PDFSignatureController
 from app.controllers.handwritten_signature_controller import HandwrittenSignatureController
 from app.services.document_service import DocumentService
 from app.services.version_notification_service import VersionNotificationService
+from app.services.application_update_service import ApplicationUpdateService
+from app.workers.application_update_worker import ApplicationUpdateWorker
 from app.coordinators.corporate_transport_coordinator import CorporateTransportCoordinator
 from app.version import __version__
 
@@ -46,6 +52,7 @@ class AppController:
         self.transport_coordinator = None
         self.organization_settings_controller = None
         self.version_notifications = None
+        self._update_worker = None
         self._application = None
         self._stopped = False
 
@@ -147,6 +154,29 @@ class AppController:
                 self.main_view.show_version_notification(
                     __version__, notifications.message(),
                 )
+        if getattr(sys, "frozen", False) or os.getenv("SMARTFILE_CHECK_UPDATES") == "1":
+            self._start_update_check()
+
+    def _start_update_check(self) -> None:
+        service = ApplicationUpdateService(__version__)
+        worker = ApplicationUpdateWorker(service)
+        self._update_worker = worker
+        self.main_view.update_download_requested.connect(self._open_update_download)
+        worker.update_available.connect(self.main_view.show_application_update)
+        worker.finished.connect(lambda w=worker: self._cleanup_update_worker(w))
+        worker.finished.connect(worker.deleteLater)
+        worker.start()
+
+    def _cleanup_update_worker(self, worker) -> None:
+        if self._update_worker is worker:
+            self._update_worker = None
+
+    @staticmethod
+    def _open_update_download(url: str) -> None:
+        if not url.startswith("https://github.com/boente66/SmartFile/"):
+            logger.warning("application.update.rejected_untrusted_url")
+            return
+        QDesktopServices.openUrl(QUrl(url))
 
     def on_tool_selected(self, tool_name: str):
         if tool_name != "documents":
@@ -229,6 +259,10 @@ class AppController:
             self.transport_coordinator.shutdown()
         if self.document_delivery_controller is not None:
             self.document_delivery_controller.shutdown()
+        if self.document_controller is not None:
+            self.document_controller.shutdown()
+        if self._update_worker is not None:
+            self._update_worker.requestInterruption()
         if self._application is not None:
             try:
                 self._application.aboutToQuit.disconnect(self.shutdown)

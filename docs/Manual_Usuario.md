@@ -560,6 +560,14 @@ Quando não há internet, os documentos locais continuam disponíveis e as opera
 podem permanecer na fila. A sincronização é retomada quando houver conexão e uma
 conta corretamente configurada.
 
+O cabeçalho separa explicitamente **SmartFile local** de **OneDrive/Google
+Drive**. A primeira informação representa quota lógica, reservas e disco livre
+da instalação. A segunda é a capacidade real informada pela conta remota. A
+consulta ocorre em segundo plano e pode indicar carregando, temporariamente
+indisponível, autenticação necessária, sem permissão ou não suportado. Quando
+existir uma leitura anterior na sessão, ela aparece como última informação
+conhecida; nenhuma credencial é gravada junto desse snapshot.
+
 Ao executar **Sincronizar agora**, o SmartFile prepara no provedor a pasta
 `SmartFile`, cria uma raiz exclusiva para a organização ativa e espelha suas
 pastas lógicas. Documentos sem pasta ficam na raiz da organização; documentos
@@ -920,6 +928,21 @@ o banco SQLite.
 - Se a nuvem estiver cheia, o documento local é preservado e a sincronização recebe erro.
 
 **Resultado:** uso coerente por organização sem ultrapassagem por operações simultâneas.
+
+### UC-11A — Consultar capacidade da conta de nuvem
+
+**Ator principal:** usuário com `cloud.view` em uma organização que habilitou
+sincronização.
+
+1. O usuário abre Documentos ou troca para uma organização conectada.
+2. A interface mostra o carregamento sem bloquear a navegação.
+3. A Cloud Layer resolve exclusivamente a conta vinculada à organização ativa.
+4. O provider consulta a API oficial e devolve uso, limite e espaço disponível.
+5. O worker atualiza somente o painel remoto; a quota local permanece inalterada.
+
+Se rede, autorização ou permissão falhar, o GED continua operacional e a fila de
+sincronização não é modificada. O sistema nunca apresenta `0 GB de 0 GB` quando
+a capacidade é desconhecida.
 
 ### UC-12 — Importar documentos pelo explorador lógico
 

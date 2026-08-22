@@ -22,6 +22,7 @@ class MainView(QMainWindow):
     """
 
     version_notification_acknowledged = pyqtSignal(str)
+    update_download_requested = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
@@ -98,5 +99,40 @@ class MainView(QMainWindow):
             )
             self.version_notification_acknowledged.emit(version)
             button.hide()
+
+        button.clicked.connect(show_details)
+
+    def show_application_update(self, update) -> None:
+        button = getattr(self, "application_update_button", None)
+        if button is None:
+            button = QToolButton()
+            button.setObjectName("applicationUpdateButton")
+            self.status.addPermanentWidget(button)
+            self.application_update_button = button
+        button.setText(f"Atualização {update.version}")
+        button.setToolTip(
+            f"Nova versão disponível para {update.platform_name}. Clique para baixar."
+        )
+        try:
+            button.clicked.disconnect()
+        except TypeError:
+            pass
+
+        def show_details() -> None:
+            installer = update.asset_name or "página oficial da release"
+            answer = QMessageBox.question(
+                self,
+                f"SmartFile {update.version} disponível",
+                (
+                    f"Há uma atualização compatível com {update.platform_name}.\n\n"
+                    f"Download: {installer}\n\n"
+                    "O SmartFile abrirá o download oficial no navegador. A instalação "
+                    "só continuará após sua confirmação no sistema operacional."
+                ),
+                QMessageBox.StandardButton.Open | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Open,
+            )
+            if answer == QMessageBox.StandardButton.Open:
+                self.update_download_requested.emit(update.download_url)
 
         button.clicked.connect(show_details)

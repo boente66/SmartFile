@@ -10,7 +10,13 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
-from app.cloud.cloud_models import CloudAuthResult, CloudUploadRequest, RemoteMetadata
+from app.cloud.cloud_models import (
+    CloudAuthResult,
+    CloudStorageQuota,
+    CloudStorageQuotaStatus,
+    CloudUploadRequest,
+    RemoteMetadata,
+)
 from app.errors.storage_exceptions import CloudStorageLimitError
 
 logger = logging.getLogger(__name__)
@@ -174,6 +180,14 @@ class CloudProvider(ABC):
     def ensure_folder(self, name: str, parent_id: str | None = None) -> RemoteMetadata:
         """Localiza ou cria uma pasta de forma idempotente."""
         ...
+
+    def get_storage_quota(self) -> CloudStorageQuota:
+        """Retorna a quota remota; providers externos antigos permanecem compatíveis."""
+        return CloudStorageQuota(
+            provider=self.__class__.__name__,
+            status=CloudStorageQuotaStatus.NOT_SUPPORTED,
+            message="Este provedor não informa capacidade de armazenamento.",
+        )
 
     @abstractmethod
     def disconnect(self) -> None: ...

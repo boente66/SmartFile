@@ -16,6 +16,7 @@ from app.controllers.pdf_viewer_controller import PDFViewerController
 from app.services.document_service import DocumentService
 from app.views.document_view import DocumentView
 from app.workers.cloud_sync_worker import CloudSyncWorker
+from app.workers.cloud_storage_quota_worker import CloudStorageQuotaWorker
 from app.cloud.cloud_oauth_config_service import CloudOAuthConfigService
 from app.cloud.cloud_python_auth_service import CloudPythonAuthService
 from app.views.cloud_api_settings_dialog import CloudApiSettingsDialog
@@ -51,6 +52,9 @@ class DocumentController:
         self.feature_service = OrganizationFeatureService(self.service.database, session_context)
         self._cloud_worker = None
         self._cloud_auth_worker = None
+        self._cloud_quota_worker = None
+        self._cloud_quota_workers: set[CloudStorageQuotaWorker] = set()
+        self._cloud_quota_request = 0
         self._retry_sync_after_reauthentication: tuple[str, int] | None = None
         self._copied_document_id = None
         self._cloud_timer = QTimer(self.view)
@@ -429,7 +433,9 @@ class DocumentController:
             "Remover o login da nuvem desta organização? Os tokens locais serão apagados e os documentos locais serão preservados."
         )
         if answer == QMessageBox.StandardButton.Yes:
+            organization_id = self.service.active_organization_id
             self.service.cloud_manager.remove_account(self.service.active_organization_id)
+            self.service.cloud_storage_quota_service.clear(organization_id)
             self._refresh_cloud()
 
     def on_cloud_history(self):
@@ -698,7 +704,8 @@ class DocumentController:
         self.view.set_folders(organization.name, folders)
 
     def _refresh_cloud(self, selected_provider=None):
-        settings = self.service.cloud_manager.settings(self.service.active_organization_id)
+        organization_id = self.service.active_organization_id
+        settings = self.service.cloud_manager.settings(organization_id)
         account = None
         if settings.cloud_account_id:
             try:
@@ -713,6 +720,77 @@ class DocumentController:
         else:
             state = CloudOAuthState.DISCONNECTED
         self.view.set_cloud_settings(settings, account, state)
+        self._refresh_cloud_quota(settings, state)
+
+    def _refresh_cloud_quota(self, settings, oauth_state) -> None:
+        self._cloud_quota_request += 1
+        request_id = self._cloud_quota_request
+        organization_id = self.service.active_organization_id
+        state = getattr(oauth_state, "value", oauth_state)
+        feature_set = self.feature_service.for_organization(
+            self.service.organization_service.active()
+        )
+        can_view = (
+            self.session_context is None
+            or self.session_context.has_permission("cloud.view")
+        )
+        if (
+            settings.sync_mode == "LOCAL"
+            or settings.cloud_account_id is None
+            or state != "CONNECTED"
+            or not feature_set.has("cloud_sync")
+            or not can_view
+        ):
+            self.view.clear_cloud_quota()
+            return
+        current = self._cloud_quota_worker
+        if (
+            current is not None
+            and current.isRunning()
+            and current.organization_id == organization_id
+            and current.provider == settings.sync_mode
+        ):
+            return
+        self.view.set_cloud_quota_loading(settings.sync_mode)
+        worker = CloudStorageQuotaWorker(
+            self.service.cloud_storage_quota_service,
+            organization_id,
+            settings.sync_mode,
+        )
+        self._cloud_quota_worker = worker
+        self._cloud_quota_workers.add(worker)
+        worker.succeeded.connect(
+            lambda quota, w=worker, r=request_id: self._on_cloud_quota_result(w, r, quota)
+        )
+        worker.failed.connect(
+            lambda quota, w=worker, r=request_id: self._on_cloud_quota_result(w, r, quota)
+        )
+        worker.finished.connect(
+            lambda w=worker: self._cleanup_cloud_quota_worker(w)
+        )
+        worker.finished.connect(worker.deleteLater)
+        worker.start()
+
+    def _on_cloud_quota_result(self, worker, request_id: int, quota) -> None:
+        if (
+            request_id != self._cloud_quota_request
+            or worker.organization_id != self.service.active_organization_id
+        ):
+            return
+        settings = self.service.cloud_manager.settings(worker.organization_id)
+        if settings.sync_mode != worker.provider:
+            return
+        self.view.set_cloud_quota(quota)
+
+    def _cleanup_cloud_quota_worker(self, worker) -> None:
+        self._cloud_quota_workers.discard(worker)
+        if self._cloud_quota_worker is worker:
+            self._cloud_quota_worker = None
+
+    def shutdown(self) -> None:
+        self._cloud_timer.stop()
+        for worker in tuple(self._cloud_quota_workers):
+            worker.requestInterruption()
 
     def _require_cloud_permission(self, permission: str) -> None:
         try:

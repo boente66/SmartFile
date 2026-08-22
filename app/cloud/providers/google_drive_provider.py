@@ -8,8 +8,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote, urlencode
 
-from app.cloud.cloud_models import CloudAuthResult, CloudUploadRequest, RemoteMetadata
-from app.cloud.cloud_provider import CloudAuthenticationError, CloudProvider
+from app.cloud.cloud_models import (
+    CloudAuthResult, CloudStorageQuota, CloudStorageQuotaStatus,
+    CloudUploadRequest, RemoteMetadata,
+)
+from app.cloud.cloud_provider import CloudAuthenticationError, CloudError, CloudProvider
 
 
 class GoogleDriveProvider(CloudProvider):
@@ -150,6 +153,26 @@ class GoogleDriveProvider(CloudProvider):
         data, _ = self._json_request("GET", f"{self.API}/files/{quote(remote_id)}?fields=*")
         return self._metadata(data)
 
+    def get_storage_quota(self) -> CloudStorageQuota:
+        data, _ = self._json_request(
+            "GET", f"{self.API}/about?fields=storageQuota"
+        )
+        quota = data.get("storageQuota")
+        if not isinstance(quota, dict) or "usage" not in quota:
+            raise CloudError("O Google Drive retornou uma resposta de capacidade incompleta.")
+        used = self._optional_quota_integer(quota, "usage")
+        total = self._optional_quota_integer(quota, "limit")
+        available = max(0, total - used) if total is not None and used is not None else None
+        return CloudStorageQuota(
+            provider="GOOGLE_DRIVE",
+            total_bytes=total,
+            used_bytes=used,
+            available_bytes=available,
+            fetched_at=datetime.now(timezone.utc),
+            status=CloudStorageQuotaStatus.AVAILABLE,
+            provider_state="unlimited" if total is None else "normal",
+        )
+
     def ensure_folder(self, name: str, parent_id: str | None = None) -> RemoteMetadata:
         clean_name = self._folder_name(name)
         escaped = clean_name.replace("\\", "\\\\").replace("'", "\\'")
@@ -182,6 +205,20 @@ class GoogleDriveProvider(CloudProvider):
 
     def disconnect(self) -> None:
         self.access_token = ""
+
+    @staticmethod
+    def _optional_quota_integer(quota: dict, key: str) -> int | None:
+        if key not in quota:
+            return None
+        try:
+            value = int(quota[key])
+        except (TypeError, ValueError) as exc:
+            raise CloudError(
+                "O Google Drive retornou uma capacidade inválida."
+            ) from exc
+        if value < 0:
+            raise CloudError("O Google Drive retornou uma capacidade inválida.")
+        return value
 
     @staticmethod
     def _folder_name(name: str) -> str:

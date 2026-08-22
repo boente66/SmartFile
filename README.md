@@ -154,6 +154,12 @@ Nenhum módulo documental acessa diretamente o Microsoft Graph ou o Google
 Drive. Uploads, downloads, renomeações, movimentações, exclusões e consultas de
 alterações passam pelo contrato comum da Cloud Layer.
 
+O cabeçalho de Documentos mantém duas medições independentes: **SmartFile
+local**, calculada pela quota lógica e pelo disco da instalação, e **capacidade
+da nuvem**, consultada em segundo plano na conta vinculada à organização ativa.
+Uma falha nessa consulta não interrompe a sincronização nem transforma valores
+desconhecidos em `0 GB`.
+
 ### Funcionamento por organização
 
 - cada organização escolhe entre `Local`, `OneDrive` ou `Google Drive`;
@@ -333,6 +339,15 @@ git diff --check
 
 Builds do instalador não substituem testes manuais em Windows ou Linux reais,
 especialmente para scanner, assinatura digital, conversores externos e OAuth.
+
+### Aviso de atualização
+
+Os pacotes instalados consultam em segundo plano as releases oficiais do
+SmartFile. Quando existe uma versão superior, a aplicação seleciona o artefato
+compatível (`.deb` em Linux amd64 ou Setup `.exe` em Windows x64) e oferece um
+botão de download. O SmartFile não instala silenciosamente: abre somente o
+endereço HTTPS oficial do GitHub e mantém a confirmação sob controle do usuário
+e do sistema operacional.
 
 ## Roadmap
 

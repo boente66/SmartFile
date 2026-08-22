@@ -43,6 +43,15 @@ class CloudSyncState(StrEnum):
     LOCAL_DELETED = "LOCAL_DELETED"
 
 
+class CloudStorageQuotaStatus(StrEnum):
+    LOADING = "LOADING"
+    AVAILABLE = "AVAILABLE"
+    TEMPORARILY_UNAVAILABLE = "TEMPORARILY_UNAVAILABLE"
+    AUTHENTICATION_REQUIRED = "AUTHENTICATION_REQUIRED"
+    PERMISSION_DENIED = "PERMISSION_DENIED"
+    NOT_SUPPORTED = "NOT_SUPPORTED"
+
+
 class CloudJobStatus(StrEnum):
     PENDING = "PENDING"
     RUNNING = "RUNNING"
@@ -126,6 +135,26 @@ class CloudUploadRequest:
     remote_name: str
     remote_parent_id: str | None = None
     remote_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CloudStorageQuota:
+    """Snapshot da capacidade informada pelo provedor remoto, sempre em bytes."""
+
+    provider: str
+    total_bytes: int | None = None
+    used_bytes: int | None = None
+    available_bytes: int | None = None
+    fetched_at: datetime | None = None
+    status: CloudStorageQuotaStatus = CloudStorageQuotaStatus.NOT_SUPPORTED
+    provider_state: str | None = None
+    message: str | None = None
+
+    @property
+    def percent(self) -> float | None:
+        if self.total_bytes is None or self.used_bytes is None or self.total_bytes <= 0:
+            return None
+        return min(100.0, max(0.0, self.used_bytes * 100.0 / self.total_bytes))
 
 
 @dataclass(slots=True)
