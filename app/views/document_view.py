@@ -195,30 +195,26 @@ class DocumentView(QWidget):
         self.cloud_quota_progress.setObjectName("cloudStorageQuotaProgress")
         self.cloud_quota_progress.setRange(0, 100)
         self.cloud_quota_progress.setTextVisible(True)
-        self.cloud_quota_progress.setMaximumWidth(220)
+        self.cloud_quota_progress.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
         self.cloud_quota_progress.hide()
-        cloud_quota_row = QHBoxLayout()
-        cloud_quota_row.addWidget(self.cloud_quota_label, 1)
-        cloud_quota_row.addWidget(self.cloud_quota_progress)
-        cloud_layout.addLayout(cloud_quota_row)
         header_layout.addWidget(cloud_group, 2)
 
-        storage_group = QWidget()
-        storage_group.setObjectName("documentHeaderGroup")
-        storage_layout = QVBoxLayout(storage_group)
-        storage_layout.setContentsMargins(0, 0, 0, 0)
-        storage_layout.setSpacing(4)
-        storage_caption = QLabel("Armazenamento")
-        storage_caption.setObjectName("documentHeaderCaption")
-        storage_layout.addWidget(storage_caption)
-        self.storage_label = QLabel("Armazenamento: carregando…")
+        # Estes widgets mantêm os contratos públicos de armazenamento, mas
+        # sua composição visual pertence à lateral, abaixo da árvore.
+        self.storage_label = QLabel("Carregando capacidade local…")
         self.storage_label.setObjectName("storageUsageLabel")
         self.storage_label.setWordWrap(True)
         self.storage_progress = QProgressBar()
+        self.storage_progress.setObjectName("storageUsageProgress")
         self.storage_progress.setRange(0, 100)
         self.storage_progress.setTextVisible(True)
-        self.storage_progress.setMaximumWidth(260)
+        self.storage_progress.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
         self.btn_manage_storage = QPushButton("Gerenciar armazenamento")
+        self.btn_manage_storage.setObjectName("manageStorageButton")
         IconProvider.apply(self.btn_manage_storage, "folder")
         storage_menu = QMenu(self.btn_manage_storage)
         storage_menu.addAction("Abrir lixeira", lambda: self._select_scope("trash"))
@@ -228,16 +224,10 @@ class DocumentView(QWidget):
         storage_menu.addAction("Sincronizar agora", self.sync_now_requested.emit)
         storage_menu.addAction("Ver erros da nuvem", self.cloud_history_requested.emit)
         self.btn_manage_storage.setMenu(storage_menu)
-        storage_layout.addWidget(self.storage_label)
-        storage_row = QHBoxLayout()
-        storage_row.addWidget(self.storage_progress, 1)
-        storage_row.addWidget(self.btn_manage_storage)
-        storage_layout.addLayout(storage_row)
-        header_layout.addWidget(storage_group, 2)
         left_layout.addWidget(workspace_header)
         self.workspace_header = workspace_header
         self._responsive_rows.extend((
-            header_layout, organization_row, cloud_row, cloud_quota_row, storage_row,
+            header_layout, organization_row, cloud_row,
         ))
 
         toolbar = QFrame()
@@ -462,7 +452,8 @@ class DocumentView(QWidget):
         folders_panel = QFrame()
         folders_panel.setObjectName("foldersPanel")
         folders_layout = QVBoxLayout(folders_panel)
-        folders_layout.setContentsMargins(10, 10, 10, 10)
+        folders_layout.setContentsMargins(8, 8, 8, 8)
+        folders_layout.setSpacing(3)
         navigation = (
             ("Documentos", "documents", "documents"),
             ("Favoritos", "action_star", "favorites"),
@@ -496,8 +487,44 @@ class DocumentView(QWidget):
         folders_layout.addLayout(folders_header)
         self.folder_tree = QTreeWidget()
         self.folder_tree.setHeaderHidden(True)
+        self.folder_tree.setMinimumHeight(56)
+        self.folder_tree.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored
+        )
         self.folder_tree.currentItemChanged.connect(self._emit_folder)
         folders_layout.addWidget(self.folder_tree, 1)
+
+        storage_sidebar_panel = QFrame()
+        storage_sidebar_panel.setObjectName("storageSidebarPanel")
+        storage_sidebar_layout = QVBoxLayout(storage_sidebar_panel)
+        storage_sidebar_layout.setContentsMargins(7, 6, 7, 6)
+        storage_sidebar_layout.setSpacing(3)
+        storage_title = QLabel("Armazenamento")
+        storage_title.setObjectName("storageSidebarTitle")
+        storage_sidebar_layout.addWidget(storage_title)
+
+        local_caption = QLabel("Local")
+        local_caption.setObjectName("storageSidebarCaption")
+        local_row = QHBoxLayout()
+        local_row.setSpacing(5)
+        local_row.addWidget(local_caption)
+        local_row.addWidget(self.storage_label, 1)
+        storage_sidebar_layout.addLayout(local_row)
+        storage_sidebar_layout.addWidget(self.storage_progress)
+
+        self.cloud_storage_caption = QLabel("Nuvem")
+        self.cloud_storage_caption.setObjectName("storageSidebarCaption")
+        cloud_storage_row = QHBoxLayout()
+        cloud_storage_row.setSpacing(5)
+        cloud_storage_row.addWidget(self.cloud_storage_caption)
+        cloud_storage_row.addWidget(self.cloud_quota_label, 1)
+        storage_sidebar_layout.addLayout(cloud_storage_row)
+        storage_sidebar_layout.addWidget(self.cloud_quota_progress)
+        storage_sidebar_layout.addWidget(self.btn_manage_storage)
+        folders_layout.addWidget(storage_sidebar_panel, 0)
+
+        self.storage_sidebar_panel = storage_sidebar_panel
+        self.folders_layout = folders_layout
         browser.addWidget(folders_panel)
         browser.addWidget(self.documents_table)
         browser.setSizes([220, 720])
@@ -554,7 +581,12 @@ class DocumentView(QWidget):
         # largura acompanha cada resize do viewport; ao ampliar, os limites são
         # liberados novamente para não congelar o conteúdo.
         if compact:
-            viewport_width = max(0, self.scroll_area.viewport().width())
+            # Reserva a largura potencial da barra vertical: ela pode surgir
+            # depois deste resize e reduzir o viewport no Windows/Qt em 14 px.
+            vertical_bar_width = self.scroll_area.verticalScrollBar().sizeHint().width()
+            viewport_width = max(
+                0, self.scroll_area.viewport().width() - vertical_bar_width
+            )
             self.scroll_content.setFixedWidth(viewport_width)
         else:
             self.scroll_content.setMinimumWidth(0)
@@ -685,6 +717,7 @@ class DocumentView(QWidget):
         can_configure = context is not None and context.is_system_admin()
         self.cloud_combo.setVisible(can_view)
         self.cloud_status_label.setVisible(can_view)
+        self.cloud_storage_caption.setVisible(can_view)
         self.cloud_quota_label.setVisible(can_view)
         self.cloud_quota_progress.setVisible(can_view and self.cloud_quota_progress.maximum() > 0)
         self.btn_add_cloud.setVisible(can_view and can_connect)
@@ -737,6 +770,7 @@ class DocumentView(QWidget):
             self.cloud_combo.setEnabled(False)
             self.btn_add_cloud.setVisible(False)
             self.btn_sync.setVisible(False)
+            self.cloud_storage_caption.setVisible(False)
             self.cloud_quota_label.setVisible(False)
             self.cloud_quota_progress.setVisible(False)
         else:
@@ -748,10 +782,13 @@ class DocumentView(QWidget):
         reserved = self._format_gb(summary.reserved_bytes)
         available = self._format_gb(summary.available_bytes)
         local_free = self._format_gb(summary.local_free_bytes)
-        self.storage_label.setText(
-            f"SmartFile local — {summary.plan_name}: {used} de {quota} · reservado {reserved} · disponível {available} "
-            f"· disco livre {local_free} · {summary.level}"
+        self.storage_label.setText(f"{used} de {quota} usados")
+        details = (
+            f"Plano: {summary.plan_name}\nReservado: {reserved}\n"
+            f"Disponível: {available}\nDisco livre: {local_free}\nNível: {summary.level}"
         )
+        self.storage_label.setToolTip(details)
+        self.storage_label.setAccessibleDescription(details)
         self.storage_progress.setValue(round(summary.percent))
         self.storage_progress.setFormat(f"{summary.percent:.1f}% — {summary.level}")
         self.storage_progress.setAccessibleName(

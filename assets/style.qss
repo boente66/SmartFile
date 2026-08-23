@@ -344,12 +344,58 @@ QFrame#foldersPanel QTreeWidget::item:selected {
     color: #ffffff;
 }
 
+QFrame#storageSidebarPanel {
+    background: #0f1820;
+    border: none;
+    border-top: 1px solid #2b3944;
+    border-radius: 0;
+}
+
+QLabel#storageSidebarTitle {
+    color: #e5edf5;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+QLabel#storageSidebarCaption {
+    color: #cbd5e1;
+    font-size: 11px;
+    font-weight: 650;
+}
+
+QLabel#storageUsageLabel,
+QLabel#cloudStorageQuotaLabel {
+    color: #9fb0c0;
+    font-size: 10px;
+}
+
+QProgressBar#storageUsageProgress,
+QProgressBar#cloudStorageQuotaProgress {
+    min-height: 7px;
+    max-height: 7px;
+    border: none;
+    border-radius: 3px;
+    background: #263541;
+    color: transparent;
+}
+
+QProgressBar#storageUsageProgress::chunk,
+QProgressBar#cloudStorageQuotaProgress::chunk {
+    border-radius: 3px;
+    background: #2ca66a;
+}
+
+QPushButton#manageStorageButton {
+    min-height: 26px;
+    text-align: left;
+}
+
 QFrame#foldersPanel QPushButton#documentNavigationButton {
     background: transparent;
     color: #cbd5e1;
     border: none;
     text-align: left;
-    padding: 7px 9px;
+    padding: 4px 8px;
 }
 
 QFrame#foldersPanel QPushButton#documentNavigationButton:checked {

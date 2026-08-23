@@ -65,7 +65,9 @@ def test_document_view_shows_storage_in_gb_with_textual_status():
     app.processEvents()
 
     assert "7,4 GB de 10 GB" in view.storage_label.text()
-    assert "NORMAL" in view.storage_label.text()
+    assert "Pessoal 10 GB" in view.storage_label.toolTip()
+    assert "Disco livre: 25 GB" in view.storage_label.toolTip()
+    assert "Nível: NORMAL" in view.storage_label.toolTip()
     assert view.storage_progress.value() == 74
     view.close()
 
@@ -78,6 +80,65 @@ def test_storage_management_menu_exposes_required_actions():
         "Abrir lixeira", "Recalcular uso", "Ver arquivos maiores", "Alterar plano",
         "Sincronizar agora", "Ver erros da nuvem",
     } <= actions
+    view.close()
+
+
+def test_storage_widgets_are_reused_below_folder_tree_and_not_in_header():
+    _app()
+    view = DocumentView()
+
+    assert view.storage_sidebar_panel.parentWidget() is view.folders_panel
+    assert view.storage_label.parentWidget() is view.storage_sidebar_panel
+    assert view.storage_progress.parentWidget() is view.storage_sidebar_panel
+    assert view.cloud_quota_label.parentWidget() is view.storage_sidebar_panel
+    assert view.cloud_quota_progress.parentWidget() is view.storage_sidebar_panel
+    assert view.btn_manage_storage.parentWidget() is view.storage_sidebar_panel
+    assert view.folders_layout.indexOf(view.folder_tree) < view.folders_layout.indexOf(
+        view.storage_sidebar_panel
+    )
+    assert view.workspace_header.findChild(type(view.storage_label), "storageUsageLabel") is None
+    assert view.workspace_header.findChild(
+        type(view.cloud_quota_label), "cloudStorageQuotaLabel"
+    ) is None
+    view.close()
+
+
+def test_navigation_toggle_hides_and_restores_tree_with_storage_summary():
+    app = _app()
+    view = DocumentView()
+    view.resize(1366, 768)
+    view.show()
+    app.processEvents()
+
+    assert view.folders_panel.isVisible()
+    assert view.storage_sidebar_panel.isVisible()
+    view.btn_toggle_folders.setChecked(False)
+    app.processEvents()
+    assert view.folders_panel.isHidden()
+    assert not view.storage_sidebar_panel.isVisible()
+    view.btn_toggle_folders.setChecked(True)
+    app.processEvents()
+    assert view.folders_panel.isVisible()
+    assert view.storage_sidebar_panel.isVisible()
+    view.close()
+
+
+def test_cloud_quota_states_update_the_sidebar_without_horizontal_scroll():
+    app = _app()
+    view = DocumentView()
+    view.set_cloud_quota_loading("ONEDRIVE")
+    assert view.cloud_quota_label.text() == "OneDrive — consultando capacidade…"
+    assert view.cloud_quota_progress.maximum() == 0
+
+    for width in (1366, 1920, 1049, 760):
+        view.resize(width, 768)
+        view.show()
+        app.processEvents()
+        assert view.scroll_area.horizontalScrollBar().maximum() == 0
+
+    view.clear_cloud_quota()
+    assert "conecte uma conta" in view.cloud_quota_label.text().lower()
+    assert view.cloud_quota_progress.isHidden()
     view.close()
 
 
