@@ -47,29 +47,52 @@ class LanDeviceDiscoveryService:
                 f"Não foi possível iniciar a descoberta local: {exc}"
             ) from exc
         found: dict[str, DiscoveredSmartFile] = {}
+        callback_failures: list[Exception] = []
         lock = threading.Lock()
 
-        def on_state_change(zc, service_type, name, state_change) -> None:
+        def on_state_change(
+            zeroconf,
+            service_type,
+            name,
+            state_change,
+        ) -> None:
             if state_change not in {state_added, state_updated}:
                 return
             try:
-                info = zc.get_service_info(service_type, name, timeout=700)
+                info = zeroconf.get_service_info(service_type, name, timeout=700)
                 device = self.normalize_service_info(name, info)
                 if device is not None:
                     with lock:
                         found[device.instance_id] = device
-            except Exception:
-                logger.warning("delivery.discovery.resolve_failed service=%s", name, exc_info=True)
+            except Exception as exc:
+                logger.error(
+                    "delivery.discovery.resolve_failed service=%s error=%s",
+                    name, type(exc).__name__, exc_info=True,
+                )
+                with lock:
+                    callback_failures.append(exc)
 
         browser = None
         deadline = time.monotonic() + max(0.1, min(float(timeout), 15.0))
         try:
             browser = browser_class(client, self.SERVICE_TYPE, handlers=[on_state_change])
             while time.monotonic() < deadline:
+                with lock:
+                    failure = callback_failures[0] if callback_failures else None
+                if failure is not None:
+                    raise LanDiscoveryError(
+                        "A descoberta local falhou ao validar um anúncio mDNS. "
+                        "Tente novamente ou use a configuração manual."
+                    ) from failure
                 if cancelled and cancelled():
                     break
                 time.sleep(0.05)
             with lock:
+                if callback_failures:
+                    raise LanDiscoveryError(
+                        "A descoberta local falhou ao validar um anúncio mDNS. "
+                        "Tente novamente ou use a configuração manual."
+                    ) from callback_failures[0]
                 return sorted(found.values(), key=lambda item: item.device_name.casefold())
         except Exception as exc:
             raise LanDiscoveryError(f"Não foi possível procurar SmartFiles na rede: {exc}") from exc
@@ -192,7 +215,12 @@ class LanDeviceDiscoveryService:
             address = ipaddress.ip_address(str(value).split("%", 1)[0])
         except ValueError:
             return None
-        if address.version != 4 or address.is_unspecified or address.is_multicast:
+        if (
+            address.version != 4
+            or address.is_loopback
+            or address.is_unspecified
+            or address.is_multicast
+        ):
             return None
         return str(address)
 

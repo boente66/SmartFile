@@ -13,6 +13,18 @@ Controllers, Services e Repositories foram preservados.
 - mappings são vinculados à conta ativa e invalidados ao trocar a conta;
 - o schema 19 registra `cloud_account_id` e a política `MANAGED`/`ADOPTED`.
 
+## Correção da descoberta LAN
+
+- callback mDNS compatível com o `zeroconf` 0.147–0.150, inclusive argumentos
+  nomeados usados pela implementação real;
+- falhas do resolvedor chegam ao worker e à interface, em vez de aparentarem uma
+  busca vazia;
+- anúncios mDNS são somente candidatos e não alteram IP ou porta persistidos
+  antes da confirmação de `/api/v1/identity`;
+- o SmartFile ID manual é normalizado e validado sem traceback no slot Qt;
+- a seleção do IPv4 local usa a rota mDNS e não depende de acesso à Internet;
+- loopback, endereço indefinido e multicast não são anunciados como endpoint.
+
 ## Destaques
 
 - cabeçalho unificado para organização, perfil, nuvem e armazenamento;

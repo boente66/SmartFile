@@ -512,9 +512,13 @@ Para localizar outra instalação:
    protocolo — uma porta aberta, sozinha, não é aceita como identidade.
 
 Um dispositivo descoberto não é autorizado automaticamente. Se um peer já
-autorizado reaparecer com o mesmo UUID e outro IP, somente sua localização é
+autorizado reaparecer com o mesmo UUID e outro IP, o novo endpoint permanece
+como candidato até o SmartFile consultar `/api/v1/identity` e confirmar UUID e
+versão do protocolo. Somente depois dessa validação sua localização persistida é
 atualizada. Quando multicast/mDNS estiver bloqueado, expanda **Configuração
-manual** e informe os mesmos dados usados anteriormente.
+manual** e informe o SmartFile ID iniciado por `SF-`, o endereço, a porta e o
+membro responsável. Espaços externos do SmartFile ID são removidos; uma
+identidade vazia ou sem o prefixo obrigatório é recusada sem fechar o diálogo.
 
 Consulte [Teste de entrega LAN](DELIVERY_LAN_TEST.md) para configurar duas
 máquinas e diagnosticar firewall, porta e conectividade.

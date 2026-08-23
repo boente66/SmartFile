@@ -162,9 +162,7 @@ class DeliveryNetworkDialog(QDialog):
             self.peer_owner.addItem(member.display_name, member.id)
         save = QPushButton("Adicionar ou atualizar peer")
         save.setObjectName("deliveryPrimary")
-        save.clicked.connect(
-            lambda: self.save_peer_requested.emit(self.peer_values())
-        )
+        save.clicked.connect(self._submit_peer)
         form.addRow("SmartFile ID", self.peer_id)
         form.addRow("Nome", self.peer_name)
         form.addRow("IP/endereço", self.peer_host)
@@ -187,12 +185,41 @@ class DeliveryNetworkDialog(QDialog):
 
     def peer_values(self) -> dict:
         return {
-            "instance_id": self.peer_id.text(),
-            "device_name": self.peer_name.text(),
-            "host": self.peer_host.text(),
+            "instance_id": self.peer_id.text().strip(),
+            "device_name": " ".join(self.peer_name.text().split()),
+            "host": self.peer_host.text().strip(),
             "port": self.peer_port.value(),
             "owner_user_id": self.peer_owner.currentData(),
         }
+
+    def _submit_peer(self) -> None:
+        values = self.peer_values()
+        instance_id = values["instance_id"]
+        if not instance_id.startswith("SF-") or len(instance_id) <= 3:
+            self.show_form_error(
+                "SmartFile ID inválido. Use a identificação exibida no outro "
+                "SmartFile, iniciada por SF-."
+            )
+            self.peer_id.setFocus()
+            return
+        if not values["host"]:
+            self.show_form_error("Informe o IP ou endereço da instalação.")
+            self.peer_host.setFocus()
+            return
+        if values["owner_user_id"] is None:
+            self.show_form_error(
+                "Associe o peer a um membro ativo da organização."
+            )
+            self.peer_owner.setFocus()
+            return
+        self.save_peer_requested.emit(values)
+
+    def show_form_error(self, message: str) -> None:
+        self.manual_group.setChecked(True)
+        self.discovery_status.setObjectName("networkErrorState")
+        self.discovery_status.style().unpolish(self.discovery_status)
+        self.discovery_status.style().polish(self.discovery_status)
+        self.discovery_status.setText(message)
 
     def set_discovery_state(self, searching: bool, message: str) -> None:
         self.discover_button.setEnabled(not searching)

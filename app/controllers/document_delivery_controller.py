@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from PyQt6.QtWidgets import QDialog,QFileDialog,QInputDialog,QMessageBox
@@ -17,6 +18,8 @@ from app.workers.delivery_send_worker import DeliverySendWorker
 from app.workers.request_send_worker import RequestSendWorker
 from app.workers.lan_discovery_worker import LanConnectionWorker, LanDiscoveryWorker
 from app.delivery.protocol import DELIVERY_PROTOCOL_VERSION
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentDeliveryController:
@@ -147,9 +150,12 @@ class DocumentDeliveryController:
             dialog=DeliveryNetworkDialog(self.service.instances.local(organization_id),self.service.instances.repository.list_peers(organization_id),self.requests.list_assignable_members(organization_id),self.view)
             self.network_dialog=dialog
             def save_local(values):
-                self.service.instances.configure_local(organization_id,**values);dialog.set_peers(self.service.instances.repository.list_peers(organization_id));dialog.setWindowTitle("Configuração salva — reinicie a recepção ao fechar")
+                try:
+                    self.service.instances.configure_local(organization_id,**values);dialog.set_peers(self.service.instances.repository.list_peers(organization_id));dialog.setWindowTitle("Configuração salva — reinicie a recepção ao fechar")
+                except (TypeError, ValueError) as exc:
+                    dialog.show_form_error(str(exc))
             def save_peer(values):
-                self.service.instances.register_peer(organization_id,**values);dialog.set_peers(self.service.instances.repository.list_peers(organization_id))
+                self._save_manual_peer(dialog,organization_id,values)
             def remove_peer(instance_id):
                 self.service.instances.repository.delete_peer(organization_id,instance_id);dialog.set_peers(self.service.instances.repository.list_peers(organization_id))
             dialog.save_local_requested.connect(save_local);dialog.save_peer_requested.connect(save_peer);dialog.remove_peer_requested.connect(remove_peer)
@@ -173,12 +179,35 @@ class DocumentDeliveryController:
     def _discovery_succeeded(self,dialog,organization_id,devices):
         if dialog is not self.network_dialog:return
         local=self.service.instances.local(organization_id)
+        authorized={
+            peer.instance_id:peer
+            for peer in self.service.instances.repository.list_peers(organization_id)
+        }
         visible=[]
         for device in devices:
             if device.instance_id==local.instance_id:continue
             visible.append(device)
-            if device.protocol_version == DELIVERY_PROTOCOL_VERSION:
-                self.service.instances.apply_discovery(organization_id,device)
+            peer=authorized.get(device.instance_id)
+            if peer is not None and device.protocol_version == DELIVERY_PROTOCOL_VERSION:
+                candidate=SmartFileInstanceEntity(
+                    instance_id=device.instance_id,
+                    organization_id=organization_id,
+                    device_name=device.device_name,
+                    owner_user_id=peer.owner_user_id,
+                    current_ip=device.host,
+                    http_port=device.port,
+                    enabled=peer.enabled,
+                    is_local=False,
+                )
+                dialog.show_connection_pending(
+                    device.instance_id,
+                    f"Validando identidade de {device.device_name}…",
+                )
+                self._start_connection_worker(
+                    dialog,candidate,
+                    lambda _payload,instance_id=device.instance_id:
+                    self._verified_discovered_endpoint(dialog,organization_id,instance_id),
+                )
         dialog.set_peers(self.service.instances.repository.list_peers(organization_id));dialog.set_discovered(visible)
         message=(f"{len(visible)} SmartFile(s) encontrado(s)." if visible else "Nenhum SmartFile encontrado nesta rede.")
         dialog.set_discovery_state(False,message)
@@ -212,8 +241,41 @@ class DocumentDeliveryController:
 
     def _authorization_verified(self,dialog,organization_id,device,owner_user_id):
         if dialog is not self.network_dialog:return
-        self.service.instances.register_peer(organization_id,device.instance_id,device.device_name,device.host,device.port,owner_user_id)
-        dialog.set_peers(self.service.instances.repository.list_peers(organization_id));dialog.show_connection_result(device.instance_id,True,"Instalação validada e autorizada com sucesso.")
+        try:
+            self.service.instances.register_peer(organization_id,device.instance_id,device.device_name,device.host,device.port,owner_user_id)
+            dialog.set_peers(self.service.instances.repository.list_peers(organization_id));dialog.show_connection_result(device.instance_id,True,"Instalação validada e autorizada com sucesso.")
+        except (TypeError,ValueError) as exc:
+            dialog.show_connection_result(device.instance_id,False,str(exc))
+
+    def _save_manual_peer(self,dialog,organization_id,values):
+        try:
+            peer=self.service.instances.register_peer(organization_id,**values)
+            dialog.set_peers(self.service.instances.repository.list_peers(organization_id))
+            dialog.show_connection_result(
+                peer.instance_id,True,"Instalação adicionada ou atualizada."
+            )
+        except (TypeError,ValueError) as exc:
+            message=str(exc)
+            if "Identidade SmartFile" in message:
+                message=(
+                    "SmartFile ID inválido. Use a identificação exibida no outro "
+                    "SmartFile, iniciada por SF-."
+                )
+            dialog.show_form_error(message)
+        except Exception as exc:
+            logger.error(
+                "delivery.peer.manual_save_failed error=%s", type(exc).__name__
+            )
+            dialog.show_form_error(
+                "Não foi possível salvar a instalação. Revise os dados e tente novamente."
+            )
+
+    def _verified_discovered_endpoint(self,dialog,organization_id,instance_id):
+        if dialog is not self.network_dialog:return
+        dialog.set_peers(self.service.instances.repository.list_peers(organization_id))
+        dialog.show_connection_result(
+            instance_id,True,"Endpoint atualizado após confirmação da identidade HTTP."
+        )
 
     def _test_peer(self,dialog,peer):
         dialog.show_connection_pending(peer.instance_id,"Verificando identidade e versão do protocolo...")

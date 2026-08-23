@@ -12,10 +12,13 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PyQt6.QtWidgets import QApplication, QPushButton
 from zeroconf import ServiceStateChange
 
+from app.controllers.document_delivery_controller import DocumentDeliveryController
 from app.database.database import Database
 from app.entities.smartfile_instance_entity import SmartFileInstanceEntity
 from app.models.lan_discovery import DiscoveredSmartFile
-from app.services.lan_device_discovery_service import LanDeviceDiscoveryService
+from app.services.lan_device_discovery_service import (
+    LanDeviceDiscoveryService, LanDiscoveryError,
+)
 from app.services.smartfile_instance_service import SmartFileInstanceService
 from app.views.delivery_network_dialog import DeliveryNetworkDialog
 from app.workers.lan_discovery_worker import LanDiscoveryWorker
@@ -76,6 +79,20 @@ class _EmptyBrowser:
         self.cancelled = True
 
 
+class _KeywordUpdatedBrowser:
+    def __init__(self, client, service_type, handlers):
+        self.cancelled = False
+        handlers[0](
+            zeroconf=client,
+            service_type=service_type,
+            name="remote._smartfile._tcp.local.",
+            state_change=ServiceStateChange.Updated,
+        )
+
+    def cancel(self):
+        self.cancelled = True
+
+
 def test_discovery_normalizes_only_minimal_safe_metadata() -> None:
     device = LanDeviceDiscoveryService.normalize_service_info("service", _Info())
     assert device == DiscoveredSmartFile(
@@ -115,6 +132,30 @@ def test_discovery_honors_timeout_and_closes_runtime() -> None:
     assert client.closed
 
 
+def test_discovery_accepts_real_zeroconf_keyword_callback_and_updated_state() -> None:
+    client = _Zeroconf()
+    service = LanDeviceDiscoveryService(
+        zeroconf_factory=lambda: client, browser_factory=_KeywordUpdatedBrowser,
+    )
+    devices = service.discover(0.1)
+    assert [item.instance_id for item in devices] == ["SF-remote-123"]
+    assert client.closed
+
+
+def test_discovery_callback_failure_reaches_service_instead_of_dying_silently() -> None:
+    class BrokenClient(_Zeroconf):
+        def get_service_info(self, *_args, **_kwargs):
+            raise RuntimeError("resolver defect")
+
+    client = BrokenClient()
+    service = LanDeviceDiscoveryService(
+        zeroconf_factory=lambda: client, browser_factory=_KeywordUpdatedBrowser,
+    )
+    with pytest.raises(LanDiscoveryError, match="anúncio mDNS"):
+        service.discover(0.1)
+    assert client.closed
+
+
 def test_discovery_can_be_cancelled_without_persisting_or_hanging() -> None:
     client = _Zeroconf()
     service = LanDeviceDiscoveryService(
@@ -143,7 +184,7 @@ def _instance_service(tmp_path):
     return database, organization_id, SmartFileInstanceService(database)
 
 
-def test_discovery_updates_ip_only_for_previously_authorized_uuid(tmp_path) -> None:
+def test_discovery_updates_ip_only_after_http_identity_validation(tmp_path) -> None:
     _database, organization_id, service = _instance_service(tmp_path)
     authorized = SmartFileInstanceEntity(
         instance_id="SF-authorized", organization_id=organization_id,
@@ -155,13 +196,49 @@ def test_discovery_updates_ip_only_for_previously_authorized_uuid(tmp_path) -> N
         "SF-authorized", "Notebook Novo", "192.168.1.88", 9000,
         DELIVERY_PROTOCOL_VERSION, "service",
     )
-    updated = service.apply_discovery(organization_id, candidate)
+    assert service.apply_discovery(organization_id, candidate) is None
+    unchanged = service.repository.find_by_instance_id("SF-authorized")
+    assert unchanged.current_ip == "192.168.1.5"
+    assert unchanged.http_port == 8765
+
+    updated = service.apply_discovery(
+        organization_id, candidate,
+        identity={
+            "instance_id": "SF-authorized",
+            "protocol_version": DELIVERY_PROTOCOL_VERSION,
+        },
+    )
     assert updated.current_ip == "192.168.1.88"
     assert updated.http_port == 9000
 
     unknown = replace(candidate, instance_id="SF-not-authorized")
     assert service.apply_discovery(organization_id, unknown) is None
     assert service.repository.find_by_instance_id("SF-not-authorized") is None
+
+
+def test_verified_connection_can_persist_candidate_endpoint(tmp_path, monkeypatch) -> None:
+    _database, organization_id, service = _instance_service(tmp_path)
+    service.repository.save(SmartFileInstanceEntity(
+        instance_id="SF-authorized", organization_id=organization_id,
+        device_name="Notebook", current_ip="192.168.1.5", http_port=8765,
+        is_local=False, created_at="now",
+    ))
+    monkeypatch.setattr(
+        "app.delivery.delivery_http_client.DeliveryHttpClient.identity",
+        lambda _client, _host, _port, *, expected_instance_id: {
+            "instance_id": expected_instance_id,
+            "protocol_version": DELIVERY_PROTOCOL_VERSION,
+        },
+    )
+    candidate = SmartFileInstanceEntity(
+        instance_id="SF-authorized", organization_id=organization_id,
+        device_name="Notebook novo", current_ip="192.168.1.99", http_port=9000,
+        is_local=False,
+    )
+    service.test_connection(candidate)
+    persisted = service.repository.find_by_instance_id("SF-authorized")
+    assert persisted.current_ip == "192.168.1.99"
+    assert persisted.http_port == 9000
 
 
 def test_same_ip_with_different_uuid_does_not_replace_authorized_peer(tmp_path) -> None:
@@ -199,6 +276,163 @@ def test_network_dialog_ignores_self_keeps_manual_fallback_and_incompatible_stat
     assert dialog.manual_group.isCheckable() and not dialog.manual_group.isChecked()
     dialog.manual_group.setChecked(True)
     assert dialog.peer_id.parentWidget().isVisibleTo(dialog)
+
+
+def test_manual_form_rejects_invalid_identity_without_emitting_slot() -> None:
+    _app()
+    local = SmartFileInstanceEntity(
+        instance_id="SF-local", organization_id=1, device_name="LeoPc",
+        current_ip="192.168.1.10", http_port=8765, is_local=True,
+    )
+    member = SimpleNamespace(id=7, display_name="Financeiro")
+    dialog = DeliveryNetworkDialog(local, [], [member])
+    emitted = []
+    dialog.save_peer_requested.connect(emitted.append)
+    dialog.peer_id.setText("identidade-invalida")
+    dialog.peer_host.setText("192.168.1.20")
+    dialog._submit_peer()
+    assert emitted == []
+    assert "iniciada por SF-" in dialog.discovery_status.text()
+    dialog.close()
+
+
+def test_register_peer_normalizes_identity_and_rejects_invalid_owner(tmp_path) -> None:
+    database, organization_id, service = _instance_service(tmp_path)
+    user_id = database.execute_query(
+        """INSERT INTO users(
+               username,display_name,password_hash,created_at,updated_at
+           ) VALUES ('peer-owner','Peer Owner','hash','now','now')"""
+    ).lastrowid
+    database.execute_query(
+        """INSERT INTO organization_members(
+               organization_id,user_id,role,status,created_at,updated_at
+           ) VALUES (?,?,'EDITOR','ACTIVE','now','now')""",
+        (organization_id, user_id),
+    )
+    peer = service.register_peer(
+        organization_id, "  SF-abc  ", "Notebook", "192.168.1.20", 8765,
+        user_id,
+    )
+    assert peer.instance_id == "SF-abc"
+    assert service.repository.find_by_instance_id("SF-abc") is not None
+    with pytest.raises(ValueError, match="Identidade"):
+        service.register_peer(
+            organization_id, "", "Notebook", "192.168.1.20", 8765, user_id,
+        )
+    with pytest.raises(ValueError, match="Identidade"):
+        service.register_peer(
+            organization_id, "abc", "Notebook", "192.168.1.20", 8765, user_id,
+        )
+    with pytest.raises(ValueError, match="membro ativo"):
+        service.register_peer(
+            organization_id, "SF-other", "Notebook", "192.168.1.20", 8765, 9999,
+        )
+
+
+def test_local_ip_uses_lan_route_without_internet_dependency(monkeypatch) -> None:
+    targets = []
+
+    class Probe:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def connect(self, target):
+            targets.append(target)
+
+        @staticmethod
+        def getsockname():
+            return "192.168.50.10", 43210
+
+    monkeypatch.setattr("socket.socket", lambda *_args, **_kwargs: Probe())
+    monkeypatch.setattr("socket.getaddrinfo", lambda *_args, **_kwargs: [])
+    assert SmartFileInstanceService.current_ip() == "192.168.50.10"
+    assert targets == [("224.0.0.251", 5353)]
+    assert LanDeviceDiscoveryService._local_ipv4("127.0.0.1") is None
+
+
+def test_manual_controller_validation_is_reported_without_unhandled_exception() -> None:
+    controller = DocumentDeliveryController.__new__(DocumentDeliveryController)
+
+    class Instances:
+        class Repository:
+            @staticmethod
+            def list_peers(_organization_id):
+                return []
+
+        repository = Repository()
+
+        @staticmethod
+        def register_peer(_organization_id, **_values):
+            raise ValueError("Identidade SmartFile inválida.")
+
+    controller.service = SimpleNamespace(instances=Instances())
+    messages = []
+    dialog = SimpleNamespace(
+        set_peers=lambda _peers: None,
+        show_connection_result=lambda *_args: None,
+        show_form_error=messages.append,
+    )
+    controller._save_manual_peer(dialog, 1, {
+        "instance_id": "invalid", "device_name": "Peer",
+        "host": "192.168.1.20", "port": 8765, "owner_user_id": 1,
+    })
+    assert messages == [
+        "SmartFile ID inválido. Use a identificação exibida no outro "
+        "SmartFile, iniciada por SF-."
+    ]
+
+
+def test_controller_treats_mdns_endpoint_as_candidate_until_http_validation() -> None:
+    controller = DocumentDeliveryController.__new__(DocumentDeliveryController)
+    local = SmartFileInstanceEntity(
+        instance_id="SF-local", organization_id=1, device_name="Local",
+        current_ip="192.168.1.10", http_port=8765, is_local=True,
+    )
+    authorized = SmartFileInstanceEntity(
+        instance_id="SF-authorized", organization_id=1, device_name="Peer antigo",
+        owner_user_id=4, current_ip="192.168.1.20", http_port=8765,
+        is_local=False,
+    )
+
+    class Repository:
+        @staticmethod
+        def list_peers(_organization_id):
+            return [authorized]
+
+    controller.service = SimpleNamespace(
+        instances=SimpleNamespace(local=lambda _organization_id: local, repository=Repository())
+    )
+    started = []
+    controller._start_connection_worker = (
+        lambda _dialog, candidate, _success: started.append(candidate)
+    )
+    visible = []
+    dialog = SimpleNamespace(
+        show_connection_pending=lambda *_args: None,
+        set_peers=lambda _peers: None,
+        set_discovered=lambda devices: visible.extend(devices),
+        set_discovery_state=lambda *_args: None,
+    )
+    controller.network_dialog = dialog
+    devices = [
+        DiscoveredSmartFile(
+            "SF-authorized", "Peer novo", "192.168.1.99", 9000,
+            DELIVERY_PROTOCOL_VERSION, "known",
+        ),
+        DiscoveredSmartFile(
+            "SF-unknown", "Desconhecido", "192.168.1.30", 8765,
+            DELIVERY_PROTOCOL_VERSION, "unknown",
+        ),
+    ]
+    controller._discovery_succeeded(dialog, 1, devices)
+    assert len(started) == 1
+    assert started[0].instance_id == "SF-authorized"
+    assert started[0].current_ip == "192.168.1.99"
+    assert authorized.current_ip == "192.168.1.20"
+    assert [item.instance_id for item in visible] == ["SF-authorized", "SF-unknown"]
 
 
 def test_discovery_worker_runs_outside_ui_thread_and_can_be_interrupted() -> None:
