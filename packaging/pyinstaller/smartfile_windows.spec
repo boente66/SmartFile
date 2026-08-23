@@ -12,7 +12,7 @@ datas = [
     (str(project_root / "assets"), "assets"),
     (str(project_root / "app" / "database" / "schema.sql"), "app/database"),
     (str(project_root / "LICENSE"), "."),
-    (str(project_root / "docs" / "RELEASE_NOTES_0.9.0-beta.2.md"), "docs"),
+    (str(project_root / "docs" / "RELEASE_NOTES_0.9.0-beta.3.md"), "docs"),
     (str(project_root / "docs" / "GUIA_TESTE_WINDOWS_BETA.md"), "docs"),
 ]
 

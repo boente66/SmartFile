@@ -7,7 +7,7 @@ class VersionNotificationService:
     """Controla a notificação local exibida uma vez após cada atualização."""
 
     SETTING_KEY = "last_notified_version"
-    NOTIFICATION_REVISION = "cloud-quota-platform-update-1"
+    NOTIFICATION_REVISION = "documents-workspace-beta3-1"
 
     def __init__(self, database):
         self.database = database
@@ -32,12 +32,11 @@ class VersionNotificationService:
     @staticmethod
     def message() -> str:
         return (
-            "O cabeçalho de Documentos agora separa o armazenamento local do SmartFile da "
-            "capacidade real do OneDrive ou Google Drive. A consulta ocorre em segundo plano "
-            "e não interfere na sincronização. O SmartFile também pode avisar quando houver "
-            "uma nova versão compatível com Linux ou Windows e abrir o instalador oficial "
-            "no navegador, sempre mediante confirmação do usuário. A descoberta automática "
-            "de instalações LAN e a configuração manual continuam disponíveis."
+            "O módulo Documentos ganhou uma organização visual mais compacta, com cabeçalho "
+            "de organização, nuvem e armazenamento, barra de ações, filtros recolhíveis, "
+            "breadcrumb das pastas e controles para mostrar ou ocultar navegação e detalhes. "
+            "Os fluxos, permissões, armazenamento local e sincronização existentes foram "
+            "preservados."
         )
 
     @classmethod

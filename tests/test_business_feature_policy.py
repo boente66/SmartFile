@@ -278,6 +278,7 @@ def test_version_notification_revision_alerts_existing_beta_installation(tmp_pat
     )
     service = VersionNotificationService(database)
     assert service.should_notify()
-    assert "descoberta automática" in service.message()
+    assert "organização visual mais compacta" in service.message()
+    assert "fluxos, permissões" in service.message().casefold()
     service.acknowledge(__version__)
     assert not service.should_notify()

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
@@ -81,6 +83,8 @@ class DocumentView(QWidget):
         self._compact = False
         self._context = None
         self._feature_set = None
+        self._filters_available = True
+        self._filters_expanded = True
         self._responsive_rows: list[QBoxLayout] = []
         self._setup_ui()
 
@@ -99,8 +103,8 @@ class DocumentView(QWidget):
         self.scroll_content = QWidget()
         self.scroll_content.setObjectName("documentsScrollContent")
         self.main_layout = QBoxLayout(QBoxLayout.Direction.LeftToRight, self.scroll_content)
-        self.main_layout.setContentsMargins(18, 16, 18, 16)
-        self.main_layout.setSpacing(12)
+        self.main_layout.setContentsMargins(8, 10, 8, 8)
+        self.main_layout.setSpacing(8)
         self.scroll_area.setWidget(self.scroll_content)
 
         # Left column: header, controls, actions, table
@@ -110,13 +114,28 @@ class DocumentView(QWidget):
         left.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(10)
+        left_layout.setSpacing(8)
 
+        workspace_header = QFrame()
+        workspace_header.setObjectName("documentWorkspaceHeader")
+        header_layout = QBoxLayout(QBoxLayout.Direction.LeftToRight, workspace_header)
+        header_layout.setContentsMargins(12, 10, 12, 10)
+        header_layout.setSpacing(12)
+
+        organization_group = QWidget()
+        organization_group.setObjectName("documentHeaderGroup")
+        organization_layout = QVBoxLayout(organization_group)
+        organization_layout.setContentsMargins(0, 0, 0, 0)
+        organization_layout.setSpacing(4)
+        organization_caption = QLabel("Organização")
+        organization_caption.setObjectName("documentHeaderCaption")
+        organization_layout.addWidget(organization_caption)
         organization_row = QHBoxLayout()
-        organization_row.addWidget(QLabel("Organização"))
+        organization_row.setSpacing(6)
         self.organization_combo = QComboBox()
         self.organization_combo.setObjectName("organizationSelector")
-        self.organization_combo.setFixedWidth(360)
+        self.organization_combo.setMinimumWidth(190)
+        self.organization_combo.setMaximumWidth(310)
         self.organization_combo.currentIndexChanged.connect(self._emit_organization)
         organization_row.addWidget(self.organization_combo)
         self.profile_badge = QLabel("Perfil: Essencial")
@@ -131,12 +150,19 @@ class DocumentView(QWidget):
         organization_row.addWidget(self.btn_new_organization)
         organization_row.addWidget(self.btn_edit_organization)
         organization_row.addWidget(self.btn_delete_organization)
-        organization_row.addStretch(1)
-        left_layout.addLayout(organization_row)
-        self._responsive_rows.append(organization_row)
+        organization_layout.addLayout(organization_row)
+        header_layout.addWidget(organization_group, 2)
 
+        cloud_group = QWidget()
+        cloud_group.setObjectName("documentHeaderGroup")
+        cloud_layout = QVBoxLayout(cloud_group)
+        cloud_layout.setContentsMargins(0, 0, 0, 0)
+        cloud_layout.setSpacing(4)
+        cloud_caption = QLabel("Camada de Nuvem")
+        cloud_caption.setObjectName("documentHeaderCaption")
+        cloud_layout.addWidget(cloud_caption)
         cloud_row = QHBoxLayout()
-        cloud_row.addWidget(QLabel("Camada de Nuvem"))
+        cloud_row.setSpacing(6)
         self.cloud_combo = QComboBox()
         self.cloud_combo.addItem("Local", "LOCAL")
         self.cloud_combo.addItem("OneDrive", "ONEDRIVE")
@@ -161,11 +187,7 @@ class DocumentView(QWidget):
         self.cloud_status_label = QLabel("Armazenamento local")
         self.cloud_status_label.setObjectName("cloudStatusLabel")
         cloud_row.addWidget(self.cloud_status_label)
-        cloud_row.addStretch(1)
-        left_layout.addLayout(cloud_row)
-        self._responsive_rows.append(cloud_row)
-
-        cloud_quota_row = QHBoxLayout()
+        cloud_layout.addLayout(cloud_row)
         self.cloud_quota_label = QLabel("Nuvem: conecte uma conta para consultar a capacidade")
         self.cloud_quota_label.setObjectName("cloudStorageQuotaLabel")
         self.cloud_quota_label.setWordWrap(True)
@@ -175,13 +197,20 @@ class DocumentView(QWidget):
         self.cloud_quota_progress.setTextVisible(True)
         self.cloud_quota_progress.setMaximumWidth(220)
         self.cloud_quota_progress.hide()
-        cloud_quota_row.addWidget(self.cloud_quota_label)
+        cloud_quota_row = QHBoxLayout()
+        cloud_quota_row.addWidget(self.cloud_quota_label, 1)
         cloud_quota_row.addWidget(self.cloud_quota_progress)
-        cloud_quota_row.addStretch(1)
-        left_layout.addLayout(cloud_quota_row)
-        self._responsive_rows.append(cloud_quota_row)
+        cloud_layout.addLayout(cloud_quota_row)
+        header_layout.addWidget(cloud_group, 2)
 
-        storage_row = QHBoxLayout()
+        storage_group = QWidget()
+        storage_group.setObjectName("documentHeaderGroup")
+        storage_layout = QVBoxLayout(storage_group)
+        storage_layout.setContentsMargins(0, 0, 0, 0)
+        storage_layout.setSpacing(4)
+        storage_caption = QLabel("Armazenamento")
+        storage_caption.setObjectName("documentHeaderCaption")
+        storage_layout.addWidget(storage_caption)
         self.storage_label = QLabel("Armazenamento: carregando…")
         self.storage_label.setObjectName("storageUsageLabel")
         self.storage_label.setWordWrap(True)
@@ -199,14 +228,20 @@ class DocumentView(QWidget):
         storage_menu.addAction("Sincronizar agora", self.sync_now_requested.emit)
         storage_menu.addAction("Ver erros da nuvem", self.cloud_history_requested.emit)
         self.btn_manage_storage.setMenu(storage_menu)
-        storage_row.addWidget(self.storage_label)
-        storage_row.addWidget(self.storage_progress)
+        storage_layout.addWidget(self.storage_label)
+        storage_row = QHBoxLayout()
+        storage_row.addWidget(self.storage_progress, 1)
         storage_row.addWidget(self.btn_manage_storage)
-        storage_row.addStretch(1)
-        left_layout.addLayout(storage_row)
-        self._responsive_rows.append(storage_row)
+        storage_layout.addLayout(storage_row)
+        header_layout.addWidget(storage_group, 2)
+        left_layout.addWidget(workspace_header)
+        self.workspace_header = workspace_header
+        self._responsive_rows.append(header_layout)
 
-        actions = QHBoxLayout()
+        toolbar = QFrame()
+        toolbar.setObjectName("documentActionBar")
+        actions = QHBoxLayout(toolbar)
+        actions.setContentsMargins(10, 6, 10, 6)
         actions.setSpacing(4)
         self.document_toolbar_buttons = []
         self.action_buttons = {}
@@ -227,11 +262,14 @@ class DocumentView(QWidget):
         for text, icon, callback in action_specs:
             widget = self._icon_button(text, icon)
             widget.setProperty("actionText", text)
+            widget.setProperty("primaryAction", text == "Novo")
             widget.setText(text)
-            widget.setMinimumSize(72, 52)
-            widget.setMaximumSize(16777215, 52)
+            widget.setMinimumSize(68, 42)
+            widget.setMaximumSize(16777215, 42)
             widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
             widget.clicked.connect(callback)
+            if text == "Sincronizar":
+                actions.addStretch(1)
             actions.addWidget(widget)
             self.document_toolbar_buttons.append(widget)
             self.action_buttons[text] = widget
@@ -300,29 +338,47 @@ class DocumentView(QWidget):
         )
         self.oauth_settings_action.setVisible(False)
         self.btn_sync.setMenu(sync_menu)
-        actions.addStretch(1)
-        left_layout.addLayout(actions)
+        left_layout.addWidget(toolbar)
+        self.action_bar = toolbar
 
+        filters_frame = QFrame()
+        filters_frame.setObjectName("documentFilterBar")
+        filters_layout = QVBoxLayout(filters_frame)
+        filters_layout.setContentsMargins(10, 8, 10, 8)
+        filters_layout.setSpacing(6)
         search_row = QHBoxLayout()
+        search_row.setSpacing(8)
         self.search_edit = QLineEdit()
-        self.search_edit.setPlaceholderText("Buscar por nome, categoria ou tags")
+        self.search_edit.setObjectName("documentSearch")
+        self.search_edit.setPlaceholderText("Pesquisar por nome, categoria ou tags")
         self.search_edit.textChanged.connect(self._emit_search)
-        search_row.addWidget(QLabel("Buscar"))
         search_row.addWidget(self.search_edit, 1)
-        search_row.addWidget(QLabel("Tipo"))
+        type_label = QLabel("Tipo")
+        type_label.setObjectName("documentFilterCaption")
+        search_row.addWidget(type_label)
         self.type_combo = QComboBox()
         self.type_combo.addItems(["Todos", "PDF", "DOCX", "SPREADSHEET", "IMAGE", "TEXT", "OTHER"])
         self.type_combo.currentTextChanged.connect(self._emit_filter)
-        self.type_combo.setFixedWidth(140)
+        self.type_combo.setFixedWidth(132)
         search_row.addWidget(self.type_combo)
-        left_layout.addLayout(search_row)
+        self.btn_advanced_filters = QPushButton("Filtros avançados")
+        self.btn_advanced_filters.setObjectName("documentAdvancedFilters")
+        IconProvider.apply(self.btn_advanced_filters, "more")
+        self.btn_advanced_filters.setCheckable(True)
+        self.btn_advanced_filters.setChecked(True)
+        self.btn_advanced_filters.toggled.connect(self._toggle_smart_filters)
+        search_row.addWidget(self.btn_advanced_filters)
+        filters_layout.addLayout(search_row)
         self._responsive_rows.append(search_row)
         self.smart_filters_widget = QWidget()
+        self.smart_filters_widget.setObjectName("documentSmartFilters")
         smart_filters = QHBoxLayout(self.smart_filters_widget)
         smart_filters.setContentsMargins(0, 0, 0, 0)
-        smart_filters.addWidget(QLabel("Filtros rápidos"))
+        source_label = QLabel("Origem")
+        source_label.setObjectName("documentFilterCaption")
+        smart_filters.addWidget(source_label)
         self.source_combo = QComboBox()
-        self.source_combo.addItem("Todas as origens", None)
+        self.source_combo.addItem("Todas", None)
         for label, value in (
             ("Importação", "IMPORT"), ("Scanner", "SCANNER"),
             ("Conversor", "CONVERTER"), ("Nuvem", "CLOUD_DOWNLOAD"),
@@ -331,13 +387,19 @@ class DocumentView(QWidget):
             self.source_combo.addItem(label, value)
         self.source_combo.currentIndexChanged.connect(self._emit_smart_filters)
         smart_filters.addWidget(self.source_combo)
+        period_label = QLabel("Período")
+        period_label.setObjectName("documentFilterCaption")
+        smart_filters.addWidget(period_label)
         self.period_combo = QComboBox()
-        self.period_combo.addItem("Qualquer período", None)
+        self.period_combo.addItem("Todos", None)
         self.period_combo.addItem("Últimos 7 dias", 7)
         self.period_combo.addItem("Últimos 30 dias", 30)
         self.period_combo.addItem("Últimos 90 dias", 90)
         self.period_combo.currentIndexChanged.connect(self._emit_smart_filters)
         smart_filters.addWidget(self.period_combo)
+        favorite_label = QLabel("Favorito")
+        favorite_label.setObjectName("documentFilterCaption")
+        smart_filters.addWidget(favorite_label)
         self.favorite_combo = QComboBox()
         self.favorite_combo.addItem("Todos", None)
         self.favorite_combo.addItem("Somente favoritos", True)
@@ -345,15 +407,15 @@ class DocumentView(QWidget):
         self.favorite_combo.currentIndexChanged.connect(self._emit_smart_filters)
         smart_filters.addWidget(self.favorite_combo)
         smart_filters.addStretch(1)
-        left_layout.addWidget(self.smart_filters_widget)
+        filters_layout.addWidget(self.smart_filters_widget)
+        left_layout.addWidget(filters_frame)
+        self.filters_frame = filters_frame
         self._responsive_rows.append(smart_filters)
 
-        self.status_label = QLabel("Nenhum documento importado")
-        self.status_label.setObjectName("documentCount")
-        left_layout.addWidget(self.status_label)
-
-        self.documents_table = QTableWidget(0, 6)
-        self.documents_table.setHorizontalHeaderLabels(["Nome", "Tipo", "Categoria", "Tamanho", "Favorito", "Nuvem"])
+        self.documents_table = QTableWidget(0, 7)
+        self.documents_table.setHorizontalHeaderLabels([
+            "Nome", "Tipo", "Categoria", "Tamanho", "Favorito", "Nuvem", "Modificado em",
+        ])
         self.documents_table.setAlternatingRowColors(True)
         self.documents_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.documents_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
@@ -370,6 +432,29 @@ class DocumentView(QWidget):
         self.documents_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.documents_table.customContextMenuRequested.connect(self._show_document_context_menu)
         self._setup_document_shortcuts()
+
+        browser_header = QFrame()
+        browser_header.setObjectName("documentBrowserHeader")
+        browser_header_layout = QHBoxLayout(browser_header)
+        browser_header_layout.setContentsMargins(8, 4, 8, 4)
+        browser_header_layout.setSpacing(5)
+        self.breadcrumb_label = QLabel("Minha Organização")
+        self.breadcrumb_label.setObjectName("documentBreadcrumb")
+        self.breadcrumb_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        browser_header_layout.addWidget(self.breadcrumb_label, 1)
+        self.btn_toggle_folders = self._icon_button("Mostrar ou ocultar navegação", "folder")
+        self.btn_toggle_folders.setCheckable(True)
+        self.btn_toggle_folders.setChecked(True)
+        self.btn_toggle_details = self._icon_button("Mostrar ou ocultar detalhes", "documents")
+        self.btn_toggle_details.setCheckable(True)
+        self.btn_toggle_details.setChecked(True)
+        self.btn_refresh = self._icon_button("Atualizar documentos", "cloud_sync")
+        browser_header_layout.addWidget(self.btn_toggle_folders)
+        browser_header_layout.addWidget(self.btn_toggle_details)
+        browser_header_layout.addWidget(self.btn_refresh)
+        left_layout.addWidget(browser_header)
+        self.browser_header = browser_header
+
         browser = QSplitter(Qt.Orientation.Horizontal)
         browser.setObjectName("documentBrowserSplitter")
         folders_panel = QFrame()
@@ -417,6 +502,7 @@ class DocumentView(QWidget):
         browser.setCollapsible(0, True)
         left_layout.addWidget(browser, 1)
         self.browser_splitter = browser
+        self.folders_panel = folders_panel
 
         self.details = DocumentDetailsWidget()
         self.details.open_requested.connect(self.open_requested.emit)
@@ -424,6 +510,9 @@ class DocumentView(QWidget):
         self.details.pdf_tools_requested.connect(self.pdf_tools_requested.emit)
         self.details.trash_requested.connect(self.delete_requested.emit)
         self.details.favorite_requested.connect(self.favorite_requested.emit)
+        self.btn_toggle_folders.toggled.connect(folders_panel.setVisible)
+        self.btn_toggle_details.toggled.connect(self.details.setVisible)
+        self.btn_refresh.clicked.connect(self.refresh_requested.emit)
 
         # Compatibilidade para consumidores que referenciam as ações públicas.
         self.btn_open = self.details.btn_open
@@ -434,6 +523,21 @@ class DocumentView(QWidget):
 
         self.main_layout.addWidget(left, 3)
         self.main_layout.addWidget(self.details, 1)
+
+        status_row = QHBoxLayout()
+        status_row.setContentsMargins(4, 0, 4, 0)
+        self.status_label = QLabel("Nenhum documento importado")
+        self.status_label.setObjectName("documentCount")
+        self.selection_status_label = QLabel("Nenhum item selecionado")
+        self.selection_status_label.setObjectName("documentSelectionStatus")
+        self.sync_status_label = QLabel("Sincronização pronta")
+        self.sync_status_label.setObjectName("documentSyncStatus")
+        status_row.addWidget(self.status_label)
+        status_row.addStretch(1)
+        status_row.addWidget(self.selection_status_label)
+        status_row.addSpacing(18)
+        status_row.addWidget(self.sync_status_label)
+        left_layout.addLayout(status_row)
         self._set_document_actions_enabled(False)
         self._update_more_menu()
 
@@ -474,19 +578,24 @@ class DocumentView(QWidget):
                 button.setFixedSize(38, 38)
             else:
                 button.setText(str(button.property("actionText")))
-                button.setMinimumSize(72, 52)
-                button.setMaximumSize(16777215, 52)
+                button.setMinimumSize(68, 42)
+                button.setMaximumSize(16777215, 42)
         self.scroll_content.updateGeometry()
 
     def set_documents(self, documents: list[DocumentModel]):
         self.documents_table.setRowCount(len(documents))
         for row_index, document in enumerate(documents):
-            self.documents_table.setItem(row_index, 0, QTableWidgetItem(document.name))
+            name_item = QTableWidgetItem(document.name)
+            name_item.setIcon(IconProvider.icon(self._document_icon(document)))
+            self.documents_table.setItem(row_index, 0, name_item)
             self.documents_table.setItem(row_index, 1, QTableWidgetItem(document.file_type or ""))
             self.documents_table.setItem(row_index, 2, QTableWidgetItem(document.category or ""))
             self.documents_table.setItem(row_index, 3, QTableWidgetItem(self._format_size(document.size)))
             self.documents_table.setItem(row_index, 4, QTableWidgetItem("★" if document.favorite else ""))
             self.documents_table.setItem(row_index, 5, QTableWidgetItem(self._cloud_label(document)))
+            self.documents_table.setItem(
+                row_index, 6, QTableWidgetItem(self._format_datetime(document.updated_at)),
+            )
 
             for column in range(self.documents_table.columnCount()):
                 self.documents_table.item(row_index, column).setData(Qt.ItemDataRole.UserRole, document.id)
@@ -503,6 +612,8 @@ class DocumentView(QWidget):
                 active_index = index
         self.organization_combo.setCurrentIndex(active_index)
         self.organization_combo.blockSignals(False)
+        if self.organization_combo.currentText():
+            self.breadcrumb_label.setText(self.organization_combo.currentText())
 
     def set_folders(self, organization_name: str, folders) -> None:
         self.folder_tree.blockSignals(True)
@@ -524,6 +635,7 @@ class DocumentView(QWidget):
         self.folder_tree.setCurrentItem(root)
         self.folder_tree.expandAll()
         self.folder_tree.blockSignals(False)
+        self.breadcrumb_label.setText(organization_name)
         self.folder_selected.emit(None)
 
     def set_cloud_settings(self, settings, account=None, oauth_state=None) -> None:
@@ -555,6 +667,7 @@ class DocumentView(QWidget):
         if settings.last_sync:
             text += f" · última sincronização {settings.last_sync}"
         self.cloud_status_label.setText(text)
+        self.sync_status_label.setText(text)
 
     def apply_cloud_permissions(self, context) -> None:
         self._context = context
@@ -596,7 +709,9 @@ class DocumentView(QWidget):
         self._feature_set = feature_set
         self.profile_badge.setText(f"Perfil: {feature_set.profile_name}")
         indexed = feature_set.has("indexed_filters")
-        self.smart_filters_widget.setVisible(indexed)
+        self._filters_available = indexed
+        self.btn_advanced_filters.setVisible(indexed)
+        self.smart_filters_widget.setVisible(indexed and self._filters_expanded)
         self.transport_action.setVisible(feature_set.has("server_transport"))
         self.requests_action.setVisible(feature_set.has("document_requests"))
         self.audit_action.setVisible(feature_set.has("audit_history"))
@@ -740,8 +855,17 @@ class DocumentView(QWidget):
         document_id = self.selected_document_id()
         self._set_document_actions_enabled(document_id is not None)
         self._update_more_menu()
+        self.selection_status_label.setText(
+            "1 item selecionado" if document_id is not None else "Nenhum item selecionado"
+        )
         if document_id is not None:
             self.document_selected.emit(document_id)
+
+    def _toggle_smart_filters(self, expanded: bool) -> None:
+        self._filters_expanded = bool(expanded)
+        self.smart_filters_widget.setVisible(
+            self._filters_available and self._filters_expanded
+        )
 
     def _set_document_actions_enabled(self, enabled: bool):
         self.details.set_actions_enabled(enabled)
@@ -769,9 +893,21 @@ class DocumentView(QWidget):
             self.cloud_provider_changed.emit(str(provider))
 
     def _emit_folder(self, current, _previous) -> None:
+        self._update_breadcrumb(current)
         self.folder_selected.emit(
             current.data(0, Qt.ItemDataRole.UserRole) if current else None
         )
+
+    def _update_breadcrumb(self, item: QTreeWidgetItem | None) -> None:
+        if item is None:
+            self.breadcrumb_label.setText(self.organization_combo.currentText())
+            return
+        parts: list[str] = []
+        current = item
+        while current is not None:
+            parts.append(current.text(0))
+            current = current.parent()
+        self.breadcrumb_label.setText("  ›  ".join(reversed(parts)))
 
     def _emit_for_selected(self, signal) -> None:
         document_id = self.selected_document_id()
@@ -906,6 +1042,24 @@ class DocumentView(QWidget):
                 return f"{value:.0f} {unit}"
             value /= 1024
         return f"{value:.0f} GB"
+
+    @staticmethod
+    def _document_icon(document: DocumentModel) -> str:
+        file_type = (document.file_type or "").upper()
+        if file_type == "PDF":
+            return "pdf"
+        if file_type in {"IMAGE", "JPG", "JPEG", "PNG", "TIFF"}:
+            return "image"
+        return "documents"
+
+    @staticmethod
+    def _format_datetime(value: str | None) -> str:
+        if not value:
+            return "—"
+        try:
+            return datetime.fromisoformat(value).astimezone().strftime("%d/%m/%Y %H:%M")
+        except (TypeError, ValueError):
+            return str(value).replace("T", " ")[:16]
 
     @staticmethod
     def _format_gb(size: int) -> str:

@@ -1,4 +1,4 @@
-# SmartFile 0.9.0 Beta 2 — Linux amd64
+# SmartFile 0.9.0 Beta 3 — Linux amd64
 
 Esta distribuição é um **protótipo beta não oficial**, destinado exclusivamente
 a avaliação e testes. Não utilize o SmartFile como a única cópia de documentos
@@ -25,14 +25,14 @@ ambiente gráfico ainda devem ser testados no equipamento do usuário.
 ## Download oficial da beta
 
 Utilize a página permanente da
-[Release 0.9.0 Beta 2](https://github.com/boente66/SmartFile/releases/tag/v0.9.0-beta.2).
+[Release 0.9.0 Beta 3](https://github.com/boente66/SmartFile/releases/tag/v0.9.0-beta.3).
 O instalador Linux e seu arquivo SHA-256 ficam na seção **Assets**. O link de
 GitHub Actions é temporário, pode exigir login e entrega um ZIP; ele não é o
 canal de distribuição do instalador.
 
-[Download direto do SmartFile Linux amd64](https://github.com/boente66/SmartFile/releases/download/v0.9.0-beta.2/smartfile_0.9.0.beta2_amd64.deb)
+[Download direto do SmartFile Linux amd64](https://github.com/boente66/SmartFile/releases/download/v0.9.0-beta.3/smartfile_0.9.0.beta3_amd64.deb)
 
-O arquivo baixado deve se chamar `smartfile_0.9.0.beta2_amd64.deb`. Um download
+O arquivo baixado deve se chamar `smartfile_0.9.0.beta3_amd64.deb`. Um download
 que seja HTML ou ZIP não é um pacote Debian e deve ser descartado.
 
 ## Instalação gráfica
@@ -48,18 +48,18 @@ que seja HTML ou ZIP não é um pacote Debian e deve ser descartado.
 
 ```bash
 cd ~/Downloads
-sha256sum -c smartfile_0.9.0.beta2_amd64.deb.sha256
-file smartfile_0.9.0.beta2_amd64.deb
-dpkg-deb --info smartfile_0.9.0.beta2_amd64.deb
-sudo apt install ./smartfile_0.9.0.beta2_amd64.deb
+sha256sum -c smartfile_0.9.0.beta3_amd64.deb.sha256
+file smartfile_0.9.0.beta3_amd64.deb
+dpkg-deb --info smartfile_0.9.0.beta3_amd64.deb
+sudo apt install ./smartfile_0.9.0.beta3_amd64.deb
 smartfile
 sudo apt remove smartfile
 ```
 
 O resultado do SHA-256 deve ser `OK`, e `file` deve identificar `Debian binary
 package`. O pacote produzido localmente pelo script do projeto usa o nome
-`smartfile_0.9.0~beta2_amd64.deb`; o GitHub normaliza o caractere `~` no nome do
-asset, mas a versão interna do pacote continua sendo `0.9.0~beta2`.
+`smartfile_0.9.0~beta3_amd64.deb`; o GitHub normaliza o caractere `~` no nome do
+asset, mas a versão interna do pacote continua sendo `0.9.0~beta3`.
 
 O launcher instalado fica em `/usr/share/applications/smartfile.desktop`, o
 comando em `/usr/bin/smartfile` e o bundle em `/opt/smartfile`. O aplicativo não

@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.9.0-beta.3] - 2026-08-22
+
+- Redesigned the Documents workspace while preserving controllers, services,
+  repositories, signals, permissions, storage, and cloud synchronization contracts
+- Added a unified organization, cloud, and storage header with a compact action bar
+- Added collapsible indexed filters, logical-folder breadcrumbs, panel visibility
+  controls, document-type icons, modified timestamps, and contextual status feedback
+- Centralized the Delivery/LAN protocol version in a neutral module
+- Added structured and safe HTTP 409/500 responses to the LAN identity endpoint
+- Retained schema 18 without creating a migration
 - Added logical-folder navigation, search, persistent multi-selection, and safe
   storage-path hiding to the delivery basket document picker
 - Added non-blocking mDNS/DNS-SD discovery for SmartFile LAN installations with

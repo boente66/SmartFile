@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "0.9.0-beta.2"
+  #define AppVersion "0.9.0-beta.3"
 #endif
 #ifndef SourceDir
   #define SourceDir "..\..\dist\SmartFile"
@@ -31,6 +31,7 @@ SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+MinVersion=10.0.17763
 PrivilegesRequired=admin
 PrivilegesRequiredOverridesAllowed=dialog
 ChangesAssociations=no

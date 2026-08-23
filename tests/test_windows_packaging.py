@@ -46,6 +46,7 @@ def test_inno_installer_preserves_user_data_and_does_not_associate_files():
     assert "desktopicon" in script
     assert "ChangesAssociations=no" in script
     assert "ChangesEnvironment=no" in script
+    assert "MinVersion=10.0.17763" in script
     assert "[UninstallDelete]" not in script
     assert "runasoriginaluser" in script
     assert "VersionInfoProductVersion=0.9.0.0" in script

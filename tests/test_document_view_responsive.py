@@ -1,10 +1,12 @@
 import os
+from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtWidgets import QApplication, QBoxLayout
 
 from app.views.document_view import DocumentView
+from app.models.document_model import DocumentModel
 from app.services.storage_quota_service import GB, StorageUsageSummary
 
 _APPLICATION = None
@@ -76,4 +78,54 @@ def test_storage_management_menu_exposes_required_actions():
         "Abrir lixeira", "Recalcular uso", "Ver arquivos maiores", "Alterar plano",
         "Sincronizar agora", "Ver erros da nuvem",
     } <= actions
+    view.close()
+
+
+def test_document_workspace_model_preserves_actions_and_adds_navigation_context():
+    app = _app()
+    view = DocumentView()
+    view.set_organizations([SimpleNamespace(id=1, name="Minha Organização")], 1)
+    view.set_folders("Minha Organização", [
+        SimpleNamespace(id=10, parent_id=None, name="Clientes"),
+        SimpleNamespace(id=11, parent_id=10, name="Contratos"),
+    ])
+    view.set_documents([DocumentModel(
+        id=42, name="contrato.pdf", file_type="PDF", updated_at="2026-08-22T14:30:00",
+    )])
+    view.resize(1500, 800)
+    view.show()
+    app.processEvents()
+
+    assert view.workspace_header.objectName() == "documentWorkspaceHeader"
+    assert view.action_bar.objectName() == "documentActionBar"
+    assert view.filters_frame.objectName() == "documentFilterBar"
+    assert view.documents_table.columnCount() == 7
+    assert view.documents_table.horizontalHeaderItem(6).text() == "Modificado em"
+    assert view.documents_table.item(0, 6).text() == "22/08/2026 14:30"
+    assert not view.documents_table.item(0, 0).icon().isNull()
+
+    contracts = view.folder_tree.topLevelItem(0).child(0).child(0)
+    view.folder_tree.setCurrentItem(contracts)
+    app.processEvents()
+    assert view.breadcrumb_label.text() == "Minha Organização  ›  Clientes  ›  Contratos"
+
+    view.btn_toggle_folders.setChecked(False)
+    view.btn_toggle_details.setChecked(False)
+    assert view.folders_panel.isHidden()
+    assert view.details.isHidden()
+    view.close()
+
+
+def test_advanced_filters_are_collapsible_without_losing_values():
+    _app()
+    view = DocumentView()
+    view.source_combo.setCurrentIndex(2)
+    selected = view.source_combo.currentData()
+
+    view.btn_advanced_filters.setChecked(False)
+    assert view.smart_filters_widget.isHidden()
+    view.btn_advanced_filters.setChecked(True)
+
+    assert not view.smart_filters_widget.isHidden()
+    assert view.source_combo.currentData() == selected
     view.close()
