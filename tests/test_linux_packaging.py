@@ -192,6 +192,7 @@ def test_linux_ci_installs_reinstalls_and_removes_real_package():
     assert "sudo apt-get install --reinstall -y" in workflow
     assert "sudo apt-get remove -y smartfile" in workflow
     assert "package-removal-preserves-user-data" in workflow
+    assert '--repo "${GITHUB_REPOSITORY}"' in workflow
 
 
 def test_linux_package_templates_do_not_contain_credentials():
