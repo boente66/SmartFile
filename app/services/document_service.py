@@ -27,6 +27,7 @@ from app.services.cloud_storage_quota_service import CloudStorageQuotaService
 from app.services.corporate_transport_service import CorporateTransportService
 from app.cloud.cloud_manager import CloudManager
 from app.cloud.cloud_sync_service import CloudSyncService
+from app.services.cloud_folder_mapping_service import CloudFolderMappingService
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,9 @@ class DocumentService:
         self.folder_service = FolderService(self.database)
         self.cloud_manager = CloudManager(self.database)
         self.cloud_sync_service = CloudSyncService(self.database, self.cloud_manager)
+        self.cloud_folder_mapping_service = CloudFolderMappingService(
+            self.database, self.cloud_manager
+        )
         self.cloud_storage_quota_service = CloudStorageQuotaService(self.cloud_manager)
         self.storage_service = storage_service or DocumentStorageService(self.database.paths)
         self.storage_quota_service = StorageQuotaService(

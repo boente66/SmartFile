@@ -11,7 +11,8 @@ from uuid import uuid4
 from app.cloud.cloud_job_queue import CloudJobQueue
 from app.cloud.cloud_manager import CloudManager
 from app.cloud.cloud_models import (
-    CloudFolderMapping, CloudOperation, CloudSyncState, CloudUploadRequest, SyncJob,
+    CloudFolderManagementMode, CloudFolderMapping, CloudOperation,
+    CloudSyncState, CloudUploadRequest, RemoteItemType, SyncJob,
 )
 from app.cloud.cloud_provider import (
     CloudAuthenticationError,
@@ -344,26 +345,62 @@ class CloudSyncService:
                 )
                 remote = None
                 if mapping:
+                    if (
+                        mapping.cloud_account_id is not None
+                        and mapping.cloud_account_id != settings.cloud_account_id
+                    ):
+                        raise CloudConflictError(
+                            "O mapeamento de pasta pertence a outra conta de nuvem. "
+                            "Reconecte a conta correta ou remova a associação."
+                        )
                     try:
-                        if mapping.remote_name != folder.name:
-                            remote = provider.rename(mapping.remote_id, folder.name)
-                        if mapping.remote_parent_id != parent_remote_id:
-                            remote = provider.move(mapping.remote_id, parent_remote_id)
+                        if str(mapping.management_mode) == "ADOPTED":
+                            remote = provider.get_metadata(mapping.remote_id)
+                            if (
+                                remote.deleted
+                                or remote.item_type != RemoteItemType.FOLDER
+                            ):
+                                raise CloudResourceNotFoundError(
+                                    "A pasta OneDrive mapeada não está mais disponível."
+                                )
+                        else:
+                            if mapping.remote_name != folder.name:
+                                remote = provider.rename(mapping.remote_id, folder.name)
+                            if mapping.remote_parent_id != parent_remote_id:
+                                remote = provider.move(mapping.remote_id, parent_remote_id)
                     except CloudResourceNotFoundError:
+                        if str(mapping.management_mode) == "ADOPTED":
+                            raise CloudResourceNotFoundError(
+                                "A pasta OneDrive adotada não foi encontrada. "
+                                "Altere ou remova o mapeamento antes de sincronizar."
+                            )
                         mapping = None
                 if mapping is None:
                     remote = provider.ensure_folder(folder.name, parent_remote_id)
                     remote_id = remote.remote_id
+                    saved_parent_id = parent_remote_id
+                    saved_name = folder.name
+                    management_mode = CloudFolderManagementMode.MANAGED
                 else:
                     remote_id = mapping.remote_id
+                    if str(mapping.management_mode) == "ADOPTED":
+                        saved_parent_id = remote.parent_id if remote else mapping.remote_parent_id
+                        saved_name = remote.name if remote else mapping.remote_name
+                        management_mode = CloudFolderManagementMode.ADOPTED
+                    else:
+                        saved_parent_id = parent_remote_id
+                        saved_name = folder.name
+                        management_mode = CloudFolderManagementMode.MANAGED
                 self.folder_mappings.upsert(CloudFolderMapping(
                     organization_id=organization_id,
                     folder_id=folder.id,
                     provider=provider_name,
                     remote_id=remote_id,
-                    remote_parent_id=parent_remote_id,
-                    remote_name=folder.name,
+                    remote_parent_id=saved_parent_id,
+                    remote_name=saved_name,
                     synced_at=self._now(),
+                    cloud_account_id=settings.cloud_account_id,
+                    management_mode=management_mode,
                 ))
                 remote_by_folder[folder.id] = remote_id
                 remaining.remove(folder)
@@ -421,6 +458,11 @@ class CloudSyncService:
                 organization_id, folder.id, provider_name
             )
             if mapping is None:
+                continue
+            if str(mapping.management_mode) == "ADOPTED":
+                self.folder_mappings.delete(
+                    organization_id, folder.id, provider_name
+                )
                 continue
             try:
                 provider.delete(mapping.remote_id)

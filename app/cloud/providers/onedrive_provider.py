@@ -12,7 +12,7 @@ from urllib.parse import quote, urlencode
 
 from app.cloud.cloud_models import (
     CloudAuthResult, CloudStorageQuota, CloudStorageQuotaStatus,
-    CloudUploadRequest, RemoteMetadata,
+    CloudUploadRequest, RemoteItemType, RemoteMetadata,
 )
 from app.cloud.cloud_provider import (
     CloudAuthenticationError,
@@ -32,6 +32,7 @@ class OneDriveProvider(CloudProvider):
     # local sem transformar uma enumeração válida em erro.
     MAX_DELTA_PAGES = 25
     DELTA_DEADLINE_SECONDS = 120
+    MAX_FOLDER_PAGES = 100
 
     def authenticate(self, credentials: dict[str, str]) -> CloudAuthResult:
         action = credentials.get("action", "complete")
@@ -199,6 +200,43 @@ class OneDriveProvider(CloudProvider):
         )
         return self._metadata(created)
 
+    def list_folders(self, parent_id: str | None = None) -> list[RemoteMetadata]:
+        base = (
+            f"{self.GRAPH}/me/drive/items/{quote(parent_id, safe='')}/children"
+            if parent_id else f"{self.GRAPH}/me/drive/root/children"
+        )
+        query = urlencode({
+            "$select": "id,name,folder,parentReference,size,eTag,lastModifiedDateTime",
+            "$top": "200",
+        })
+        url = f"{base}?{query}"
+        folders: list[RemoteMetadata] = []
+        visited: set[str] = set()
+        pages = 0
+        while url:
+            if url in visited:
+                raise CloudError(
+                    "O Microsoft Graph repetiu a mesma página de pastas. "
+                    "A navegação foi interrompida com segurança."
+                )
+            if pages >= self.MAX_FOLDER_PAGES:
+                raise CloudError(
+                    "A pasta possui páginas demais para uma navegação segura."
+                )
+            visited.add(url)
+            pages += 1
+            data, _ = self._json_request("GET", url)
+            for item in data.get("value", []):
+                if isinstance(item, dict) and item.get("folder") is not None:
+                    folders.append(self._metadata(item))
+            next_url = data.get("@odata.nextLink")
+            url = str(next_url) if next_url else ""
+        logger.info(
+            "cloud.onedrive.folders.list parent_present=%s pages=%s folders=%s",
+            bool(parent_id), pages, len(folders),
+        )
+        return folders
+
     def disconnect(self) -> None:
         self.access_token = ""
 
@@ -271,4 +309,9 @@ class OneDriveProvider(CloudProvider):
             size=int(data.get("size", 0) or 0), version=data.get("eTag") or data.get("cTag"),
             modified_at=data.get("lastModifiedDateTime"), parent_id=parent.get("id"),
             deleted="deleted" in data,
+            item_type=(
+                RemoteItemType.FOLDER if data.get("folder") is not None
+                else RemoteItemType.FILE if data.get("file") is not None
+                else RemoteItemType.UNKNOWN
+            ),
         )

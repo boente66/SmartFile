@@ -26,6 +26,8 @@ from app.errors.cloud_exceptions import CloudConfigurationMissingError, CloudPer
 from app.models.document_search import DocumentSearchFilters
 from app.services.organization_feature_service import OrganizationFeatureService
 from app.views.document_import_dialog import DocumentImportDialog
+from app.views.cloud_folder_mapping_dialog import CloudFolderMappingDialog
+from app.workers.cloud_folder_worker import CloudFolderMappingWorker
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +55,7 @@ class DocumentController:
         self._cloud_worker = None
         self._cloud_auth_worker = None
         self._cloud_quota_worker = None
+        self._cloud_folder_mapping_worker = None
         self._cloud_quota_workers: set[CloudStorageQuotaWorker] = set()
         self._cloud_quota_request = 0
         self._retry_sync_after_reauthentication: tuple[str, int] | None = None
@@ -92,6 +95,8 @@ class DocumentController:
         self.view.cloud_history_requested.connect(self.on_cloud_history)
         self.view.cloud_login_requested.connect(self.on_add_cloud_account)
         self.view.cloud_oauth_settings_requested.connect(self.on_configure_cloud_oauth)
+        self.view.map_cloud_folder_requested.connect(self.on_map_cloud_folder)
+        self.view.unmap_cloud_folder_requested.connect(self.on_unmap_cloud_folder)
         self.view.copy_requested.connect(self.on_copy_document)
         self.view.paste_requested.connect(self.on_paste_document)
         self.view.restore_requested.connect(self.on_restore_document)
@@ -191,6 +196,7 @@ class DocumentController:
 
     def on_folder_selected(self, folder_id):
         self._current_folder_id = int(folder_id) if folder_id is not None else None
+        self._refresh_cloud_folder_mapping()
         self._refresh_documents()
 
     def on_scope_changed(self, scope: str):
@@ -451,6 +457,134 @@ class DocumentController:
             for row in rows
         ) or "Nenhuma operação de nuvem registrada."
         QMessageBox.information(self.view, "Histórico da nuvem", message)
+
+    def on_map_cloud_folder(self):
+        if self._current_folder_id is None:
+            QMessageBox.information(
+                self.view, "Mapear pasta da nuvem",
+                "Selecione uma pasta lógica do SmartFile.",
+            )
+            return
+        if (
+            self._cloud_folder_mapping_worker is not None
+            and self._cloud_folder_mapping_worker.isRunning()
+        ):
+            QMessageBox.information(
+                self.view, "Mapear pasta da nuvem",
+                "Já existe um mapeamento em andamento.",
+            )
+            return
+        try:
+            self._require_cloud_permission("cloud.sync")
+            organization_id = self.service.active_organization_id
+            settings = self.service.cloud_manager.settings(organization_id)
+            if settings.sync_mode != "ONEDRIVE" or settings.cloud_account_id is None:
+                raise ValueError(
+                    "Conecte uma conta OneDrive nesta organização antes de mapear."
+                )
+            account = self.service.cloud_manager.account(settings.cloud_account_id)
+            provider = self.service.cloud_manager.provider_for(organization_id)
+            if provider is None:
+                raise ValueError("A conta OneDrive não está disponível.")
+            dialog = CloudFolderMappingDialog(
+                provider,
+                self.view.breadcrumb_label.text(),
+                f"OneDrive — {account.email or account.display_name or 'conta conectada'}",
+                self.view,
+            )
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            selected = dialog.selected_folder()
+            if selected is None:
+                return
+            existing = self.service.cloud_folder_mapping_service.current(
+                organization_id, self._current_folder_id
+            )
+            if existing is not None and existing.remote_id != selected.remote_id:
+                answer = QMessageBox.question(
+                    self.view, "Alterar mapeamento",
+                    (
+                        f"Substituir a associação atual OneDrive / {existing.remote_name} "
+                        f"por OneDrive / {selected.name}?\n\n"
+                        "Nenhuma pasta ou arquivo remoto será alterado."
+                    ),
+                )
+                if answer != QMessageBox.StandardButton.Yes:
+                    return
+            worker = CloudFolderMappingWorker(
+                self.service.cloud_folder_mapping_service,
+                organization_id,
+                self._current_folder_id,
+                selected.remote_id,
+                provider,
+            )
+            self._cloud_folder_mapping_worker = worker
+            worker.succeeded.connect(
+                lambda mapping, w=worker: self._on_cloud_folder_mapped(mapping, w)
+            )
+            worker.failed.connect(
+                lambda message, w=worker: self._on_cloud_folder_mapping_failed(message, w)
+            )
+            worker.finished.connect(
+                lambda w=worker: self._cleanup_cloud_folder_mapping_worker(w)
+            )
+            worker.finished.connect(worker.deleteLater)
+            self.view.set_status("Validando e mapeando pasta OneDrive…")
+            worker.start()
+        except Exception as exc:
+            QMessageBox.warning(self.view, "Mapear pasta da nuvem", str(exc))
+
+    def _on_cloud_folder_mapped(self, mapping, worker) -> None:
+        if worker is not self._cloud_folder_mapping_worker:
+            return
+        self._refresh_cloud_folder_mapping()
+        self.view.set_status(
+            f"Pasta mapeada: OneDrive / {mapping.remote_name}"
+        )
+        QMessageBox.information(
+            self.view, "Mapear pasta da nuvem",
+            (
+                "Mapeamento concluído. A pasta remota foi preservada e nenhum "
+                "arquivo existente foi importado automaticamente."
+            ),
+        )
+
+    def _on_cloud_folder_mapping_failed(self, message: str, worker) -> None:
+        if worker is not self._cloud_folder_mapping_worker:
+            return
+        self.view.set_status("Falha ao mapear pasta OneDrive")
+        QMessageBox.warning(self.view, "Mapear pasta da nuvem", message)
+
+    def _cleanup_cloud_folder_mapping_worker(self, worker) -> None:
+        if self._cloud_folder_mapping_worker is worker:
+            self._cloud_folder_mapping_worker = None
+
+    def on_unmap_cloud_folder(self):
+        if self._current_folder_id is None:
+            return
+        mapping = self.service.cloud_folder_mapping_service.current(
+            self.service.active_organization_id, self._current_folder_id
+        )
+        if mapping is None:
+            return
+        answer = QMessageBox.question(
+            self.view, "Remover mapeamento?",
+            (
+                "Remover somente a associação entre o SmartFile e esta pasta?\n\n"
+                "A pasta e os arquivos existentes no OneDrive não serão excluídos."
+            ),
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self._require_cloud_permission("cloud.sync")
+            self.service.cloud_folder_mapping_service.remove_mapping(
+                self.service.active_organization_id, self._current_folder_id
+            )
+            self._refresh_cloud_folder_mapping()
+            self.view.set_status("Mapeamento removido; conteúdo OneDrive preservado")
+        except Exception as exc:
+            QMessageBox.warning(self.view, "Remover mapeamento", str(exc))
 
     def _on_cloud_sync_succeeded(self, result):
         logger.info(
@@ -721,6 +855,42 @@ class DocumentController:
             state = CloudOAuthState.DISCONNECTED
         self.view.set_cloud_settings(settings, account, state)
         self._refresh_cloud_quota(settings, state)
+        self._refresh_cloud_folder_mapping(settings, state)
+
+    def _refresh_cloud_folder_mapping(self, settings=None, state=None) -> None:
+        organization_id = self.service.active_organization_id
+        settings = settings or self.service.cloud_manager.settings(organization_id)
+        if state is None and settings.sync_mode == "ONEDRIVE":
+            state = self.service.cloud_manager.authentication_state(
+                organization_id, "ONEDRIVE"
+            )
+        state_value = getattr(state, "value", state)
+        feature_set = self.feature_service.for_organization(
+            self.service.organization_service.active()
+        )
+        can_sync = (
+            self.session_context is None
+            or self.session_context.has_permission("cloud.sync")
+        )
+        can_view = (
+            self.session_context is None
+            or self.session_context.has_permission("cloud.view")
+        )
+        enabled = (
+            self._current_folder_id is not None
+            and settings.sync_mode == "ONEDRIVE"
+            and settings.cloud_account_id is not None
+            and state_value == "CONNECTED"
+            and feature_set.has("cloud_sync")
+            and can_sync
+            and can_view
+        )
+        mapping = None
+        if self._current_folder_id is not None and can_view:
+            mapping = self.service.cloud_folder_mapping_service.current(
+                organization_id, self._current_folder_id
+            )
+        self.view.set_cloud_folder_mapping(mapping, enabled)
 
     def _refresh_cloud_quota(self, settings, oauth_state) -> None:
         self._cloud_quota_request += 1
@@ -791,6 +961,11 @@ class DocumentController:
         self._cloud_timer.stop()
         for worker in tuple(self._cloud_quota_workers):
             worker.requestInterruption()
+        if (
+            self._cloud_folder_mapping_worker is not None
+            and self._cloud_folder_mapping_worker.isRunning()
+        ):
+            self._cloud_folder_mapping_worker.requestInterruption()
 
     def _require_cloud_permission(self, permission: str) -> None:
         try:

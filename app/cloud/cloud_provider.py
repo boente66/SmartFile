@@ -181,6 +181,12 @@ class CloudProvider(ABC):
         """Localiza ou cria uma pasta de forma idempotente."""
         ...
 
+    def list_folders(self, parent_id: str | None = None) -> list[RemoteMetadata]:
+        """Lista somente pastas filhas para navegação interativa neutra."""
+        raise CloudError(
+            "Este provedor ainda não permite navegar por pastas existentes."
+        )
+
     def get_storage_quota(self) -> CloudStorageQuota:
         """Retorna a quota remota; providers externos antigos permanecem compatíveis."""
         return CloudStorageQuota(

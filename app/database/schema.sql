@@ -325,9 +325,13 @@ CREATE TABLE IF NOT EXISTS cloud_folder_mappings (
     remote_parent_id TEXT,
     remote_name TEXT NOT NULL,
     synced_at TEXT NOT NULL,
+    cloud_account_id INTEGER,
+    management_mode TEXT NOT NULL DEFAULT 'MANAGED'
+        CHECK (management_mode IN ('MANAGED','ADOPTED')),
     PRIMARY KEY (organization_id, folder_id, provider),
     FOREIGN KEY (organization_id) REFERENCES organizations(id),
-    FOREIGN KEY (folder_id) REFERENCES folders(id)
+    FOREIGN KEY (folder_id) REFERENCES folders(id),
+    FOREIGN KEY (cloud_account_id) REFERENCES cloud_accounts(id)
 );
 
 INSERT INTO organizations (
@@ -469,6 +473,11 @@ CREATE INDEX IF NOT EXISTS idx_sync_jobs_document ON sync_jobs(document_id);
 CREATE INDEX IF NOT EXISTS idx_cloud_accounts_provider ON cloud_accounts(provider, status);
 CREATE INDEX IF NOT EXISTS idx_cloud_folder_remote
     ON cloud_folder_mappings(organization_id, provider, remote_id);
+CREATE INDEX IF NOT EXISTS idx_cloud_folder_account
+    ON cloud_folder_mappings(organization_id, cloud_account_id, provider);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cloud_folder_account_remote
+    ON cloud_folder_mappings(organization_id, cloud_account_id, provider, remote_id)
+    WHERE cloud_account_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id, revoked_at);
 CREATE INDEX IF NOT EXISTS idx_password_recovery_user

@@ -10,7 +10,7 @@ from urllib.parse import quote, urlencode
 
 from app.cloud.cloud_models import (
     CloudAuthResult, CloudStorageQuota, CloudStorageQuotaStatus,
-    CloudUploadRequest, RemoteMetadata,
+    CloudUploadRequest, RemoteItemType, RemoteMetadata,
 )
 from app.cloud.cloud_provider import CloudAuthenticationError, CloudError, CloudProvider
 
@@ -252,4 +252,9 @@ class GoogleDriveProvider(CloudProvider):
             size=int(data.get("size", 0) or 0), version=data.get("version") or data.get("md5Checksum"),
             modified_at=data.get("modifiedTime"), parent_id=parents[0] if parents else None,
             deleted=bool(data.get("trashed", False)),
+            item_type=(
+                RemoteItemType.FOLDER
+                if data.get("mimeType") == "application/vnd.google-apps.folder"
+                else RemoteItemType.FILE if data.get("mimeType") else RemoteItemType.UNKNOWN
+            ),
         )

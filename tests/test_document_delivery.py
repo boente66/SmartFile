@@ -91,10 +91,10 @@ def _identity_response(port: int) -> tuple[int, dict]:
         connection.close()
 
 
-def test_schema_18_and_instance_uuid_survives_ip_change(tmp_path: Path, monkeypatch):
+def test_current_schema_and_instance_uuid_survives_ip_change(tmp_path: Path, monkeypatch):
     database, context, _documents, _worker, _membership = _installation(tmp_path)
     version = database.connect().execute("PRAGMA user_version").fetchone()[0]
-    assert version == CURRENT_SCHEMA_VERSION == 18
+    assert version == CURRENT_SCHEMA_VERSION == 19
     service = DocumentDeliveryService(database, context)
     monkeypatch.setattr(service.instances, "current_ip", lambda: "192.168.1.10")
     first = service.instances.local(context.active_organization.id)
@@ -198,7 +198,7 @@ def test_migration_17_preserves_legacy_requests(tmp_path: Path):
     assert row["title"] == "Documento legado"
     from uuid import UUID
     assert str(UUID(row["request_uuid"])) == row["request_uuid"]
-    assert migrated.connect().execute("PRAGMA user_version").fetchone()[0] == 18
+    assert migrated.connect().execute("PRAGMA user_version").fetchone()[0] == 19
 
 
 def test_request_transitions_basket_and_unique_protocol(tmp_path: Path):

@@ -63,6 +63,8 @@ class DocumentView(QWidget):
     cloud_history_requested = pyqtSignal()
     cloud_login_requested = pyqtSignal(str)
     cloud_oauth_settings_requested = pyqtSignal()
+    map_cloud_folder_requested = pyqtSignal()
+    unmap_cloud_folder_requested = pyqtSignal()
     copy_requested = pyqtSignal(int)
     paste_requested = pyqtSignal()
     restore_requested = pyqtSignal(int)
@@ -85,6 +87,8 @@ class DocumentView(QWidget):
         self._feature_set = None
         self._filters_available = True
         self._filters_expanded = True
+        self._cloud_folder_mapping_enabled = False
+        self._selected_cloud_mapping = None
         self._responsive_rows: list[QBoxLayout] = []
         self._setup_ui()
 
@@ -298,6 +302,21 @@ class DocumentView(QWidget):
             self.more_trash_action,
         ):
             action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
+        self.more_menu.addSeparator()
+        self.cloud_folder_menu = self.more_menu.addMenu("Pasta da nuvem")
+        self.cloud_folder_menu.setIcon(IconProvider.icon("cloud_add"))
+        self.cloud_folder_info_action = self.cloud_folder_menu.addAction(
+            "Nenhuma pasta mapeada"
+        )
+        self.cloud_folder_info_action.setEnabled(False)
+        self.map_cloud_folder_action = self.cloud_folder_menu.addAction(
+            IconProvider.icon("folder"), "Mapear pasta da nuvem…",
+            self.map_cloud_folder_requested.emit,
+        )
+        self.unmap_cloud_folder_action = self.cloud_folder_menu.addAction(
+            IconProvider.icon("action_trash"), "Remover mapeamento",
+            self.unmap_cloud_folder_requested.emit,
+        )
         self.more_menu.addSeparator()
         self.enterprise_menu = self.more_menu.addMenu("Recursos empresariais")
         self.enterprise_menu.setIcon(IconProvider.icon("business"))
@@ -724,6 +743,19 @@ class DocumentView(QWidget):
         self.cloud_status_label.setText(text)
         self.sync_status_label.setText(text)
 
+    def set_cloud_folder_mapping(self, mapping, enabled: bool) -> None:
+        self._selected_cloud_mapping = mapping
+        self._cloud_folder_mapping_enabled = bool(enabled)
+        if mapping is None:
+            self.cloud_folder_info_action.setText("Nenhuma pasta mapeada")
+            self.map_cloud_folder_action.setText("Mapear pasta da nuvem…")
+        else:
+            self.cloud_folder_info_action.setText(
+                f"OneDrive / {mapping.remote_name}"
+            )
+            self.map_cloud_folder_action.setText("Alterar mapeamento…")
+        self._update_more_menu()
+
     def apply_cloud_permissions(self, context) -> None:
         self._context = context
         can_view = context is None or context.has_permission("cloud.view")
@@ -954,6 +986,7 @@ class DocumentView(QWidget):
 
     def _emit_folder(self, current, _previous) -> None:
         self._update_breadcrumb(current)
+        self._update_more_menu()
         self.folder_selected.emit(
             current.data(0, Qt.ItemDataRole.UserRole) if current else None
         )
@@ -1056,6 +1089,18 @@ class DocumentView(QWidget):
         self.more_paste_action.setEnabled(can_create)
         self.more_rename_action.setEnabled(selected and can_update and not trash)
         self.more_trash_action.setEnabled(selected and can_update and not trash)
+        logical_folder = (
+            self.selected_folder_id() is not None
+            and getattr(self, "_current_scope", "documents") in {"documents", "folders"}
+        )
+        available = self._cloud_folder_mapping_enabled and logical_folder
+        self.cloud_folder_menu.menuAction().setVisible(
+            self._cloud_folder_mapping_enabled or self._selected_cloud_mapping is not None
+        )
+        self.cloud_folder_info_action.setVisible(self._selected_cloud_mapping is not None)
+        self.map_cloud_folder_action.setEnabled(available)
+        self.unmap_cloud_folder_action.setVisible(self._selected_cloud_mapping is not None)
+        self.unmap_cloud_folder_action.setEnabled(available)
 
     @staticmethod
     def _icon_button(text: str, icon: str) -> QPushButton:

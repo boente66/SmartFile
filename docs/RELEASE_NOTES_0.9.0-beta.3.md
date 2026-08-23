@@ -1,8 +1,17 @@
 # SmartFile 0.9.0-beta.3
 
 Versão beta publicada para testes e avaliação da experiência do módulo
-Documentos. O armazenamento interno, o schema 18 e os contratos entre Views,
+Documentos. O armazenamento interno e os contratos entre Views,
 Controllers, Services e Repositories foram preservados.
+
+## Mapeamento seguro de pasta OneDrive
+
+- uma pasta lógica pode adotar o `remote_id` de uma pasta OneDrive existente;
+- a navegação remota é paginada e executada fora da thread da interface;
+- pastas adotadas não são renomeadas, movidas ou excluídas pelo SmartFile;
+- remover o mapeamento preserva integralmente o conteúdo remoto;
+- mappings são vinculados à conta ativa e invalidados ao trocar a conta;
+- o schema 19 registra `cloud_account_id` e a política `MANAGED`/`ADOPTED`.
 
 ## Destaques
 

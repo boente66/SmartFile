@@ -12,18 +12,21 @@ class CloudFolderRepository(BaseRepository):
             """
             INSERT INTO cloud_folder_mappings (
                 organization_id,folder_id,provider,remote_id,remote_parent_id,
-                remote_name,synced_at
-            ) VALUES (?,?,?,?,?,?,?)
+                remote_name,synced_at,cloud_account_id,management_mode
+            ) VALUES (?,?,?,?,?,?,?,?,?)
             ON CONFLICT(organization_id,folder_id,provider) DO UPDATE SET
                 remote_id=excluded.remote_id,
                 remote_parent_id=excluded.remote_parent_id,
                 remote_name=excluded.remote_name,
-                synced_at=excluded.synced_at
+                synced_at=excluded.synced_at,
+                cloud_account_id=excluded.cloud_account_id,
+                management_mode=excluded.management_mode
             """,
             (
                 mapping.organization_id, mapping.folder_id, mapping.provider,
                 mapping.remote_id, mapping.remote_parent_id, mapping.remote_name,
-                mapping.synced_at,
+                mapping.synced_at, mapping.cloud_account_id,
+                str(mapping.management_mode),
             ),
         )
         return mapping
@@ -45,6 +48,18 @@ class CloudFolderRepository(BaseRepository):
                 (organization_id, provider),
             )
         ]
+
+    def find_by_remote_id(
+        self, organization_id: int, cloud_account_id: int,
+        provider: str, remote_id: str,
+    ) -> CloudFolderMapping | None:
+        row = self._fetch_one(
+            """SELECT * FROM cloud_folder_mappings
+               WHERE organization_id=? AND cloud_account_id=?
+                 AND provider=? AND remote_id=?""",
+            (organization_id, cloud_account_id, provider, remote_id),
+        )
+        return self._entity(row) if row else None
 
     def delete(self, organization_id: int, folder_id: int, provider: str) -> bool:
         return self._write(
@@ -69,4 +84,12 @@ class CloudFolderRepository(BaseRepository):
             remote_parent_id=row["remote_parent_id"],
             remote_name=row["remote_name"],
             synced_at=row["synced_at"],
+            cloud_account_id=(
+                row["cloud_account_id"]
+                if "cloud_account_id" in row.keys() else None
+            ),
+            management_mode=(
+                row["management_mode"]
+                if "management_mode" in row.keys() else "MANAGED"
+            ),
         )

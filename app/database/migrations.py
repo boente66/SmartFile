@@ -10,7 +10,7 @@ from uuid import uuid4
 from app.errors.persistence_exceptions import DatabaseError
 
 logger = logging.getLogger(__name__)
-CURRENT_SCHEMA_VERSION = 18
+CURRENT_SCHEMA_VERSION = 19
 GIB = 1024 ** 3
 
 
@@ -216,6 +216,33 @@ def _upgrade_cloud_organization_structure(connection: sqlite3.Connection) -> Non
         );
         CREATE INDEX IF NOT EXISTS idx_cloud_folder_remote
             ON cloud_folder_mappings(organization_id, provider, remote_id);
+        """
+    )
+
+
+def _upgrade_cloud_folder_adoption(connection: sqlite3.Connection) -> None:
+    """Distingue árvores gerenciadas de pastas remotas adotadas."""
+
+    columns = _columns(connection, "cloud_folder_mappings")
+    if "cloud_account_id" not in columns:
+        connection.execute(
+            "ALTER TABLE cloud_folder_mappings ADD COLUMN "
+            "cloud_account_id INTEGER REFERENCES cloud_accounts(id)"
+        )
+    if "management_mode" not in columns:
+        connection.execute(
+            "ALTER TABLE cloud_folder_mappings ADD COLUMN management_mode TEXT "
+            "NOT NULL DEFAULT 'MANAGED' "
+            "CHECK (management_mode IN ('MANAGED','ADOPTED'))"
+        )
+    connection.executescript(
+        """
+        CREATE INDEX IF NOT EXISTS idx_cloud_folder_account
+            ON cloud_folder_mappings(organization_id, cloud_account_id, provider);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_cloud_folder_account_remote
+            ON cloud_folder_mappings(
+                organization_id, cloud_account_id, provider, remote_id
+            ) WHERE cloud_account_id IS NOT NULL;
         """
     )
 
@@ -1008,6 +1035,7 @@ def migrate(connection: sqlite3.Connection, schema_path: Path) -> int:
             _upgrade_password_recovery(connection)
             _upgrade_storage_quotas(connection)
             _upgrade_cloud_organization_structure(connection)
+            _upgrade_cloud_folder_adoption(connection)
             _upgrade_profile_resources(connection)
             _upgrade_business_feature_policy(connection)
             _upgrade_corporate_transport_jobs(connection)

@@ -69,6 +69,17 @@ class CloudOperation(StrEnum):
     SYNC = "SYNC"
 
 
+class RemoteItemType(StrEnum):
+    UNKNOWN = "UNKNOWN"
+    FILE = "FILE"
+    FOLDER = "FOLDER"
+
+
+class CloudFolderManagementMode(StrEnum):
+    MANAGED = "MANAGED"
+    ADOPTED = "ADOPTED"
+
+
 @dataclass(slots=True)
 class CloudAccount:
     id: int | None = None
@@ -127,6 +138,7 @@ class RemoteMetadata:
     modified_at: str | None = None
     parent_id: str | None = None
     deleted: bool = False
+    item_type: RemoteItemType = RemoteItemType.UNKNOWN
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,3 +178,5 @@ class CloudFolderMapping:
     remote_parent_id: str | None
     remote_name: str
     synced_at: str
+    cloud_account_id: int | None = None
+    management_mode: CloudFolderManagementMode = CloudFolderManagementMode.MANAGED

@@ -893,6 +893,44 @@ exclusiva da organização.
 **Resultado:** a estrutura remota acompanha a organização local sem sincronizar
 o banco SQLite.
 
+### UC-09B — Mapear uma pasta existente do OneDrive
+
+**Ator principal:** usuário com permissão `cloud.sync`.
+
+**Pré-condições:** organização ativa conectada ao OneDrive e uma pasta lógica
+real selecionada em Documentos.
+
+**Fluxo principal:**
+
+1. O usuário abre **Mais → Pasta da nuvem → Mapear pasta da nuvem**.
+2. O diálogo consulta as pastas do OneDrive em segundo plano.
+3. O usuário navega pela árvore remota e escolhe uma pasta existente.
+4. O SmartFile valida o identificador remoto e verifica se ele já está associado.
+5. Após a confirmação, o sistema grava a associação entre a pasta lógica e o
+   `remote_id` da conta ativa.
+6. As sincronizações seguintes reutilizam essa pasta, sem criar outra com nome
+   equivalente.
+
+**Regras de segurança:**
+
+- mapear não copia nem importa os documentos que já estão no OneDrive;
+- a pasta adotada não é renomeada, movida ou excluída pelo SmartFile;
+- o mesmo `remote_id` não pode representar duas pastas lógicas na mesma conta;
+- trocar ou remover a conta invalida os mapeamentos vinculados a ela;
+- **Remover associação** preserva a pasta e todo o conteúdo remoto.
+
+**Fluxos alternativos:**
+
+- sem conexão ou autenticação válida: a associação não é gravada e a interface
+  orienta reconectar ou tentar novamente;
+- pasta remota removida: a sincronização informa que o mapeamento adotado não foi
+  encontrado, sem criar substituta automaticamente;
+- pasta já associada: o sistema informa a pasta lógica conflitante;
+- alterar uma associação existente exige confirmação explícita.
+
+**Resultado:** a pasta lógica passa a usar com segurança a identidade da pasta
+OneDrive escolhida, mantendo o armazenamento local como fonte principal.
+
 ### UC-10 — Trocar de organização
 
 **Ator principal:** usuário vinculado a mais de uma organização.
