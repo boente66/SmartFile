@@ -80,7 +80,7 @@ class DocumentView(QWidget):
     def __init__(self):
         super().__init__()
         self.setObjectName("documentsView")
-        self._compact = False
+        self._compact: bool | None = None
         self._context = None
         self._feature_set = None
         self._filters_available = True
@@ -619,10 +619,10 @@ class DocumentView(QWidget):
             self.main_layout.setStretch(1, 0)
         else:
             self.list_panel.setSizePolicy(
-                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+                QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding
             )
             self.details.setSizePolicy(
-                QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding
+                QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding
             )
             self.details.setMinimumHeight(0)
             self.main_layout.setStretch(0, 3)
