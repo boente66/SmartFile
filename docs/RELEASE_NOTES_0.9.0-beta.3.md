@@ -15,6 +15,8 @@ Controllers, Services e Repositories foram preservados.
 
 ## Correção da descoberta LAN
 
+- diálogo de dispositivos reorganizado em seções compactas e roláveis, sem
+  cartões duplicados ou sobrepostos após buscas e atualizações sucessivas;
 - callback mDNS compatível com o `zeroconf` 0.147–0.150, inclusive argumentos
   nomeados usados pela implementação real;
 - falhas do resolvedor chegam ao worker e à interface, em vez de aparentarem uma

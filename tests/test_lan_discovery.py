@@ -9,7 +9,7 @@ import time
 import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication, QPushButton
+from PyQt6.QtWidgets import QApplication, QFrame, QPushButton
 from zeroconf import ServiceStateChange
 
 from app.controllers.document_delivery_controller import DocumentDeliveryController
@@ -276,6 +276,30 @@ def test_network_dialog_ignores_self_keeps_manual_fallback_and_incompatible_stat
     assert dialog.manual_group.isCheckable() and not dialog.manual_group.isChecked()
     dialog.manual_group.setChecked(True)
     assert dialog.peer_id.parentWidget().isVisibleTo(dialog)
+
+
+def test_network_dialog_refresh_keeps_single_non_overlapping_empty_state() -> None:
+    app = _app()
+    local = SmartFileInstanceEntity(
+        instance_id="SF-local", organization_id=1, device_name="LeoPc",
+        current_ip="192.168.1.10", http_port=8765, is_local=True,
+    )
+    dialog = DeliveryNetworkDialog(local, [], [])
+    dialog.show()
+    for _ in range(3):
+        dialog.set_peers([])
+        dialog.set_discovered([])
+    app.processEvents()
+
+    assert dialog.discovered_container.count() == 1
+    cards = dialog.findChildren(QFrame, "networkDeviceCard")
+    assert len(cards) == 2  # esta instalação + estado vazio
+    local_card = next(card for card in cards if card.property("cardRole") == "local")
+    empty_card = next(card for card in cards if card.property("cardRole") == "empty")
+    assert local_card.isVisibleTo(dialog)
+    assert empty_card.isVisibleTo(dialog)
+    assert not local_card.geometry().intersects(empty_card.geometry())
+    dialog.close()
 
 
 def test_manual_form_rejects_invalid_identity_without_emitting_slot() -> None:

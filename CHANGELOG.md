@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Fixed duplicate and overlapping cards in the LAN device dialog during
+  repeated discovery refreshes, with a compact scrollable layout
+
 ## [0.9.0-beta.3] - 2026-08-22
 
 - Redesigned the Documents workspace while preserving controllers, services,

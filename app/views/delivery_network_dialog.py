@@ -4,7 +4,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QApplication, QComboBox, QDialog, QFormLayout, QFrame, QGroupBox,
     QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSpinBox,
-    QVBoxLayout, QWidget,
+    QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from app.ui.icon_provider import IconProvider
@@ -25,8 +25,8 @@ class DeliveryNetworkDialog(QDialog):
         super().__init__(parent)
         self.setObjectName("deliveryNetworkDialog")
         self.setWindowTitle("Dispositivos SmartFile")
-        self.resize(960, 760)
-        self.setMinimumSize(760, 600)
+        self.resize(920, 700)
+        self.setMinimumSize(720, 540)
         self.local = local
         self.members = list(members)
         self._peers = list(peers)
@@ -34,12 +34,11 @@ class DeliveryNetworkDialog(QDialog):
         self._connection_states = {}
         self._setup_ui()
         self.set_peers(peers)
-        self.set_discovered([])
 
     def _setup_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(24, 20, 24, 20)
-        root.setSpacing(12)
+        root.setContentsMargins(26, 22, 26, 18)
+        root.setSpacing(10)
         title = QLabel("Dispositivos SmartFile")
         title.setObjectName("dialogTitle")
         subtitle = QLabel(
@@ -50,11 +49,17 @@ class DeliveryNetworkDialog(QDialog):
         root.addWidget(subtitle)
 
         scroll = QScrollArea()
+        scroll.setObjectName("networkDialogScroll")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         body = QWidget()
+        body.setObjectName("networkDialogBody")
         body_layout = QVBoxLayout(body)
-        body_layout.setSpacing(14)
+        body_layout.setContentsMargins(2, 4, 8, 4)
+        body_layout.setSpacing(12)
+        local_title = QLabel("Esta instalação")
+        local_title.setObjectName("sectionTitle")
+        body_layout.addWidget(local_title)
         body_layout.addWidget(self._local_card())
 
         found_header = QHBoxLayout()
@@ -74,12 +79,16 @@ class DeliveryNetworkDialog(QDialog):
         self.discovery_status.setWordWrap(True)
         body_layout.addWidget(self.discovery_status)
         self.discovered_container = QVBoxLayout()
+        self.discovered_container.setSpacing(8)
+        self.discovered_container.setAlignment(Qt.AlignmentFlag.AlignTop)
         body_layout.addLayout(self.discovered_container)
 
         authorized_title = QLabel("Instalações autorizadas")
         authorized_title.setObjectName("sectionTitle")
         body_layout.addWidget(authorized_title)
         self.authorized_container = QVBoxLayout()
+        self.authorized_container.setSpacing(8)
+        self.authorized_container.setAlignment(Qt.AlignmentFlag.AlignTop)
         body_layout.addLayout(self.authorized_container)
         body_layout.addWidget(self._manual_section())
         body_layout.addStretch()
@@ -94,6 +103,7 @@ class DeliveryNetworkDialog(QDialog):
 
     def _local_card(self) -> QFrame:
         card = self._card()
+        card.setProperty("cardRole", "local")
         layout = QVBoxLayout(card)
         heading = QHBoxLayout()
         name = QLabel(self.local.device_name)
@@ -241,11 +251,18 @@ class DeliveryNetworkDialog(QDialog):
         ]
         if not visible:
             panel = self._card()
+            panel.setProperty("cardRole", "empty")
+            panel.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum
+            )
             layout = QVBoxLayout(panel)
+            layout.setContentsMargins(18, 14, 18, 14)
+            layout.setSpacing(5)
             title = QLabel("Nenhum SmartFile encontrado nesta rede.")
             title.setObjectName("deviceName")
             hint = QLabel(
-                "Verifique se os outros dispositivos estão ligados e conectados à mesma rede."
+                "Mantenha o SmartFile aberto nos outros computadores e confirme "
+                "que todos estão conectados à mesma rede local."
             )
             hint.setWordWrap(True)
             manual = QPushButton("Configurar manualmente")
@@ -277,8 +294,12 @@ class DeliveryNetworkDialog(QDialog):
         self._peers = list(peers)
         self._clear_layout(self.authorized_container)
         if not self._peers:
-            label = QLabel("Nenhuma instalação foi autorizada.")
+            label = QLabel(
+                "Nenhuma instalação autorizada. Use a descoberta acima ou a "
+                "configuração manual."
+            )
             label.setObjectName("secondaryText")
+            label.setWordWrap(True)
             self.authorized_container.addWidget(label)
         for peer in self._peers:
             state_text, state_object = self._connection_states.get(
@@ -347,7 +368,11 @@ class DeliveryNetworkDialog(QDialog):
     def _card() -> QFrame:
         card = QFrame()
         card.setObjectName("networkDeviceCard")
+        card.setProperty("networkCard", True)
         card.setFrameShape(QFrame.Shape.StyledPanel)
+        card.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum
+        )
         return card
 
     def _device_card(
@@ -376,4 +401,8 @@ class DeliveryNetworkDialog(QDialog):
             item = layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                # deleteLater sozinho mantém a geometria anterior visível até o
+                # próximo ciclo do event loop e provocava cartões sobrepostos.
+                widget.hide()
+                widget.setParent(None)
                 widget.deleteLater()
