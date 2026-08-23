@@ -547,12 +547,18 @@ class DocumentView(QWidget):
         super().resizeEvent(event)
         # Mantém lista e detalhes lado a lado em notebooks comuns; o empilhamento
         # é reservado a janelas realmente estreitas.
-        self._apply_compact_layout(event.size().width() < 1050)
-        # O QScrollArea com widgetResizable acompanha o viewport. Um fixedWidth
-        # calculado durante o primeiro layout congelava o conteúdo em ~640 px
-        # mesmo depois de maximizar a janela.
-        self.scroll_content.setMinimumWidth(0)
-        self.scroll_content.setMaximumWidth(16777215)
+        compact = event.size().width() < 1050
+        self._apply_compact_layout(compact)
+        # No Windows, o sizeHint dos controles pode sobreviver à mudança de
+        # direção e criar rolagem horizontal invisível. No modo compacto a
+        # largura acompanha cada resize do viewport; ao ampliar, os limites são
+        # liberados novamente para não congelar o conteúdo.
+        if compact:
+            viewport_width = max(0, self.scroll_area.viewport().width())
+            self.scroll_content.setFixedWidth(viewport_width)
+        else:
+            self.scroll_content.setMinimumWidth(0)
+            self.scroll_content.setMaximumWidth(16777215)
 
     def _apply_compact_layout(self, compact: bool) -> None:
         if compact == self._compact:
