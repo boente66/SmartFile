@@ -236,7 +236,9 @@ class DocumentView(QWidget):
         header_layout.addWidget(storage_group, 2)
         left_layout.addWidget(workspace_header)
         self.workspace_header = workspace_header
-        self._responsive_rows.append(header_layout)
+        self._responsive_rows.extend((
+            header_layout, organization_row, cloud_row, cloud_quota_row, storage_row,
+        ))
 
         toolbar = QFrame()
         toolbar.setObjectName("documentActionBar")
