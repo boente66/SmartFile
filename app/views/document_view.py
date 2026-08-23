@@ -605,10 +605,25 @@ class DocumentView(QWidget):
         for row in self._responsive_rows:
             row.setDirection(row_direction)
         if compact:
+            # O backend Windows preserva minimumSizeHint dos layouts filhos
+            # mesmo dentro de QScrollArea. Ignorar apenas a dica horizontal no
+            # modo empilhado permite que a coluna acompanhe o viewport real.
+            self.list_panel.setSizePolicy(
+                QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding
+            )
+            self.details.setSizePolicy(
+                QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding
+            )
             self.details.setMinimumHeight(460)
             self.main_layout.setStretch(0, 0)
             self.main_layout.setStretch(1, 0)
         else:
+            self.list_panel.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+            )
+            self.details.setSizePolicy(
+                QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding
+            )
             self.details.setMinimumHeight(0)
             self.main_layout.setStretch(0, 3)
             self.main_layout.setStretch(1, 1)
