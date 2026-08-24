@@ -251,7 +251,18 @@ def test_migration_19_adds_receipts_without_losing_deliveries(tmp_path: Path):
     ) is not None
 
 
-def test_receipt_pdf_is_atomic_and_original_remains_unchanged(tmp_path: Path):
+def test_receipt_pdf_is_atomic_and_original_remains_unchanged(
+    tmp_path: Path, monkeypatch,
+):
+    original_open = Path.open
+    temporary_open_modes = []
+
+    def tracked_open(path, mode="r", *args, **kwargs):
+        if path.name.endswith(".part.pdf"):
+            temporary_open_modes.append(mode)
+        return original_open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", tracked_open)
     database, context, _documents, worker, _membership = _installation(tmp_path)
     service = DocumentDeliveryService(database, context)
     now = service._now()
@@ -283,6 +294,7 @@ def test_receipt_pdf_is_atomic_and_original_remains_unchanged(tmp_path: Path):
     assert receipt.status == "QUEUED"
     assert Path(receipt.pdf_path).is_file()
     assert service._checksum(Path(receipt.pdf_path)) == receipt.sha256
+    assert "r+b" in temporary_open_modes
     assert list(Path(receipt.pdf_path).parent.glob("*.part*")) == []
     with fitz.open(receipt.pdf_path) as proof:
         text = "\n".join(page.get_text() for page in proof)

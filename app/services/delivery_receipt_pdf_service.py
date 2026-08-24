@@ -35,7 +35,10 @@ class DeliveryReceiptPdfService:
             })
             document.save(temporary, garbage=4, deflate=True)
             document.close()
-            with temporary.open("rb") as handle:
+            # Windows only exposes a synchronizable file handle when it was
+            # opened with write access.  ``r+b`` does not alter the already
+            # generated PDF, but keeps the durability barrier portable.
+            with temporary.open("r+b") as handle:
                 os.fsync(handle.fileno())
             with fitz.open(temporary) as validation:
                 if validation.page_count < 1:
@@ -136,4 +139,3 @@ class DeliveryReceiptPdfService:
         if value >= 1024 * 1024:
             return f"{value / (1024 * 1024):.2f} MB"
         return f"{value / 1024:.1f} KB"
-
