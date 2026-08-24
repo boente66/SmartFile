@@ -27,6 +27,16 @@ Controllers, Services e Repositories foram preservados.
 - a seleção do IPv4 local usa a rota mDNS e não depende de acesso à Internet;
 - loopback, endereço indefinido e multicast não são anunciados como endpoint.
 
+## Comprovante de recebimento
+
+- PDFs recebidos abrem no Visualizador oficial do SmartFile;
+- `VIEWED` somente é registrado após a primeira página ser renderizada;
+- a confirmação exige assinatura visual desenhada ou imagem normalizada;
+- o documento original permanece inalterado e o comprovante é um PDF separado;
+- comprovantes possuem UUID e SHA-256 próprios e são enviados por fila reversa;
+- o remetente somente conclui `ACKNOWLEDGED` após verificar o PDF e seu checksum;
+- o schema 20 adiciona persistência durável e retry dos comprovantes.
+
 ## Destaques
 
 - cabeçalho unificado para organização, perfil, nuvem e armazenamento;

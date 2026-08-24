@@ -100,6 +100,52 @@ class DeliveryHttpClient:
             return self._response(connection)
         finally: connection.close()
 
+    def send_receipt(self, delivery, receipt, metadata: dict, progress=None) -> dict:
+        """Envia o comprovante no sentido destinatário → remetente."""
+
+        headers = {
+            "Content-Type": "application/json",
+            "X-SmartFile-Instance": delivery.recipient_instance_id,
+        }
+        connection = self._connection(delivery.recipient_host, delivery.recipient_port)
+        try:
+            target = (
+                f"/api/v1/deliveries/{quote(delivery.protocol_number)}"
+                "/acknowledgement"
+            )
+            connection.request("POST", target, json.dumps(metadata).encode(), headers)
+            self._response(connection)
+            connection.close()
+            connection = self._connection(delivery.recipient_host, delivery.recipient_port)
+            content_target = f"{target}/{quote(receipt.receipt_uuid)}/content"
+            connection.putrequest("POST", content_target)
+            connection.putheader("Content-Length", str(receipt.size))
+            connection.putheader("Content-Type", "application/pdf")
+            connection.putheader(
+                "X-SmartFile-Instance", delivery.recipient_instance_id
+            )
+            connection.endheaders()
+            sent = 0
+            with Path(receipt.pdf_path).open("rb") as handle:
+                while chunk := handle.read(1024 * 1024):
+                    connection.send(chunk)
+                    sent += len(chunk)
+                    if progress:
+                        progress(
+                            min(99, int(sent * 100 / max(receipt.size, 1))),
+                            "Enviando comprovante de recebimento",
+                        )
+            result = self._response(connection)
+            if progress:
+                progress(100, "Comprovante verificado pelo remetente")
+            return result
+        except (OSError, TimeoutError, http.client.HTTPException, ValueError) as exc:
+            raise DeliveryNetworkError(
+                f"Não foi possível enviar o comprovante: {exc}"
+            ) from exc
+        finally:
+            connection.close()
+
     def _connection(self, host: str, port: int): return http.client.HTTPConnection(host, port, timeout=self.timeout)
 
     @staticmethod

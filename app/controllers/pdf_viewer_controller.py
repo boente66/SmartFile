@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import QInputDialog, QLineEdit, QMessageBox
 from app.errors.pdf_viewer_exceptions import PDFPasswordRequiredError
 from app.models.pdf_document_info import PDFDocumentInfo
 from app.models.pdf_render_request import PDFRenderRequest
+from app.models.pdf_viewer_context import PDFViewerContext
 from app.services.pdf_viewer_service import PDFViewerService
 from app.views.pdf_viewer_view import PDFViewerView
 from app.workers.pdf_render_worker import PDFRenderWorker
@@ -39,14 +40,17 @@ class PDFViewerController:
         self._search_results: list[tuple[int, tuple]] = []
         self._search_index = -1
         self._fullscreen = False
+        self._context = PDFViewerContext.document()
+        self._displayed_path: Path | None = None
         self._connect_signals()
         self.workspace.register_view("pdf_viewer", self.view)
 
     def activate(self):
         self.workspace.show_view("pdf_viewer")
 
-    def open_document(self, path: str):
-        self.close_document()
+    def open_document(self, path: str, context: PDFViewerContext | None = None):
+        self.close_document(reset_context=False)
+        self._context = context or PDFViewerContext.document()
         try:
             info = self.service.document_info(path)
         except PDFPasswordRequiredError:
@@ -74,11 +78,12 @@ class PDFViewerController:
         self._zoom = 1.0
         self._rotation = 0
         self.view.set_document(info)
+        self.view.set_context(self._context)
         self.activate()
         self._render_current()
         self._start_thumbnails()
 
-    def close_document(self):
+    def close_document(self, reset_context: bool = True):
         for worker in list(self._workers):
             worker.requestInterruption()
         self._render_worker = None
@@ -89,6 +94,10 @@ class PDFViewerController:
         self._info = None
         self._search_results.clear()
         self._search_index = -1
+        self._displayed_path = None
+        if reset_context:
+            self._context = PDFViewerContext.document()
+            self.view.set_context(self._context)
         self.service.clear_cache()
         self.view.set_document_loaded(False)
         self.view.info_panel.set_info(None)
@@ -128,13 +137,21 @@ class PDFViewerController:
         self.view.print_requested.connect(self._print_document)
         self.view.fullscreen_requested.connect(self._toggle_fullscreen)
         self.view.escape_requested.connect(self._exit_fullscreen)
+        self.view.context_item_requested.connect(self._open_context_item)
 
     def return_to_documents(self):
         """Fecha o PDF atual e retorna ao módulo oficial de Documentos."""
 
+        target = self._context.back_view
+        tab = self._context.back_tab
         self._exit_fullscreen()
         self.close_document()
-        self.workspace.show_view("documents")
+        self.workspace.show_view(target)
+        if tab and target == "deliveries":
+            delivery_view = getattr(self.workspace, "_views", {}).get("deliveries")
+            if delivery_view is not None and hasattr(delivery_view, "select_tab"):
+                delivery_view.select_tab(tab)
+        self._context = PDFViewerContext.document()
 
     def _render_current(self):
         if self._path is None or self._info is None:
@@ -168,7 +185,17 @@ class PDFViewerController:
         self.view.set_rendered_page(
             self._page, self._info.page_count, QPixmap.fromImage(image), self._zoom
         )
+        if self._path != self._displayed_path:
+            self._displayed_path = self._path
+            self.view.document_displayed.emit(str(self._path))
         self._preload_adjacent()
+
+    def _open_context_item(self, index: int) -> None:
+        if not 0 <= index < len(self._context.items):
+            return
+        self._context.current_item = index
+        _name, path = self._context.items[index]
+        self.open_document(str(path), self._context)
 
     def _cleanup_render(self, worker):
         self._workers.discard(worker)

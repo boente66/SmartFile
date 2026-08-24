@@ -6,21 +6,29 @@ import json
 import os
 import socket
 from dataclasses import replace
+from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
+import fitz
+from PyQt6.QtCore import QBuffer, QByteArray, Qt
+from PyQt6.QtGui import QImage
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from app.auth.session_context import SessionContext
 from app.coordinators.delivery_coordinator import DeliveryCoordinator
+from app.controllers.document_delivery_controller import DocumentDeliveryController
 from app.delivery.delivery_http_client import DeliveryHttpClient
 from app.delivery.delivery_http_server import DeliveryHttpServer
 from app.delivery.protocol import DELIVERY_PROTOCOL_VERSION
 from app.database.database import Database
 from app.database.migrations import CURRENT_SCHEMA_VERSION
 from app.entities.organization_member_entity import OrganizationMemberEntity
+from app.entities.document_delivery_entity import (
+    DocumentDeliveryEntity, DocumentDeliveryItemEntity,
+)
 from app.entities.user_entity import UserEntity
 from app.errors.delivery_exceptions import DeliveryIntegrityError, DeliveryValidationError
 from app.models.registration_request import RegistrationRequest
@@ -81,6 +89,18 @@ def _free_port() -> int:
         return int(probe.getsockname()[1])
 
 
+def _signature_png() -> bytes:
+    image = QImage(180, 60, QImage.Format.Format_ARGB32)
+    image.fill(Qt.GlobalColor.transparent)
+    for x in range(20, 160):
+        image.setPixelColor(x, 30, Qt.GlobalColor.black)
+    data = QByteArray()
+    buffer = QBuffer(data)
+    buffer.open(QBuffer.OpenModeFlag.WriteOnly)
+    image.save(buffer, "PNG")
+    return bytes(data)
+
+
 def _identity_response(port: int) -> tuple[int, dict]:
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
     try:
@@ -94,7 +114,7 @@ def _identity_response(port: int) -> tuple[int, dict]:
 def test_current_schema_and_instance_uuid_survives_ip_change(tmp_path: Path, monkeypatch):
     database, context, _documents, _worker, _membership = _installation(tmp_path)
     version = database.connect().execute("PRAGMA user_version").fetchone()[0]
-    assert version == CURRENT_SCHEMA_VERSION == 19
+    assert version == CURRENT_SCHEMA_VERSION == 20
     service = DocumentDeliveryService(database, context)
     monkeypatch.setattr(service.instances, "current_ip", lambda: "192.168.1.10")
     first = service.instances.local(context.active_organization.id)
@@ -198,7 +218,169 @@ def test_migration_17_preserves_legacy_requests(tmp_path: Path):
     assert row["title"] == "Documento legado"
     from uuid import UUID
     assert str(UUID(row["request_uuid"])) == row["request_uuid"]
-    assert migrated.connect().execute("PRAGMA user_version").fetchone()[0] == 19
+    assert migrated.connect().execute("PRAGMA user_version").fetchone()[0] == 20
+
+
+def test_migration_19_adds_receipts_without_losing_deliveries(tmp_path: Path):
+    database, context, _documents, worker, _membership = _installation(tmp_path)
+    service = DocumentDeliveryService(database, context)
+    delivery = service.deliveries.create(DocumentDeliveryEntity(
+        delivery_uuid="9c9bf0fd-c8c4-462a-81aa-1d4fcf0cd3a8",
+        protocol_number="SF-20260824-000099-ABCD",
+        organization_id=context.active_organization.id,
+        sender_user_id=worker.id,
+        recipient_user_id=context.current_user.id,
+        sender_instance_id="SF-sender", recipient_instance_id="SF-local",
+        recipient_host="127.0.0.1", direction="INCOMING",
+        status="DELIVERED", created_at=service._now(),
+    ))
+    connection = database.connect()
+    connection.execute("DROP TABLE delivery_acknowledgement_receipts")
+    connection.execute("PRAGMA user_version=19")
+    database.close()
+
+    migrated = Database(str(tmp_path / "smartfile.db"))
+
+    assert migrated.fetch_one("PRAGMA user_version")[0] == 20
+    assert migrated.fetch_one(
+        "SELECT protocol_number FROM document_deliveries WHERE id=?", (delivery.id,)
+    )["protocol_number"] == delivery.protocol_number
+    assert migrated.fetch_one(
+        "SELECT name FROM sqlite_master WHERE type='table' "
+        "AND name='delivery_acknowledgement_receipts'"
+    ) is not None
+
+
+def test_receipt_pdf_is_atomic_and_original_remains_unchanged(tmp_path: Path):
+    database, context, _documents, worker, _membership = _installation(tmp_path)
+    service = DocumentDeliveryService(database, context)
+    now = service._now()
+    delivery = service.deliveries.create(DocumentDeliveryEntity(
+        delivery_uuid="58cab411-eae4-4308-b008-0fe7e4300b64",
+        protocol_number="SF-20260824-000100-ABCD",
+        organization_id=context.active_organization.id,
+        sender_user_id=worker.id,
+        recipient_user_id=context.current_user.id,
+        sender_instance_id="SF-sender", recipient_instance_id="SF-local",
+        recipient_host="127.0.0.1", direction="INCOMING",
+        status="VIEWED", created_at=now, delivered_at=now, viewed_at=now,
+    ))
+    original = _source(tmp_path, "received.pdf", b"immutable-original")
+    checksum = service._checksum(original)
+    service.items.create(DocumentDeliveryItemEntity(
+        item_uuid="item-receipt", delivery_id=delivery.id,
+        logical_name="received.pdf", size=original.stat().st_size,
+        sha256=checksum, transfer_status="VERIFIED",
+        received_path=str(original), received_at=now,
+    ))
+
+    receipt = service.create_acknowledgement_receipt(
+        delivery.id, context.current_user.id, _signature_png(), "DRAWN"
+    )
+
+    assert original.read_bytes() == b"immutable-original"
+    assert service._checksum(original) == checksum
+    assert receipt.status == "QUEUED"
+    assert Path(receipt.pdf_path).is_file()
+    assert service._checksum(Path(receipt.pdf_path)) == receipt.sha256
+    assert list(Path(receipt.pdf_path).parent.glob("*.part*")) == []
+    with fitz.open(receipt.pdf_path) as proof:
+        text = "\n".join(page.get_text() for page in proof)
+    assert delivery.protocol_number in text
+    assert receipt.receipt_uuid in text
+    assert checksum in text
+    assert "Responsável" in text and "Administrador" in text
+    assert "Assinatura visual" in text
+    with pytest.raises(DeliveryValidationError):
+        service.create_acknowledgement_receipt(
+            delivery.id, context.current_user.id, _signature_png(), "DRAWN"
+        )
+
+
+def test_receipt_metadata_is_idempotent_and_bad_checksum_removes_partial(tmp_path: Path):
+    database, context, _documents, worker, _membership = _installation(tmp_path)
+    service = DocumentDeliveryService(database, context)
+    delivery = service.deliveries.create(DocumentDeliveryEntity(
+        delivery_uuid="0da7c480-603d-4439-b6c2-9ea7bf025403",
+        protocol_number="SF-20260824-000101-ABCD",
+        organization_id=context.active_organization.id,
+        sender_user_id=context.current_user.id, recipient_user_id=worker.id,
+        sender_instance_id="SF-local", recipient_instance_id="SF-recipient",
+        recipient_host="127.0.0.1", direction="OUTGOING",
+        status="VIEWED", created_at=service._now(),
+    ))
+    content = b"not-the-declared-pdf"
+    payload = {
+        "receipt_uuid": "6d4d699e-bfd8-4bff-9ed3-c1cd4b364ffe",
+        "protocol_number": delivery.protocol_number,
+        "signer_username": worker.username,
+        "signature_method": "IMPORTED_IMAGE",
+        "size": len(content),
+        "sha256": "0" * 64,
+        "created_at": service._now(),
+    }
+
+    first = service.receive_receipt_metadata(delivery.protocol_number, payload)
+    again = service.receive_receipt_metadata(delivery.protocol_number, payload)
+
+    assert first.id == again.id
+    with pytest.raises(DeliveryIntegrityError):
+        service.receive_receipt_content(
+            delivery.protocol_number, first.receipt_uuid,
+            io.BytesIO(content), len(content),
+        )
+    receipt_root = (
+        database.paths.data_dir / "delivery_receipts" / delivery.protocol_number
+    )
+    assert list(receipt_root.glob("*.part")) == []
+    changed = dict(payload, sha256="1" * 64)
+    with pytest.raises(DeliveryValidationError):
+        service.receive_receipt_metadata(delivery.protocol_number, changed)
+
+
+def test_received_pdf_uses_internal_viewer_and_marks_viewed_only_after_display(tmp_path: Path):
+    path = _source(tmp_path, "received.pdf", b"pdf-placeholder")
+    delivery = SimpleNamespace(
+        id=9, protocol_number="SF-20260824-000102-ABCD",
+        status="DELIVERED", sender_user_id=2, recipient_user_id=1,
+    )
+    item = SimpleNamespace(
+        logical_name="received.pdf", received_path=str(path),
+    )
+    marked = []
+
+    class Viewer:
+        def open_document(self, opened_path, context):
+            self.path = opened_path
+            self.context = context
+
+    viewer = Viewer()
+    controller = DocumentDeliveryController.__new__(DocumentDeliveryController)
+    controller.pdf_viewer = viewer
+    controller._viewer_delivery_id = None
+    controller.context = SimpleNamespace(
+        current_user=SimpleNamespace(id=1),
+        has_permission=lambda permission: permission == "delivery.acknowledge",
+    )
+    controller.service = SimpleNamespace(
+        deliveries=SimpleNamespace(find_by_id=lambda _id: delivery),
+        items=SimpleNamespace(list_by_delivery=lambda _id: [item]),
+        users=SimpleNamespace(
+            find_by_id=lambda _id: SimpleNamespace(display_name="Remetente")
+        ),
+        receipts=SimpleNamespace(find_by_delivery=lambda _id: None),
+        mark_viewed=lambda protocol, user_id: marked.append((protocol, user_id)),
+    )
+    controller.refresh = lambda: None
+    controller._error = pytest.fail
+
+    controller.view_delivery(delivery.id)
+
+    assert viewer.path == str(path)
+    assert viewer.context.kind == "DELIVERY_RECEIVED"
+    assert marked == []
+    controller._viewer_displayed(str(path))
+    assert marked == [(delivery.protocol_number, 1)]
 
 
 def test_request_transitions_basket_and_unique_protocol(tmp_path: Path):
@@ -331,9 +513,12 @@ def test_two_instances_request_delivery_view_and_acknowledge(tmp_path: Path):
         service_a.mark_viewed(incoming_a.protocol_number, context_a.current_user.id)
         coordinator_b.refresh_remote(delivery_b.id)
         assert service_b.deliveries.find_by_id(delivery_b.id).status == "VIEWED"
-        service_a.acknowledge(incoming_a.protocol_number, context_a.current_user.id)
-        coordinator_b.refresh_remote(delivery_b.id)
+        receipt = service_a.create_acknowledgement_receipt(
+            incoming_a.id, context_a.current_user.id, _signature_png(), "DRAWN"
+        )
+        coordinator_a.send_receipt_once(receipt.id)
         assert service_b.deliveries.find_by_id(delivery_b.id).status == "ACKNOWLEDGED"
+        assert service_b.receipts.find_by_delivery(delivery_b.id).status == "VERIFIED"
         assert service_b.requests.find_by_id(request_b.id, request_b.organization_id).status == "COMPLETED"
         assert service_a.requests.find_by_id(request_a.id, request_a.organization_id).status == "COMPLETED"
     finally:

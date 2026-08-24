@@ -28,6 +28,7 @@ class HandwrittenSignatureRequest:
     stroke_width: float
     add_caption: bool
     existing_signatures_confirmed: bool = False
+    signature_method: str = "DRAWN"
 
     def validate(self, page_count: int, page_size: tuple[float, float]) -> None:
         source = self.input_path.expanduser().resolve()

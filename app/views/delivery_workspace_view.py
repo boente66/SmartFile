@@ -10,10 +10,10 @@ class DeliveryWorkspaceView(QWidget):
     create_request_requested=pyqtSignal(dict); request_status_requested=pyqtSignal(int,str)
     prepare_request_requested=pyqtSignal(int)
     select_documents_requested=pyqtSignal(); remove_basket_requested=pyqtSignal(int); clear_basket_requested=pyqtSignal(); send_requested=pyqtSignal(dict)
-    retry_requested=pyqtSignal(int); view_requested=pyqtSignal(int); download_requested=pyqtSignal(int); add_to_ged_requested=pyqtSignal(int); acknowledge_requested=pyqtSignal(int)
+    retry_requested=pyqtSignal(int); view_requested=pyqtSignal(int); download_requested=pyqtSignal(int); add_to_ged_requested=pyqtSignal(int); acknowledge_requested=pyqtSignal(int); receipt_requested=pyqtSignal(int)
     configure_requested=pyqtSignal(); refresh_requested=pyqtSignal()
     def __init__(self):
-        super().__init__(); self.setObjectName("deliveryWorkspace"); self._setup()
+        super().__init__(); self.setObjectName("deliveryWorkspace"); self._can_acknowledge=False; self._setup()
     def _setup(self):
         root=QVBoxLayout(self); root.setContentsMargins(22,18,22,18)
         header=QHBoxLayout(); titles=QVBoxLayout(); title=QLabel("Solicitações e Entregas"); title.setObjectName("deliveryTitle"); titles.addWidget(title); titles.addWidget(QLabel("Solicite, prepare, envie e acompanhe documentos por protocolo.")); header.addLayout(titles); header.addStretch()
@@ -47,11 +47,13 @@ class DeliveryWorkspaceView(QWidget):
         form=QFormLayout(); self.recipient=QComboBox(); self.peer=QComboBox(); self.message=QLineEdit(); form.addRow("Destinatário",self.recipient); form.addRow("Instalação",self.peer); form.addRow("Mensagem",self.message); layout.addLayout(form)
         self.send_button=QPushButton("Enviar e gerar protocolo"); self.send_button.setObjectName("deliveryPrimary"); IconProvider.apply(self.send_button,"import"); self.send_button.clicked.connect(lambda:self.send_requested.emit({"recipient_user_id":self.recipient.currentData(),"recipient_instance_id":self.peer.currentData(),"message":self.message.text()})); layout.addWidget(self.send_button); return panel
     def _sent_tab(self):
-        panel=self._list_panel(self.sent_list); row=QHBoxLayout(); self.retry=QPushButton("Tentar novamente"); self.retry.clicked.connect(lambda:self._emit_id(self.sent_list,self.retry_requested)); row.addWidget(self.retry); row.addStretch(); panel.layout().addLayout(row); return panel
+        panel=self._list_panel(self.sent_list); row=QHBoxLayout(); self.retry=QPushButton("Tentar novamente"); self.retry.clicked.connect(lambda:self._emit_id(self.sent_list,self.retry_requested)); self.sent_receipt=QPushButton("Ver comprovante"); self.sent_receipt.clicked.connect(lambda:self._emit_id(self.sent_list,self.receipt_requested)); self.sent_receipt.setEnabled(False); row.addWidget(self.retry); row.addWidget(self.sent_receipt); row.addStretch(); panel.layout().addLayout(row); return panel
     def _inbox_tab(self):
         panel=self._list_panel(self.inbox_list); row=QHBoxLayout()
-        for text,signal in (("Visualizar",self.view_requested),("Download",self.download_requested),("Adicionar ao SmartFile",self.add_to_ged_requested),("Confirmar recebimento",self.acknowledge_requested)):
+        for text,signal in (("Visualizar",self.view_requested),("Download",self.download_requested),("Adicionar ao SmartFile",self.add_to_ged_requested)):
             button=QPushButton(text); button.clicked.connect(lambda _checked=False,s=signal:self._emit_id(self.inbox_list,s)); row.addWidget(button)
+        self.confirm_receipt=QPushButton("Confirmar recebimento"); self.confirm_receipt.setObjectName("deliveryPrimary"); self.confirm_receipt.clicked.connect(lambda:self._emit_id(self.inbox_list,self.acknowledge_requested)); row.addWidget(self.confirm_receipt)
+        self.inbox_receipt=QPushButton("Ver comprovante"); self.inbox_receipt.clicked.connect(lambda:self._emit_id(self.inbox_list,self.receipt_requested)); self.inbox_receipt.setEnabled(False); row.addWidget(self.inbox_receipt)
         panel.layout().addLayout(row); return panel
     @staticmethod
     def _list_panel(widget): panel=QWidget(); layout=QVBoxLayout(panel); layout.addWidget(widget); return panel
@@ -80,11 +82,13 @@ class DeliveryWorkspaceView(QWidget):
         self.basket_list.clear()
         for item in basket.items:self.basket_list.addItem(self._item(f"{item.logical_name} · {item.size/1024:.1f} KB",item.document_id,""))
         self.basket_summary.setText(f"{len(basket.items)} documento(s) · {basket.total_size/1024:.1f} KB")
-    def set_deliveries(self,outgoing,incoming):
+    def set_deliveries(self,outgoing,incoming,receipt_delivery_ids=()):
+        receipt_delivery_ids=set(receipt_delivery_ids)
         self.sent_list.clear(); self.inbox_list.clear()
-        for delivery in outgoing:self.sent_list.addItem(self._item(f"{delivery.protocol_number} · {delivery.status}",delivery.id,delivery.status))
+        for delivery in outgoing:
+            item=self._item(f"{delivery.protocol_number} · {delivery.status}",delivery.id,delivery.status);item.setData(Qt.ItemDataRole.UserRole+2,delivery.id in receipt_delivery_ids);self.sent_list.addItem(item)
         for delivery in incoming:
-            self.inbox_list.addItem(self._item(f"{delivery.protocol_number} · {delivery.status}",delivery.id,delivery.status))
+            item=self._item(f"{delivery.protocol_number} · {delivery.status}",delivery.id,delivery.status);item.setData(Qt.ItemDataRole.UserRole+2,delivery.id in receipt_delivery_ids);self.inbox_list.addItem(item)
             if delivery.status in {"DELIVERED","VIEWED"}:self.overview_list.addItem(f"Documento recebido · {delivery.protocol_number} · {delivery.status}")
     def set_history(self,events):
         self.history_list.clear()
@@ -92,7 +96,7 @@ class DeliveryWorkspaceView(QWidget):
     def show_status(self,message):self.status.setText(message)
     def set_permissions(self,context):
         can_request=context.has_permission("document.request.create");can_update=context.has_permission("document.request.update");can_send=context.has_permission("delivery.create") and context.has_permission("delivery.send")
-        self.create_request_button.setEnabled(can_request);self.update_request_button.setEnabled(can_update);self.request_status.setEnabled(can_update);self.prepare_request_button.setEnabled(can_update and can_send);self.select_documents_button.setEnabled(can_send);self.send_button.setEnabled(can_send);self.configure.setVisible(context.has_permission("delivery.configure"))
+        self._can_acknowledge=context.has_permission("delivery.acknowledge");self.create_request_button.setEnabled(can_request);self.update_request_button.setEnabled(can_update);self.request_status.setEnabled(can_update);self.prepare_request_button.setEnabled(can_update and can_send);self.select_documents_button.setEnabled(can_send);self.send_button.setEnabled(can_send);self.configure.setVisible(context.has_permission("delivery.configure"))
     def _request_update(self):self._emit_id(self.requests_list,lambda value:self.request_status_requested.emit(value,str(self.request_status.currentData())))
     def _remove_basket(self):self._emit_id(self.basket_list,self.remove_basket_requested)
     @staticmethod
@@ -101,5 +105,12 @@ class DeliveryWorkspaceView(QWidget):
     def _emit_id(widget,signal):
         item=widget.currentItem()
         if item:signal.emit(int(item.data(Qt.ItemDataRole.UserRole))) if hasattr(signal,"emit") else signal(int(item.data(Qt.ItemDataRole.UserRole)))
-    def _sent_selected(self,*_):pass
-    def _inbox_selected(self,*_):pass
+    def select_tab(self,key):
+        targets={"received":self.inbox_list,"sent":self.sent_list,"history":self.history_list}
+        widget=targets.get(key)
+        if widget is not None:self.tabs.setCurrentWidget(widget.parentWidget())
+    def _sent_selected(self,item,*_):
+        self.sent_receipt.setEnabled(bool(item and item.data(Qt.ItemDataRole.UserRole+2)))
+    def _inbox_selected(self,item,*_):
+        status=str(item.data(Qt.ItemDataRole.UserRole+1)) if item else "";has_receipt=bool(item and item.data(Qt.ItemDataRole.UserRole+2))
+        self.confirm_receipt.setEnabled(bool(item and self._can_acknowledge and status in {"DELIVERED","VIEWED"} and not has_receipt));self.inbox_receipt.setEnabled(has_receipt)

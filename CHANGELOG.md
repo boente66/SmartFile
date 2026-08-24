@@ -4,6 +4,10 @@
 
 - Fixed duplicate and overlapping cards in the LAN device dialog during
   repeated discovery refreshes, with a compact scrollable layout
+- Added contextual viewing of received PDFs through the official PDF Viewer
+- Added visual receipt signatures from drawing or normalized image input
+- Added atomic acknowledgement receipt PDFs with UUID, SHA-256 and schema 20
+- Added persistent reverse receipt delivery with peer validation and retry
 
 ## [0.9.0-beta.3] - 2026-08-22
 

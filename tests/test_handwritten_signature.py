@@ -22,6 +22,7 @@ from app.errors.handwritten_signature_exceptions import (
 from app.models.handwritten_signature_request import HandwrittenSignatureRequest
 from app.services.document_service import DocumentService
 from app.services.handwritten_signature_service import HandwrittenSignatureService
+from app.services.signature_image_service import SignatureImageService
 from app.services.pdf_viewer_service import PDFViewerService
 from app.views.pdf_viewer_view import PDFViewerView
 from app.views.widgets.signature_canvas import SignatureCanvas
@@ -189,6 +190,31 @@ def test_output_can_be_imported_with_handwritten_history(tmp_path: Path):
 
 def test_worker_preserves_native_finished_signal():
     assert "finished" not in HandwrittenSignatureWorker.__dict__
+
+
+def test_imported_jpeg_is_normalized_to_png_without_source_metadata(tmp_path: Path):
+    image = QImage(240, 80, QImage.Format.Format_RGB32)
+    image.fill(Qt.GlobalColor.white)
+    source = tmp_path / "assinatura.jpg"
+    assert image.save(str(source), "JPEG")
+
+    normalized = SignatureImageService().normalize(source.read_bytes())
+    decoded = QImage.fromData(normalized, "PNG")
+
+    assert normalized.startswith(b"\x89PNG")
+    assert not decoded.isNull()
+    assert decoded.width() == 240 and decoded.height() == 80
+    assert list(tmp_path.iterdir()) == [source]
+
+
+def test_imported_fake_image_and_size_limit_are_rejected():
+    from app.errors.handwritten_signature_exceptions import SignatureImageError
+
+    service = SignatureImageService()
+    with pytest.raises(SignatureImageError):
+        service.normalize(b"not-an-image")
+    with pytest.raises(SignatureImageError):
+        service.normalize(b"x" * (service.MAX_INPUT_SIZE + 1))
 
 
 def test_viewer_keeps_three_signature_actions_separate():

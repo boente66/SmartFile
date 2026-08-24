@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -8,15 +9,22 @@ from uuid import uuid4
 
 from app.entities.document_delivery_entity import DocumentDeliveryEntity, DocumentDeliveryItemEntity, DeliveryHistoryEntity
 from app.entities.document_request_entity import DocumentRequestEntity
+from app.entities.delivery_receipt_entity import DeliveryAcknowledgementReceiptEntity
 from app.errors.delivery_exceptions import DeliveryIntegrityError, DeliveryNotFoundError, DeliveryValidationError
 from app.repositories.delivery_history_repository import DeliveryHistoryRepository
 from app.repositories.document_delivery_repository import DocumentDeliveryItemRepository, DocumentDeliveryRepository
 from app.repositories.document_request_repository import DocumentRequestRepository
+from app.repositories.delivery_receipt_repository import DeliveryAcknowledgementReceiptRepository
 from app.repositories.organization_member_repository import OrganizationMemberRepository
 from app.repositories.user_repository import UserRepository
 from app.services.smartfile_instance_service import SmartFileInstanceService
+from app.services.delivery_receipt_pdf_service import DeliveryReceiptPdfService
+from app.services.signature_image_service import SignatureImageService
+from app.models.delivery_receipt_request import DeliveryReceiptDocument, DeliveryReceiptRequest
 from app.utils.file_naming import safe_output_path
 from app.delivery.protocol import DELIVERY_PROTOCOL_VERSION
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentDeliveryService:
@@ -33,6 +41,9 @@ class DocumentDeliveryService:
         self.requests = DocumentRequestRepository(database=database)
         self.members = OrganizationMemberRepository(database=database)
         self.users = UserRepository(database=database)
+        self.receipts = DeliveryAcknowledgementReceiptRepository(database=database)
+        self.receipt_pdf = DeliveryReceiptPdfService()
+        self.signature_images = SignatureImageService()
         self.notification_callback = None
 
     def create(self, organization_id: int, basket, recipient_instance_id: str, message: str | None = None) -> DocumentDeliveryEntity:
@@ -111,21 +122,274 @@ class DocumentDeliveryService:
 
     def acknowledge(self, protocol: str, user_id: int) -> None:
         delivery = self._protocol_delivery(protocol); self._assert_recipient(delivery, user_id)
-        if delivery.status not in {"DELIVERED", "VIEWED", "ACKNOWLEDGED"}: raise DeliveryValidationError("Entrega ainda não disponível.")
-        if delivery.acknowledged_at is None:
-            now = self._now(); self.deliveries.update(delivery.id, status="ACKNOWLEDGED", acknowledged_at=now, completed_at=now)
-            self._record(delivery, "DELIVERY_ACKNOWLEDGED", "Recebimento confirmado.", user_id)
-            self._request_transition(delivery, "COMPLETED")
+        receipt = self.receipts.find_by_delivery(delivery.id)
+        if receipt is None or receipt.status not in {"QUEUED", "SENDING", "VERIFIED"}:
+            raise DeliveryValidationError(
+                "A confirmação exige um comprovante PDF válido."
+            )
+        self._mark_acknowledged(delivery, user_id)
+
+    def create_acknowledgement_receipt(
+        self, delivery_id: int, user_id: int, signature_image: bytes,
+        signature_method: str,
+    ) -> DeliveryAcknowledgementReceiptEntity:
+        delivery = self._delivery(delivery_id)
+        self._assert_recipient(delivery, user_id)
+        self._require(delivery.organization_id, "delivery.acknowledge")
+        if delivery.direction != "INCOMING":
+            raise DeliveryValidationError("Somente entregas recebidas podem ser confirmadas.")
+        if delivery.status not in {"DELIVERED", "VIEWED"}:
+            raise DeliveryValidationError("A entrega ainda não pode ser confirmada.")
+        if self.receipts.find_by_delivery(delivery.id):
+            raise DeliveryValidationError("Esta entrega já possui comprovante definitivo.")
+        items = self.items.list_by_delivery(delivery.id)
+        if not items or any(item.transfer_status != "VERIFIED" for item in items):
+            raise DeliveryIntegrityError("Todos os documentos devem estar verificados.")
+        if signature_method not in {"DRAWN", "IMPORTED_IMAGE"}:
+            raise DeliveryValidationError("Método de assinatura visual inválido.")
+        normalized = self.signature_images.normalize(signature_image)
+        signer = self.users.find_by_id(user_id)
+        sender = self.users.find_by_id(delivery.sender_user_id)
+        organization = self.database.fetch_one(
+            "SELECT name FROM organizations WHERE id=?", (delivery.organization_id,)
+        )
+        if signer is None or sender is None or organization is None:
+            raise DeliveryValidationError("Identidade do comprovante incompleta.")
+        receipt_uuid = str(uuid4())
+        root = (
+            self.database.paths.data_dir / "delivery_receipts" /
+            self._valid_protocol(delivery.protocol_number)
+        ).resolve()
+        output = root / f"comprovante-{receipt_uuid}.pdf"
+        now = self._now()
+        request = DeliveryReceiptRequest(
+            output_path=output,
+            receipt_uuid=receipt_uuid,
+            protocol_number=delivery.protocol_number,
+            organization_name=str(organization["name"]),
+            sender_name=sender.display_name,
+            recipient_name=signer.display_name,
+            received_at=delivery.delivered_at or now,
+            confirmed_at=now,
+            documents=[
+                DeliveryReceiptDocument(item.logical_name, item.size, item.sha256)
+                for item in items
+            ],
+            signature_image=normalized,
+            signature_method=signature_method,
+        )
+        self.receipt_pdf.generate(request)
+        try:
+            checksum = self._checksum(output)
+            receipt = self.receipts.create(DeliveryAcknowledgementReceiptEntity(
+                receipt_uuid=receipt_uuid,
+                delivery_id=delivery.id,
+                organization_id=delivery.organization_id,
+                signer_user_id=user_id,
+                signer_username=signer.username,
+                signature_method=signature_method,
+                direction="LOCAL",
+                pdf_path=str(output),
+                size=output.stat().st_size,
+                sha256=checksum,
+                status="QUEUED",
+                next_attempt_at=now,
+                created_at=now,
+            ))
+            self._record(
+                delivery, "ACK_RECEIPT_CREATED",
+                f"Comprovante {receipt_uuid} criado e verificado.", user_id,
+            )
+            self._record(
+                delivery, "ACK_RECEIPT_QUEUED",
+                "Comprovante adicionado à fila de retorno.", user_id,
+            )
+            self._mark_acknowledged(delivery, user_id)
+            logger.info(
+                "delivery.receipt.created protocol=%s receipt=%s method=%s size=%s",
+                delivery.protocol_number, receipt.receipt_uuid,
+                receipt.signature_method, receipt.size,
+            )
+            return receipt
+        except Exception:
+            output.unlink(missing_ok=True)
+            raise
+
+    def queue_receipt(self, receipt_id: int, error: str) -> None:
+        receipt = self.receipts.find_by_id(receipt_id)
+        if receipt is None:
+            raise DeliveryNotFoundError("Comprovante não encontrado.")
+        attempts = receipt.attempts + 1
+        delay = min(30 * (2 ** min(attempts, 6)), 3600)
+        status = "FAILED" if attempts >= self.MAX_RETRY_ATTEMPTS else "QUEUED"
+        next_attempt = None if status == "FAILED" else (
+            datetime.now(timezone.utc) + timedelta(seconds=delay)
+        ).isoformat()
+        self.receipts.update(
+            receipt.id, status=status, attempts=attempts,
+            next_attempt_at=next_attempt, last_error=error[:500],
+        )
+        delivery = self._delivery(receipt.delivery_id)
+        self._record(
+            delivery, "ACK_RECEIPT_FAILED",
+            "Falha temporária no envio do comprovante; nova tentativa será automática.",
+        )
+
+    def mark_receipt_sending(self, receipt_id: int) -> None:
+        self.receipts.update(receipt_id, status="SENDING", last_error=None)
+        logger.info("delivery.receipt.sending receipt_id=%s", receipt_id)
+
+    def mark_receipt_sent(self, receipt_id: int) -> None:
+        receipt = self.receipts.find_by_id(receipt_id)
+        if receipt is None:
+            return
+        now = self._now()
+        self.receipts.update(
+            receipt_id, status="VERIFIED", sent_at=now,
+            next_attempt_at=None, last_error=None,
+        )
+        self._record(
+            self._delivery(receipt.delivery_id), "ACK_RECEIPT_SENT",
+            "Comprovante entregue e verificado pelo remetente.",
+        )
+        logger.info("delivery.receipt.sent receipt=%s", receipt.receipt_uuid)
 
     def apply_remote_status(self, delivery_id: int, payload: dict) -> None:
         delivery = self._delivery(delivery_id); status = str(payload.get("status", ""))
         allowed = {"DELIVERED", "VIEWED", "ACKNOWLEDGED"}
         if status not in allowed: return
+        if status == "ACKNOWLEDGED":
+            receipt = self.receipts.find_by_delivery(delivery_id)
+            if receipt is None or receipt.status != "VERIFIED":
+                return
         values = {"status": status}
         for key in ("delivered_at", "viewed_at", "acknowledged_at"):
             if payload.get(key): values[key] = payload[key]
         self.deliveries.update(delivery_id, **values)
         if status == "ACKNOWLEDGED": self._request_transition(delivery, "COMPLETED")
+
+    def receipt_metadata(self, receipt_id: int) -> dict:
+        receipt = self.receipts.find_by_id(receipt_id)
+        if receipt is None:
+            raise DeliveryNotFoundError("Comprovante não encontrado.")
+        delivery = self._delivery(receipt.delivery_id)
+        return {
+            "receipt_uuid": receipt.receipt_uuid,
+            "protocol_number": delivery.protocol_number,
+            "signer_username": receipt.signer_username,
+            "signature_method": receipt.signature_method,
+            "size": receipt.size,
+            "sha256": receipt.sha256,
+            "created_at": receipt.created_at,
+        }
+
+    def receive_receipt_metadata(
+        self, protocol: str, payload: dict,
+    ) -> DeliveryAcknowledgementReceiptEntity:
+        delivery = self._protocol_delivery(protocol)
+        if delivery.direction != "OUTGOING":
+            raise DeliveryValidationError("Comprovante destinado a entrega inválida.")
+        required = {
+            "receipt_uuid", "protocol_number", "signer_username",
+            "signature_method", "size", "sha256", "created_at",
+        }
+        if not required <= payload.keys() or payload["protocol_number"] != protocol:
+            raise DeliveryValidationError("Metadados do comprovante incompletos.")
+        try:
+            from uuid import UUID
+            UUID(str(payload["receipt_uuid"]))
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise DeliveryValidationError("Identidade do comprovante inválida.") from exc
+        recipient = self.users.find_by_id(delivery.recipient_user_id)
+        if recipient is None or payload["signer_username"] != recipient.username:
+            raise DeliveryValidationError("Signatário do comprovante não corresponde ao destinatário.")
+        size = int(payload["size"])
+        checksum = str(payload["sha256"]).lower()
+        if size <= 0 or size > 50 * 1024 * 1024:
+            raise DeliveryValidationError("Tamanho do comprovante inválido.")
+        if not re.fullmatch(r"[0-9a-f]{64}", checksum):
+            raise DeliveryValidationError("Checksum do comprovante inválido.")
+        method = str(payload["signature_method"])
+        if method not in {"DRAWN", "IMPORTED_IMAGE"}:
+            raise DeliveryValidationError("Método de assinatura visual inválido.")
+        existing = self.receipts.find_by_delivery(delivery.id)
+        if existing:
+            if (
+                existing.receipt_uuid == payload["receipt_uuid"] and
+                existing.sha256 == checksum and existing.size == size
+            ):
+                return existing
+            raise DeliveryValidationError("A entrega já possui outro comprovante.")
+        return self.receipts.create(DeliveryAcknowledgementReceiptEntity(
+            receipt_uuid=str(payload["receipt_uuid"]), delivery_id=delivery.id,
+            organization_id=delivery.organization_id,
+            signer_user_id=delivery.recipient_user_id,
+            signer_username=recipient.username, signature_method=method,
+            direction="REMOTE", size=size, sha256=checksum,
+            status="RECEIVING", created_at=str(payload["created_at"]),
+        ))
+
+    def receive_receipt_content(
+        self, protocol: str, receipt_uuid: str, stream, content_length: int,
+    ) -> DeliveryAcknowledgementReceiptEntity:
+        delivery = self._protocol_delivery(protocol)
+        receipt = self.receipts.find_by_uuid(receipt_uuid)
+        if receipt is None or receipt.delivery_id != delivery.id:
+            raise DeliveryNotFoundError("Comprovante não encontrado.")
+        if receipt.status == "VERIFIED" and receipt.pdf_path:
+            return receipt
+        if content_length != receipt.size:
+            raise DeliveryIntegrityError("Tamanho do comprovante divergente.")
+        root = (
+            self.database.paths.data_dir / "delivery_receipts" /
+            self._valid_protocol(protocol)
+        ).resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        final = root / f"comprovante-{receipt.receipt_uuid}.pdf"
+        temporary = root / f".{receipt.receipt_uuid}.part"
+        digest = hashlib.sha256()
+        remaining = content_length
+        try:
+            with temporary.open("wb") as handle:
+                while remaining:
+                    chunk = stream.read(min(self.CHUNK_SIZE, remaining))
+                    if not chunk:
+                        raise DeliveryIntegrityError("Transferência do comprovante interrompida.")
+                    handle.write(chunk)
+                    digest.update(chunk)
+                    remaining -= len(chunk)
+                handle.flush()
+                import os
+                os.fsync(handle.fileno())
+            if digest.hexdigest() != receipt.sha256:
+                raise DeliveryIntegrityError("SHA-256 do comprovante não confere.")
+            import fitz
+            with fitz.open(temporary) as document:
+                if document.page_count < 1:
+                    raise DeliveryIntegrityError("Comprovante PDF inválido.")
+            temporary.replace(final)
+            now = self._now()
+            self.receipts.update(
+                receipt.id, status="VERIFIED", pdf_path=str(final), received_at=now,
+                last_error=None,
+            )
+            self._record(
+                delivery, "ACK_RECEIPT_RECEIVED",
+                "Comprovante de recebimento recebido.",
+            )
+            self._record(
+                delivery, "ACK_RECEIPT_VERIFIED",
+                "Comprovante de recebimento recebido e verificado.",
+            )
+            self._mark_acknowledged(delivery, delivery.recipient_user_id)
+            logger.info(
+                "delivery.receipt.received protocol=%s receipt=%s size=%s",
+                protocol, receipt.receipt_uuid, receipt.size,
+            )
+            return self.receipts.find_by_id(receipt.id)
+        except Exception:
+            temporary.unlink(missing_ok=True)
+            raise
 
     def receive_metadata(self, payload: dict) -> DocumentDeliveryEntity:
         required = {"delivery_uuid","protocol_number","request_uuid","sender_username","recipient_username","sender_instance_id","recipient_instance_id","message","items"}
@@ -350,6 +614,21 @@ class DocumentDeliveryService:
         if (request.status, target) in allowed or recovered_remote:
             column = {"DELIVERING":None,"DELIVERED":"delivered_at","COMPLETED":"completed_at"}[target]
             self.requests.update_status(request.id, request.organization_id, target, self._now(), column)
+
+    def _mark_acknowledged(self, delivery, user_id: int | None) -> None:
+        current = self._delivery(delivery.id)
+        if current.acknowledged_at is not None:
+            return
+        now = self._now()
+        self.deliveries.update(
+            current.id, status="ACKNOWLEDGED", acknowledged_at=now,
+            completed_at=now,
+        )
+        self._record(
+            current, "DELIVERY_ACKNOWLEDGED",
+            "Recebimento confirmado com comprovante PDF verificado.", user_id,
+        )
+        self._request_transition(current, "COMPLETED")
 
     def _record(self, delivery, event: str, description: str, actor: int | None = None) -> None:
         self.history.record(DeliveryHistoryEntity(organization_id=delivery.organization_id, request_id=delivery.request_id,

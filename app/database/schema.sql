@@ -305,6 +305,34 @@ CREATE INDEX IF NOT EXISTS idx_delivery_retry ON document_deliveries(status, nex
 CREATE INDEX IF NOT EXISTS idx_delivery_items_delivery ON document_delivery_items(delivery_id);
 CREATE INDEX IF NOT EXISTS idx_delivery_history_request ON delivery_history(request_id, created_at);
 
+CREATE TABLE IF NOT EXISTS delivery_acknowledgement_receipts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    receipt_uuid TEXT NOT NULL UNIQUE,
+    delivery_id INTEGER NOT NULL UNIQUE,
+    organization_id INTEGER NOT NULL,
+    signer_user_id INTEGER,
+    signer_username TEXT NOT NULL,
+    signature_method TEXT NOT NULL CHECK (signature_method IN ('DRAWN','IMPORTED_IMAGE')),
+    direction TEXT NOT NULL CHECK (direction IN ('LOCAL','REMOTE')),
+    pdf_path TEXT,
+    size INTEGER NOT NULL,
+    sha256 TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('CREATED','QUEUED','SENDING','RECEIVING','VERIFIED','FAILED')),
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TEXT,
+    last_error TEXT,
+    created_at TEXT NOT NULL,
+    sent_at TEXT,
+    received_at TEXT,
+    FOREIGN KEY (delivery_id) REFERENCES document_deliveries(id) ON DELETE CASCADE,
+    FOREIGN KEY (organization_id) REFERENCES organizations(id),
+    FOREIGN KEY (signer_user_id) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_delivery_receipt_retry
+    ON delivery_acknowledgement_receipts(status, next_attempt_at);
+CREATE INDEX IF NOT EXISTS idx_delivery_receipt_org
+    ON delivery_acknowledgement_receipts(organization_id, created_at);
+
 CREATE TABLE IF NOT EXISTS cloud_settings (
     organization_id INTEGER PRIMARY KEY,
     cloud_account_id INTEGER,

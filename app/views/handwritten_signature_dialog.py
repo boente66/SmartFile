@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
 from app.models.handwritten_signature_request import HandwrittenSignatureRequest
 from app.ui.icon_provider import IconProvider
 from app.utils.file_naming import safe_output_path
-from app.views.widgets.signature_canvas import SignatureCanvas
+from app.views.widgets.signature_acquisition_widget import SignatureAcquisitionWidget
 from app.views.widgets.signature_placement_widget import SignaturePlacementWidget
 
 
@@ -54,22 +54,15 @@ class HandwrittenSignatureDialog(QDialog):
 
         draw_page = QWidget()
         draw_layout = QVBoxLayout(draw_page)
-        draw_layout.addWidget(QLabel("Desenhe dentro da área abaixo usando mouse, toque ou caneta:"))
-        self.canvas = SignatureCanvas()
-        draw_layout.addWidget(self.canvas, 1)
+        draw_layout.addWidget(QLabel(
+            "Desenhe usando mouse, toque ou caneta, ou importe uma imagem da assinatura:"
+        ))
+        self.acquisition = SignatureAcquisitionWidget()
+        self.canvas = self.acquisition.canvas
+        self.thickness = self.acquisition.thickness
+        self.color = self.acquisition.color
+        draw_layout.addWidget(self.acquisition, 1)
         tools = QHBoxLayout()
-        undo = QPushButton("Desfazer"); undo.clicked.connect(self.canvas.undo)
-        redo = QPushButton("Refazer"); redo.clicked.connect(self.canvas.redo)
-        clear = QPushButton("Limpar"); IconProvider.apply(clear, "trash"); clear.clicked.connect(self.canvas.clear)
-        self.thickness = QComboBox()
-        for label, value in (("Fina", 2.0), ("Média", 3.5), ("Grossa", 6.0)):
-            self.thickness.addItem(label, value)
-        self.thickness.setCurrentIndex(1)
-        self.thickness.currentIndexChanged.connect(lambda: self.canvas.set_stroke_width(float(self.thickness.currentData())))
-        self.color = QComboBox(); self.color.addItem("Preta", "#111827"); self.color.addItem("Azul", "#1d4ed8")
-        self.color.currentIndexChanged.connect(lambda: self.canvas.set_color(str(self.color.currentData())))
-        for widget in (undo, redo, clear, QLabel("Espessura:"), self.thickness, QLabel("Cor:"), self.color):
-            tools.addWidget(widget)
         tools.addStretch()
         next_button = QPushButton("Posicionar na página")
         next_button.clicked.connect(self._prepare_placement)
@@ -121,16 +114,20 @@ class HandwrittenSignatureDialog(QDialog):
             stroke_width=self.canvas.stroke_width,
             add_caption=self.caption.isChecked(),
             existing_signatures_confirmed=self.existing_signatures_confirmed,
+            signature_method=self.acquisition.method,
         )
 
     def clear_signature(self) -> None:
         self._signature_bytes = b""
-        self.canvas.clear()
+        self.acquisition.clear()
 
     def _prepare_placement(self) -> None:
-        data = self.canvas.export_png()
+        data = self.acquisition.signature_bytes()
         if not data:
-            QMessageBox.warning(self, "Assinatura manuscrita", "Desenhe a assinatura antes de continuar.")
+            QMessageBox.warning(
+                self, "Assinatura manuscrita",
+                "Desenhe ou importe a assinatura antes de continuar.",
+            )
             return
         self._signature_bytes = data
         signature = QPixmap(); signature.loadFromData(data, "PNG")

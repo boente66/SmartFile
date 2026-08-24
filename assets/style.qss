@@ -956,6 +956,22 @@ QScrollArea#networkDialogScroll QScrollBar::handle:vertical:hover { background: 
 QScrollArea#networkDialogScroll QScrollBar::add-line:vertical,
 QScrollArea#networkDialogScroll QScrollBar::sub-line:vertical { height: 0; }
 
+/* Contexto de entregas e aquisição de assinatura visual */
+QFrame#pdfViewerContextBar {
+    background: #f0f8f3;
+    border-bottom: 1px solid #b9dcc5;
+}
+QLabel#pdfViewerContextTitle { color: #123d24; font-size: 14px; font-weight: 750; }
+QDialog#deliveryAcknowledgementDialog { background: #f7f9fb; }
+QDialog#deliveryAcknowledgementDialog QLabel#acknowledgementDeclaration {
+    background: #eef6f1; color: #214b31; border: 1px solid #c8dfd0;
+    border-radius: 8px; padding: 10px;
+}
+QLabel#signatureImagePreview {
+    background: #ffffff; border: 1px dashed #aab7c4; border-radius: 8px;
+    color: #64748b; padding: 10px;
+}
+
 /* Captura e PDF */
 QWidget#capturePdf { background: #171c22; color: #e5e7eb; }
 QWidget#capturePdf QLabel { color: #e5e7eb; }

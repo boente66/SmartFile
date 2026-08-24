@@ -68,6 +68,33 @@ class DeliveryHttpServer:
                 if path == "/api/v1/deliveries":
                     payload = self._body_json(); self._validate_instance(str(payload.get("sender_instance_id", "")))
                     delivery = service.receive_metadata(payload); self._json(201, {"protocol_number":delivery.protocol_number}); return
+                receipt_metadata = re.fullmatch(
+                    r"/api/v1/deliveries/([^/]+)/acknowledgement", path
+                )
+                if receipt_metadata:
+                    protocol = unquote(receipt_metadata.group(1))
+                    self._validate_receipt_peer(protocol)
+                    receipt = service.receive_receipt_metadata(
+                        protocol, self._body_json()
+                    )
+                    self._json(201, {"receipt_uuid": receipt.receipt_uuid})
+                    return
+                receipt_content = re.fullmatch(
+                    r"/api/v1/deliveries/([^/]+)/acknowledgement/([^/]+)/content",
+                    path,
+                )
+                if receipt_content:
+                    protocol, receipt_uuid = map(unquote, receipt_content.groups())
+                    self._validate_receipt_peer(protocol)
+                    size = int(self.headers.get("Content-Length", "-1"))
+                    receipt = service.receive_receipt_content(
+                        protocol, receipt_uuid, self.rfile, size
+                    )
+                    self._json(200, {
+                        "receipt_uuid": receipt.receipt_uuid,
+                        "status": "VERIFIED",
+                    })
+                    return
                 item_match = re.fullmatch(r"/api/v1/deliveries/([^/]+)/items/([^/]+)", path)
                 if item_match:
                     protocol, item_uuid = map(unquote, item_match.groups()); self._validate_peer(protocol)
@@ -91,6 +118,12 @@ class DeliveryHttpServer:
                 delivery=service.deliveries.find_by_protocol(protocol)
                 if delivery is None: raise ValueError("Protocolo não encontrado.")
                 self._validate_instance(delivery.sender_instance_id)
+            def _validate_receipt_peer(self, protocol):
+                delivery=service.deliveries.find_by_protocol(protocol)
+                if delivery is None: raise ValueError("Protocolo não encontrado.")
+                if delivery.direction != "OUTGOING":
+                    raise ValueError("Direção do comprovante inválida.")
+                self._validate_instance(delivery.recipient_instance_id)
             def _validate_instance(self, expected):
                 if self.headers.get("X-SmartFile-Instance") != expected: raise ValueError("Identidade da instalação remetente inválida.")
             def _body_json(self):

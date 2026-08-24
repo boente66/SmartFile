@@ -108,6 +108,8 @@ class AppController:
         self.document_delivery_controller = DocumentDeliveryController(
             self.workspace, document_service, self.session_context,
             parent=self.document_controller.view,
+            pdf_viewer_controller=self.pdf_viewer_controller,
+            main_view=self.main_view,
         )
         self.transport_controller = CorporateTransportController(
             document_service.database,

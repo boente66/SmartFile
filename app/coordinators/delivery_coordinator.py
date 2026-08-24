@@ -78,7 +78,39 @@ class DeliveryCoordinator(QObject):
                 return
             try: self.send_once(delivery.id,cancelled=cancelled)
             except Exception: logger.warning("delivery.retry.failed protocol=%s",delivery.protocol_number,exc_info=True)
+        self.process_pending_receipts(cancelled)
         self.refresh_outgoing_statuses()
+
+    def process_pending_receipts(self, cancelled=None) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        for receipt in self.service.receipts.pending(now):
+            if cancelled and cancelled():
+                return
+            try:
+                self.send_receipt_once(receipt.id)
+            except Exception:
+                logger.warning(
+                    "delivery.receipt.retry_failed receipt=%s",
+                    receipt.receipt_uuid, exc_info=True,
+                )
+
+    def send_receipt_once(self, receipt_id: int, progress=None):
+        receipt = self.service.receipts.find_by_id(receipt_id)
+        if receipt is None:
+            raise ValueError("Comprovante não encontrado.")
+        delivery = self.service.deliveries.find_by_id(receipt.delivery_id)
+        if delivery is None:
+            raise ValueError("Entrega do comprovante não encontrada.")
+        self.service.mark_receipt_sending(receipt_id)
+        try:
+            result = self.client.send_receipt(
+                delivery, receipt, self.service.receipt_metadata(receipt_id), progress
+            )
+            self.service.mark_receipt_sent(receipt_id)
+            return result
+        except Exception as exc:
+            self.service.queue_receipt(receipt_id, str(exc))
+            raise
 
     def send_request(self, request_id: int, peer) -> dict:
         request = self.service.requests.find_by_id(request_id)

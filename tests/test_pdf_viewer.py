@@ -17,6 +17,7 @@ from app.errors.pdf_viewer_exceptions import (
 )
 from app.models.pdf_document_info import PDFDocumentInfo
 from app.models.pdf_render_request import PDFRenderRequest
+from app.models.pdf_viewer_context import PDFViewerContext
 from app.services.pdf_viewer_service import PDFViewerService
 from app.views.pdf_viewer_view import PDFViewerView
 from app.views.workspace_view import WorkspaceView
@@ -182,4 +183,66 @@ def test_back_button_returns_to_documents_and_remains_available():
     app.processEvents()
 
     assert workspace.current_view() == "documents"
+    workspace.close()
+
+
+def test_delivery_context_is_compact_and_returns_to_received_tab(tmp_path: Path):
+    app = _app()
+    workspace = WorkspaceView()
+    documents = QWidget()
+
+    class Deliveries(QWidget):
+        selected = None
+
+        def select_tab(self, value):
+            self.selected = value
+
+    deliveries = Deliveries()
+    workspace.register_view("documents", documents)
+    workspace.register_view("deliveries", deliveries)
+    controller = PDFViewerController(workspace)
+    context = PDFViewerContext(
+        kind="DELIVERY_RECEIVED", protocol_number="SF-20260824-000001-ABCD",
+        sender_name="Remetente", delivery_id=7, back_view="deliveries",
+        back_tab="received", items=[("contrato.pdf", tmp_path / "contrato.pdf")],
+        can_acknowledge=True,
+    )
+    controller._context = context
+    controller.view.set_context(context)
+    controller.activate()
+
+    assert controller.view.context_bar.isVisibleTo(controller.view)
+    assert controller.view.context_confirm.isVisibleTo(controller.view)
+    assert "SF-20260824" in controller.view.context_detail.text()
+    controller.return_to_documents()
+    app.processEvents()
+
+    assert workspace.current_view() == "deliveries"
+    assert deliveries.selected == "received"
+    workspace.close()
+
+
+def test_first_successful_render_emits_document_displayed_once(tmp_path: Path):
+    _app()
+    workspace = WorkspaceView()
+    controller = PDFViewerController(workspace)
+    path = tmp_path / "received.pdf"
+    controller._path = path
+    controller._info = PDFDocumentInfo(
+        path=path, name=path.name, size=1, page_count=1,
+        page_width=300, page_height=500,
+    )
+    worker = object()
+    controller._render_worker = worker
+    controller._preload_adjacent = lambda: None
+    displayed = []
+    controller.view.document_displayed.connect(displayed.append)
+    image = PDFViewerService().render_page(
+        PDFRenderRequest(_pdf(path, pages=1), 1, zoom=1.0)
+    )
+
+    controller._on_rendered(worker, PDFRenderRequest(path, 1), image)
+    controller._on_rendered(worker, PDFRenderRequest(path, 1), image)
+
+    assert displayed == [str(path)]
     workspace.close()

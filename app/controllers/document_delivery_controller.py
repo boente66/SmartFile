@@ -14,22 +14,25 @@ from app.entities.smartfile_instance_entity import SmartFileInstanceEntity
 from app.views.delivery_document_picker_dialog import DeliveryDocumentPickerDialog
 from app.views.delivery_workspace_view import DeliveryWorkspaceView
 from app.views.delivery_network_dialog import DeliveryNetworkDialog
+from app.views.delivery_acknowledgement_dialog import DeliveryAcknowledgementDialog
+from app.models.pdf_viewer_context import PDFViewerContext
 from app.workers.delivery_send_worker import DeliverySendWorker
 from app.workers.request_send_worker import RequestSendWorker
 from app.workers.lan_discovery_worker import LanConnectionWorker, LanDiscoveryWorker
 from app.delivery.protocol import DELIVERY_PROTOCOL_VERSION
+from app.workers.delivery_receipt_worker import DeliveryReceiptWorker
 
 logger = logging.getLogger(__name__)
 
 
 class DocumentDeliveryController:
-    def __init__(self,workspace,document_service,context,parent=None):
-        self.workspace=workspace; self.documents=document_service; self.context=context; self.parent=parent
+    def __init__(self,workspace,document_service,context,parent=None,pdf_viewer_controller=None,main_view=None):
+        self.workspace=workspace; self.documents=document_service; self.context=context; self.parent=parent; self.pdf_viewer=pdf_viewer_controller; self.main_view=main_view
         self.view=DeliveryWorkspaceView(); self.requests=DocumentRequestService(document_service.database,context)
         self.service=DocumentDeliveryService(document_service.database,context,document_service)
         self.discovery=LanDeviceDiscoveryService()
         self.basket=DeliveryBasketService(document_service,context); self.coordinator=DeliveryCoordinator(self.service,context,self.view,discovery_service=self.discovery)
-        self.worker=None; self.request_worker=None; self.discovery_worker=None; self.connection_workers=set(); self.network_dialog=None
+        self.worker=None; self.request_worker=None; self.discovery_worker=None; self.connection_workers=set(); self.network_dialog=None; self.receipt_worker=None; self._viewer_delivery_id=None
         self.workspace.register_view("deliveries",self.view); self._connect()
         self.coordinator.notification.connect(self._notification)
     def _connect(self):
@@ -37,6 +40,10 @@ class DocumentDeliveryController:
         self.view.select_documents_requested.connect(self.select_documents); self.view.remove_basket_requested.connect(self.remove_basket); self.view.clear_basket_requested.connect(self.clear_basket)
         self.view.send_requested.connect(self.send); self.view.retry_requested.connect(self.retry); self.view.refresh_requested.connect(self.refresh); self.view.configure_requested.connect(self.configure)
         self.view.view_requested.connect(self.view_delivery); self.view.download_requested.connect(self.download); self.view.add_to_ged_requested.connect(self.add_to_ged); self.view.acknowledge_requested.connect(self.acknowledge)
+        self.view.receipt_requested.connect(self.view_receipt)
+        if self.pdf_viewer:
+            self.pdf_viewer.view.document_displayed.connect(self._viewer_displayed)
+            self.pdf_viewer.view.context_confirm_requested.connect(self.acknowledge)
     def activate(self):self.workspace.show_view("deliveries"); self.refresh()
     def organization_changed(self,*_):
         self.coordinator.stop()
@@ -48,6 +55,7 @@ class DocumentDeliveryController:
     def shutdown(self):
         if self.worker and self.worker.isRunning():self.worker.requestInterruption();self.worker.wait(5000)
         if self.request_worker and self.request_worker.isRunning():self.request_worker.requestInterruption();self.request_worker.wait(5000)
+        if self.receipt_worker and self.receipt_worker.isRunning():self.receipt_worker.requestInterruption();self.receipt_worker.wait(5000)
         self._stop_discovery()
         for worker in tuple(self.connection_workers):
             if worker.isRunning(): worker.requestInterruption(); worker.wait(6000)
@@ -58,7 +66,8 @@ class DocumentDeliveryController:
             org=self.documents.active_organization_id; members=self.requests.list_assignable_members(org); requests=self.requests.list_requests(org)
             self.view.set_permissions(self.context)
             self.view.set_members(members); self.view.set_peers(self.service.instances.repository.list_peers(org)); self.view.set_requests(requests,self.context.current_user.id); self.view.set_basket(self.basket.basket)
-            self.view.set_deliveries(self.service.deliveries.list_for_organization(org,"OUTGOING"),self.service.deliveries.list_for_organization(org,"INCOMING")); self.view.set_history(self.service.history.list(org))
+            receipts=self.service.receipts.list_for_organization(org)
+            self.view.set_deliveries(self.service.deliveries.list_for_organization(org,"OUTGOING"),self.service.deliveries.list_for_organization(org,"INCOMING"),[receipt.delivery_id for receipt in receipts]); self.view.set_history(self.service.history.list(org))
         except Exception as exc:self._error(exc)
     def create_request(self,values):
         try:
@@ -120,10 +129,44 @@ class DocumentDeliveryController:
         delivery=self.service.deliveries.find_by_id(delivery_id);items=self.service.items.list_by_delivery(delivery_id)
         if not delivery or not items:return
         try:
+            pdf_items=[(item.logical_name,Path(item.received_path)) for item in items if item.received_path and Path(item.received_path).suffix.lower()==".pdf"]
+            if pdf_items and self.pdf_viewer:
+                sender=self.service.users.find_by_id(delivery.sender_user_id)
+                receipt=self.service.receipts.find_by_delivery(delivery.id)
+                context=PDFViewerContext(
+                    kind="DELIVERY_RECEIVED", title="Documento recebido",
+                    protocol_number=delivery.protocol_number,
+                    sender_name=sender.display_name if sender else None,
+                    delivery_id=delivery.id, back_view="deliveries", back_tab="received",
+                    items=pdf_items, current_item=0,
+                    can_acknowledge=(
+                        delivery.status in {"DELIVERED","VIEWED"} and receipt is None
+                        and self.context.has_permission("delivery.acknowledge")
+                        and delivery.recipient_user_id==self.context.current_user.id
+                    ),
+                    acknowledged=receipt is not None,
+                )
+                self._viewer_delivery_id=delivery.id
+                self.pdf_viewer.open_document(str(pdf_items[0][1]),context)
+            else:
+                from PyQt6.QtCore import QUrl
+                from PyQt6.QtGui import QDesktopServices
+                path=items[0].received_path
+                if path and QDesktopServices.openUrl(QUrl.fromLocalFile(path)):
+                    self.service.mark_viewed(delivery.protocol_number,self.context.current_user.id)
+                    self.refresh()
+                else:
+                    raise ValueError("Não foi possível abrir o documento no aplicativo externo.")
+        except Exception as exc:self._error(exc)
+
+    def _viewer_displayed(self,_path):
+        delivery_id=self._viewer_delivery_id
+        if delivery_id is None:return
+        self._viewer_delivery_id=None
+        delivery=self.service.deliveries.find_by_id(delivery_id)
+        if delivery is None:return
+        try:
             self.service.mark_viewed(delivery.protocol_number,self.context.current_user.id)
-            from PyQt6.QtCore import QUrl
-            from PyQt6.QtGui import QDesktopServices
-            QDesktopServices.openUrl(QUrl.fromLocalFile(items[0].received_path))
             self.refresh()
         except Exception as exc:self._error(exc)
     def download(self,delivery_id):
@@ -141,8 +184,49 @@ class DocumentDeliveryController:
             self.refresh()
         except Exception as exc:self._error(exc)
     def acknowledge(self,delivery_id):
+        if self.receipt_worker is not None:return
         delivery=self.service.deliveries.find_by_id(delivery_id)
-        try:self.service.acknowledge(delivery.protocol_number,self.context.current_user.id);self.refresh()
+        if delivery is None:return
+        try:
+            items=self.service.items.list_by_delivery(delivery_id)
+            sender=self.service.users.find_by_id(delivery.sender_user_id)
+            dialog=DeliveryAcknowledgementDialog(delivery.protocol_number,sender.display_name if sender else None,items,self.view)
+            if dialog.exec()!=QDialog.DialogCode.Accepted:return
+            signature,method=dialog.signature();dialog.clear_signature()
+            worker=DeliveryReceiptWorker(self.service,delivery_id,self.context.current_user.id,signature,method,self.view)
+            self.receipt_worker=worker
+            worker.succeeded.connect(self._receipt_created)
+            worker.failed.connect(lambda message:self._receipt_failed(message))
+            worker.finished.connect(lambda worker=worker:self._receipt_done(worker));worker.finished.connect(worker.deleteLater)
+            if self.main_view:self.main_view.progress.start("Gerando comprovante de recebimento")
+            worker.start()
+        except Exception as exc:self._error(exc)
+
+    def _receipt_created(self,receipt):
+        if self.main_view:self.main_view.progress.finish("Comprovante de recebimento criado")
+        self.view.show_status("Recebimento confirmado. O comprovante será enviado automaticamente.")
+        self.coordinator.process_pending();self.refresh()
+
+    def _receipt_failed(self,message):
+        if self.main_view:self.main_view.progress.finish("Falha ao gerar comprovante")
+        QMessageBox.warning(self.view,"Confirmar recebimento",message)
+
+    def _receipt_done(self,worker):
+        if self.receipt_worker is worker:self.receipt_worker=None
+
+    def view_receipt(self,delivery_id):
+        receipt=self.service.receipts.find_by_delivery(delivery_id);delivery=self.service.deliveries.find_by_id(delivery_id)
+        if receipt is None or delivery is None or not receipt.pdf_path:return
+        try:
+            context=PDFViewerContext(
+                kind="DELIVERY_RECEIPT",title="Comprovante de recebimento",
+                protocol_number=delivery.protocol_number,delivery_id=delivery.id,
+                back_view="deliveries",back_tab="received" if delivery.direction=="INCOMING" else "sent",
+                items=[("Comprovante de recebimento",Path(receipt.pdf_path))],
+                acknowledged=True,
+            )
+            self._viewer_delivery_id=None
+            self.pdf_viewer.open_document(receipt.pdf_path,context)
         except Exception as exc:self._error(exc)
     def configure(self):
         try:

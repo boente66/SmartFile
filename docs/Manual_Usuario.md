@@ -1128,3 +1128,28 @@ O arquivo ZIP deve ser guardado em local seguro. Embora credenciais externas
 sejam excluídas, o backup contém documentos e dados cadastrais sensíveis. A
 restauração automática será implementada separadamente, com validação integral
 do manifesto e confirmação administrativa específica.
+
+## 19. Visualizar e confirmar documentos recebidos
+
+Na área **Solicitações e Entregas → Documentos recebidos**, selecione um
+protocolo e clique em **Visualizar**. Arquivos PDF abrem no Visualizador interno
+do SmartFile. O estado **VIEWED** somente é registrado depois que a primeira
+página é realmente exibida. Para formatos sem visualizador interno, o SmartFile
+usa o aplicativo associado ao sistema operacional; nesse caso, consegue
+confirmar apenas que o sistema aceitou a solicitação de abertura.
+
+Após verificar os itens do protocolo, use **Confirmar recebimento** e escolha:
+
+- **Assinar à mão**, para desenhar com mouse, toque ou caneta; ou
+- **Importar imagem**, para usar PNG, JPEG ou WEBP válido.
+
+A assinatura é uma representação visual, não uma assinatura digital com
+certificado. A imagem de origem não é mantida pelo SmartFile. Ela é normalizada,
+incorporada ao comprovante e liberada da memória ao término.
+
+O SmartFile cria um PDF A4 separado com protocolo, participantes, documentos,
+checksums e assinatura visual. O documento recebido não é alterado. Se o
+remetente estiver offline, o comprovante permanece na fila e é reenviado
+automaticamente. Quando o remetente validar tamanho e SHA-256, o protocolo passa
+para **ACKNOWLEDGED** e a ação **Ver comprovante** fica disponível nos dois
+computadores.

@@ -47,8 +47,10 @@ a inicialização da aplicação e nunca produz fallback em texto puro.
 ## Persistência
 
 Os documentos são armazenados localmente em SQLite através de uma camada de serviço e repositório.
-O schema atual é 17; a migration preserva os dados da versão 16 e classifica de
-forma conservadora os jobs cujo destino histórico não pode ser comprovado.
+O schema atual é 20. As migrations preservam organizações, documentos,
+transportes e entregas existentes. A tabela
+`delivery_acknowledgement_receipts` mantém o comprovante separado do documento
+original, com UUID, SHA-256, estado de fila e timestamps de envio/recebimento.
 
 ## Interface
 

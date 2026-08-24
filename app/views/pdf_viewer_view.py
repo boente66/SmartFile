@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import QSize, Qt, pyqtSignal
+from PyQt6.QtCore import QSignalBlocker, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QKeySequence, QPixmap, QShortcut
 from PyQt6.QtWidgets import (
     QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QSizePolicy, QSplitter, QTabWidget, QVBoxLayout, QWidget,
+    QFrame, QSizePolicy, QSplitter, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from app.models.pdf_document_info import PDFDocumentInfo
+from app.models.pdf_viewer_context import PDFViewerContext
 from app.ui.icon_provider import IconProvider
 from app.views.widgets.pdf_info_panel import PDFInfoPanel
 from app.views.widgets.pdf_search_bar import PDFSearchBar
@@ -37,6 +38,9 @@ class PDFViewerView(QWidget):
     sign_requested = pyqtSignal()
     handwritten_sign_requested = pyqtSignal()
     validate_signatures_requested = pyqtSignal()
+    context_confirm_requested = pyqtSignal(int)
+    context_item_requested = pyqtSignal(int)
+    document_displayed = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
@@ -44,6 +48,7 @@ class PDFViewerView(QWidget):
         self._page_count = 0
         self._current_zoom = 1.0
         self._compact_toolbar: bool | None = None
+        self._contextual = False
         self._setup_ui()
         self._setup_shortcuts()
         self.set_document_loaded(False)
@@ -54,6 +59,8 @@ class PDFViewerView(QWidget):
         root.setSpacing(0)
         self.toolbar = self._build_toolbar()
         root.addWidget(self.toolbar)
+        self.context_bar = self._build_context_bar()
+        root.addWidget(self.context_bar)
         self.search_bar = PDFSearchBar()
         self.search_bar.search_requested.connect(self.search_requested.emit)
         self.search_bar.previous_requested.connect(self.search_previous_requested.emit)
@@ -96,6 +103,36 @@ class PDFViewerView(QWidget):
         self.status_bar.setObjectName("pdfViewerStatus")
         self.status_bar.setLayout(status)
         root.addWidget(self.status_bar)
+
+    def _build_context_bar(self) -> QWidget:
+        bar = QFrame()
+        bar.setObjectName("pdfViewerContextBar")
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(12, 7, 12, 7)
+        self.context_title = QLabel()
+        self.context_title.setObjectName("pdfViewerContextTitle")
+        self.context_detail = QLabel()
+        self.context_detail.setObjectName("secondaryText")
+        texts = QVBoxLayout()
+        texts.setSpacing(1)
+        texts.addWidget(self.context_title)
+        texts.addWidget(self.context_detail)
+        layout.addLayout(texts, 1)
+        self.context_items = QComboBox()
+        self.context_items.currentIndexChanged.connect(
+            self.context_item_requested.emit
+        )
+        layout.addWidget(self.context_items)
+        self.context_confirm = QPushButton("Confirmar recebimento")
+        self.context_confirm.setObjectName("deliveryPrimary")
+        self.context_confirm.clicked.connect(
+            lambda: self.context_confirm_requested.emit(
+                int(self.context_confirm.property("deliveryId") or 0)
+            )
+        )
+        layout.addWidget(self.context_confirm)
+        bar.hide()
+        return bar
 
     def _build_toolbar(self) -> QWidget:
         toolbar = QWidget()
@@ -213,6 +250,40 @@ class PDFViewerView(QWidget):
         )
         self.set_document_loaded(True)
 
+    def set_context(self, context: PDFViewerContext) -> None:
+        is_contextual = context.kind in {"DELIVERY_RECEIVED", "DELIVERY_RECEIPT"}
+        self._contextual = is_contextual
+        self.context_bar.setVisible(is_contextual)
+        self.btn_back.setProperty("actionText", (
+            "Voltar para Solicitações e Entregas" if is_contextual
+            else "Voltar para Documentos"
+        ))
+        if not self._compact_toolbar:
+            self.btn_back.setText(str(self.btn_back.property("actionText")))
+        if not is_contextual:
+            return
+        self.context_title.setText(
+            "Documento recebido" if context.kind == "DELIVERY_RECEIVED"
+            else "Comprovante de recebimento"
+        )
+        status = "Recebimento confirmado" if context.acknowledged else "Visualização segura"
+        sender = f" · De: {context.sender_name}" if context.sender_name else ""
+        self.context_detail.setText(
+            f"Protocolo {context.protocol_number or '—'}{sender} · {status}"
+        )
+        with QSignalBlocker(self.context_items):
+            self.context_items.clear()
+            for name, _path in context.items:
+                self.context_items.addItem(name)
+            if context.items:
+                self.context_items.setCurrentIndex(context.current_item)
+        self.context_items.setVisible(len(context.items) > 1)
+        self.context_confirm.setProperty("deliveryId", context.delivery_id or 0)
+        self.context_confirm.setVisible(
+            context.kind == "DELIVERY_RECEIVED" and context.can_acknowledge
+            and not context.acknowledged
+        )
+
     def set_rendered_page(self, page_number: int, page_count: int, pixmap: QPixmap, zoom: float) -> None:
         self._current_zoom = zoom
         self.preview.set_pixmap(pixmap)
@@ -259,6 +330,7 @@ class PDFViewerView(QWidget):
         self.thumbnails.setVisible(not enabled)
         self.side_tabs.setVisible(not enabled)
         self.status_bar.setVisible(not enabled)
+        self.context_bar.setVisible(not enabled and self._contextual)
 
     def _choose_pdf(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Abrir PDF", "", "PDF (*.pdf)")

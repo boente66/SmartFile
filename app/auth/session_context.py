@@ -12,8 +12,8 @@ from app.models.user_model import UserModel
 ROLE_PERMISSIONS = {
     "OWNER": {"*"},
     "ADMIN": {"document.*", "folder.*", "tools.use", "organization.view", "organization.create", "organization.update", "member.view", "member.add", "member.create_user", "member.change_role", "member.deactivate", "member.remove", "profile.view", "profile.update", "session.view", "session.revoke", "cloud.view", "cloud.connect", "cloud.disconnect", "cloud.sync", "transport.configure", "document.request.*", "delivery.*", "audit.view"},
-    "EDITOR": {"document.create", "document.import", "document.update", "document.open", "document.view", "document.search", "folder.*", "tools.use", "organization.view", "organization.create", "profile.view", "profile.update", "session.view", "session.revoke", "cloud.view", "cloud.sync", "document.request.view", "document.request.create", "document.request.update", "delivery.create", "delivery.send", "delivery.receive", "delivery.view", "delivery.download"},
-    "VIEWER": {"document.view", "document.open", "document.search", "organization.view", "profile.view", "profile.update", "session.view", "session.revoke", "cloud.view", "document.request.view", "delivery.receive", "delivery.view", "delivery.download"},
+    "EDITOR": {"document.create", "document.import", "document.update", "document.open", "document.view", "document.search", "folder.*", "tools.use", "organization.view", "organization.create", "profile.view", "profile.update", "session.view", "session.revoke", "cloud.view", "cloud.sync", "document.request.view", "document.request.create", "document.request.update", "delivery.create", "delivery.send", "delivery.receive", "delivery.view", "delivery.download", "delivery.acknowledge"},
+    "VIEWER": {"document.view", "document.open", "document.search", "organization.view", "profile.view", "profile.update", "session.view", "session.revoke", "cloud.view", "document.request.view", "delivery.receive", "delivery.view", "delivery.download", "delivery.acknowledge"},
 }
 
 
