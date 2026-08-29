@@ -33,11 +33,13 @@ class CloudPythonAuthService:
         self.config = CloudOAuthConfigService(database)
 
     def authenticate(
-        self, provider: str, *, interactive: bool = True, account_hint: str | None = None,
+        self, provider: str, *, interactive: bool = True,
+        account_hint: str | None = None, organization_id: int | None = None,
     ) -> CloudAuthResult:
         if provider == "ONEDRIVE":
             return self._authenticate_onedrive(
-                interactive=interactive, account_hint=account_hint
+                interactive=interactive, account_hint=account_hint,
+                organization_id=organization_id,
             )
         if provider == "GOOGLE_DRIVE":
             return self._authenticate_google()
@@ -45,6 +47,7 @@ class CloudPythonAuthService:
 
     def _authenticate_onedrive(
         self, *, interactive: bool = True, account_hint: str | None = None,
+        organization_id: int | None = None,
     ) -> CloudAuthResult:
         try:
             import msal
@@ -56,7 +59,9 @@ class CloudPythonAuthService:
                 "A integração com o OneDrive ainda não foi configurada pelo administrador do SmartFile."
             )
         authority = f"https://login.microsoftonline.com/{config.get('tenant') or 'common'}"
-        cache=msal.SerializableTokenCache(); serialized=self.config.load_cache("ONEDRIVE")
+        cache=msal.SerializableTokenCache(); serialized=self.config.load_cache(
+            "ONEDRIVE", organization_id
+        )
         if serialized: cache.deserialize(serialized)
         application = msal.PublicClientApplication(config["client_id"], authority=authority, token_cache=cache)
         accounts = application.get_accounts(username=account_hint) if account_hint else application.get_accounts()
@@ -92,7 +97,8 @@ class CloudPythonAuthService:
                     "A conexão foi cancelada. Nenhuma conta foi vinculada."
                 )
             raise CloudTokenExpiredError("A autorização expirou. Conecte novamente sua conta.")
-        if cache.has_state_changed:self.config.save_cache("ONEDRIVE",cache.serialize())
+        if cache.has_state_changed:
+            self.config.save_cache("ONEDRIVE", cache.serialize(), organization_id)
         if "access_token" not in result:
             error = str(result.get("error") or "")
             if error in {"access_denied", "consent_required"}:

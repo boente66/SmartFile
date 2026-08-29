@@ -313,7 +313,7 @@ def test_cloud_and_nas_create_independent_jobs(tmp_path: Path):
     endpoint = tmp_path / "nas"
     endpoint.mkdir()
     organization_id = _configure_nas(service, endpoint)
-    account = service.cloud_manager._save_account("ONEDRIVE", CloudAuthResult(
+    account = service.cloud_manager._save_account(organization_id, "ONEDRIVE", CloudAuthResult(
         access_token="test-access", refresh_token="test-refresh",
         email="test@example.com",
     ))
@@ -361,7 +361,7 @@ def test_schema_15_migrates_to_current_without_losing_existing_data(tmp_path: Pa
 
     migrated = Database(str(legacy_path))
     assert migrated.connect().execute("PRAGMA user_version").fetchone()[0] == CURRENT_SCHEMA_VERSION
-    assert CURRENT_SCHEMA_VERSION == 20
+    assert CURRENT_SCHEMA_VERSION == 21
     assert migrated.fetch_one("SELECT id FROM documents WHERE id=?", (document.id,))
     assert migrated.fetch_one("SELECT id FROM organizations WHERE id=?", (organization_id,))
     assert migrated.fetch_one(

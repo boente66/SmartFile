@@ -335,14 +335,21 @@ class DocumentService:
                 deleted = self.document_repository.hard_delete(document_id, self.active_organization_id)
                 if deleted and entity.managed:
                     self.storage_quota_service.release_used(entity.organization_id, entity.size)
-            if quarantine and quarantine.exists():
-                quarantine.unlink()
-            return deleted
         except Exception:
             if quarantine and quarantine.exists() and original_storage:
                 original_storage.parent.mkdir(parents=True, exist_ok=True)
                 quarantine.replace(original_storage)
             raise
+        if quarantine and quarantine.exists():
+            try:
+                quarantine.unlink()
+            except OSError:
+                logger.exception(
+                    "Documento removido do catálogo, mas a limpeza da quarentena falhou "
+                    "document_id=%s",
+                    document_id,
+                )
+        return deleted
 
     def empty_trash(self) -> int:
         documents = self.document_repository.find_trashed(self.active_organization_id)

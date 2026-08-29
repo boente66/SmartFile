@@ -122,37 +122,47 @@ class CloudOAuthConfigurationService:
         data["GOOGLE_DRIVE"] = config
         self._save(data)
 
-    def load_cache(self, provider: str) -> str | None:
+    def load_cache(
+        self, provider: str, organization_id: int | None = None,
+    ) -> str | None:
         provider = self._provider(provider)
+        cache_key = self._cache_key(provider, organization_id)
         data = self.load()
-        reference = (data.get("_token_cache_refs") or {}).get(provider)
+        reference = (data.get("_token_cache_refs") or {}).get(cache_key)
         if reference:
             return self.token_store.load_payload(reference)
-        legacy = (data.get("_token_caches") or {}).get(provider)
-        if legacy:
-            self.save_cache(provider, legacy)
+        legacy = (data.get("_token_caches") or {}).get(cache_key)
+        if legacy and organization_id is None:
+            self.save_cache(provider, legacy, organization_id)
         return legacy
 
-    def save_cache(self, provider: str, serialized_cache: str) -> None:
+    def save_cache(
+        self, provider: str, serialized_cache: str,
+        organization_id: int | None = None,
+    ) -> None:
         provider = self._provider(provider)
+        cache_key = self._cache_key(provider, organization_id)
         data = self.load()
         references = data.setdefault("_token_cache_refs", {})
-        reference = references.get(provider) or f"oauth-cache:{provider.lower()}"
-        references[provider] = self.token_store.save_payload(serialized_cache, reference)
+        reference = references.get(cache_key) or f"oauth-cache:{cache_key.lower()}"
+        references[cache_key] = self.token_store.save_payload(serialized_cache, reference)
         caches = data.get("_token_caches") or {}
-        caches.pop(provider, None)
+        caches.pop(cache_key, None)
         if caches:
             data["_token_caches"] = caches
         else:
             data.pop("_token_caches", None)
         self._save(data)
 
-    def delete_cache(self, provider: str) -> None:
+    def delete_cache(
+        self, provider: str, organization_id: int | None = None,
+    ) -> None:
         """Remove somente o cache OAuth do provedor, preservando a configuração pública."""
         provider = self._provider(provider)
+        cache_key = self._cache_key(provider, organization_id)
         data = self.load()
         references = data.get("_token_cache_refs") or {}
-        reference = references.pop(provider, None)
+        reference = references.pop(cache_key, None)
         if reference:
             self.token_store.delete(reference)
         if references:
@@ -160,7 +170,7 @@ class CloudOAuthConfigurationService:
         else:
             data.pop("_token_cache_refs", None)
         caches = data.get("_token_caches") or {}
-        caches.pop(provider, None)
+        caches.pop(cache_key, None)
         if caches:
             data["_token_caches"] = caches
         else:
@@ -232,6 +242,10 @@ class CloudOAuthConfigurationService:
         if normalized not in cls.PROVIDERS:
             raise CloudConfigurationInvalidError("Provedor de nuvem inválido.")
         return normalized
+
+    @staticmethod
+    def _cache_key(provider: str, organization_id: int | None) -> str:
+        return provider if organization_id is None else f"{provider}:{int(organization_id)}"
 
     @staticmethod
     def display_name(provider: str) -> str:

@@ -74,6 +74,7 @@ class DocumentRepository(BaseRepository):
             if self._fetch_one(lookup, lookup_params) is None:
                 return False
             discarded_jobs = self._discard_sync_jobs(document_id)
+            self._detach_history(document_id)
             deleted = self._write(query, params).rowcount > 0
         if discarded_jobs:
             logger.info(
@@ -279,7 +280,7 @@ class DocumentRepository(BaseRepository):
             if row is None:
                 return False
             self._discard_sync_jobs(document_id)
-            self._write("DELETE FROM history WHERE document_id=?", (document_id,))
+            self._detach_history(document_id)
             return self._write(
                 "DELETE FROM documents WHERE id=? AND organization_id=? AND status='TRASHED'",
                 (document_id, organization_id),
@@ -293,7 +294,7 @@ class DocumentRepository(BaseRepository):
         with self.database.transaction():
             for row in rows:
                 self._discard_sync_jobs(row["id"])
-                self._write("DELETE FROM history WHERE document_id=?", (row["id"],))
+                self._detach_history(row["id"])
             self._write(
                 "DELETE FROM documents WHERE organization_id=? AND status='TRASHED'",
                 (organization_id,),
@@ -304,6 +305,14 @@ class DocumentRepository(BaseRepository):
         """Descarta jobs que não podem sobreviver à exclusão do documento pai."""
         return self._write(
             "DELETE FROM sync_jobs WHERE document_id=?",
+            (document_id,),
+        ).rowcount
+
+    def _detach_history(self, document_id: int) -> int:
+        """Preserva a evidência textual sem manter referência ao registro removido."""
+
+        return self._write(
+            "UPDATE history SET document_id=NULL WHERE document_id=?",
             (document_id,),
         ).rowcount
 

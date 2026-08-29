@@ -80,7 +80,7 @@ def test_token_store_leaves_only_reference_in_sqlite(tmp_path, monkeypatch):
     serialized = " ".join(str(value) for value in row)
     assert "access-secret" not in serialized and "refresh-secret" not in serialized
     assert row["token_ref"].startswith("cloud:")
-    assert manager.account(account.id).access_token == "access-secret"
+    assert manager.account(account.id, organization_id).access_token == "access-secret"
     fallback = (database.data_dir / ".cloud_token_store").read_text()
     assert "access-secret" not in fallback and "refresh-secret" not in fallback
 

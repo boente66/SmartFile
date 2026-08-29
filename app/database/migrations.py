@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import hashlib
+import json
 import ntpath
 import sqlite3
 from pathlib import Path
@@ -10,7 +11,7 @@ from uuid import uuid4
 from app.errors.persistence_exceptions import DatabaseError
 
 logger = logging.getLogger(__name__)
-CURRENT_SCHEMA_VERSION = 20
+CURRENT_SCHEMA_VERSION = 21
 GIB = 1024 ** 3
 
 
@@ -1044,6 +1045,321 @@ def _upgrade_delivery_acknowledgement_receipts(connection: sqlite3.Connection) -
     )
 
 
+def _rows_as_dicts(connection: sqlite3.Connection, query: str) -> list[dict]:
+    cursor = connection.execute(query)
+    columns = [item[0] for item in cursor.description]
+    return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+
+def _upgrade_integrity_and_cloud_ownership_v21(
+    connection: sqlite3.Connection,
+) -> None:
+    """Preserva evidências documentais e torna a organização dona da conta Cloud."""
+
+    connection.execute("PRAGMA defer_foreign_keys = ON")
+    connection.executescript(
+        """
+        ALTER TABLE document_request_documents
+            RENAME TO document_request_documents_v20;
+        CREATE TABLE document_request_documents (
+            request_id INTEGER NOT NULL,
+            document_id INTEGER NOT NULL,
+            linked_by_user_id INTEGER,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (request_id, document_id),
+            FOREIGN KEY (request_id) REFERENCES document_requests(id) ON DELETE CASCADE,
+            FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE,
+            FOREIGN KEY (linked_by_user_id) REFERENCES users(id)
+        );
+        INSERT INTO document_request_documents
+            (request_id,document_id,linked_by_user_id,created_at)
+        SELECT request_id,document_id,linked_by_user_id,created_at
+        FROM document_request_documents_v20;
+        DROP TABLE document_request_documents_v20;
+
+        ALTER TABLE document_delivery_items RENAME TO document_delivery_items_v20;
+        CREATE TABLE document_delivery_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_uuid TEXT NOT NULL UNIQUE,
+            delivery_id INTEGER NOT NULL,
+            document_id INTEGER,
+            logical_name TEXT NOT NULL,
+            size INTEGER NOT NULL,
+            sha256 TEXT NOT NULL,
+            transfer_status TEXT NOT NULL DEFAULT 'PENDING'
+                CHECK (transfer_status IN ('PENDING','SENDING','RECEIVED','VERIFIED','FAILED')),
+            received_path TEXT,
+            sent_at TEXT,
+            received_at TEXT,
+            FOREIGN KEY (delivery_id) REFERENCES document_deliveries(id) ON DELETE CASCADE,
+            FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE SET NULL
+        );
+        INSERT INTO document_delivery_items (
+            id,item_uuid,delivery_id,document_id,logical_name,size,sha256,
+            transfer_status,received_path,sent_at,received_at
+        ) SELECT id,item_uuid,delivery_id,document_id,logical_name,size,sha256,
+                 transfer_status,received_path,sent_at,received_at
+          FROM document_delivery_items_v20;
+        DROP TABLE document_delivery_items_v20;
+        CREATE INDEX idx_delivery_items_delivery
+            ON document_delivery_items(delivery_id);
+
+        ALTER TABLE sync_jobs RENAME TO sync_jobs_v20;
+        CREATE TABLE sync_jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            document_id INTEGER NOT NULL,
+            operation TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'PENDING',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+        );
+        INSERT INTO sync_jobs (
+            id,document_id,operation,provider,status,attempts,last_error,
+            created_at,updated_at
+        ) SELECT id,document_id,operation,provider,status,attempts,last_error,
+                 created_at,updated_at
+          FROM sync_jobs_v20;
+        DROP TABLE sync_jobs_v20;
+        CREATE INDEX idx_sync_jobs_status ON sync_jobs(status, created_at);
+        CREATE INDEX idx_sync_jobs_document ON sync_jobs(document_id);
+        """
+    )
+
+    accounts = {
+        int(row["id"]): row
+        for row in _rows_as_dicts(
+            connection, "SELECT * FROM cloud_accounts ORDER BY id"
+        )
+    }
+    settings_rows = _rows_as_dicts(
+        connection, "SELECT * FROM cloud_settings ORDER BY organization_id"
+    )
+    mapping_rows = _rows_as_dicts(
+        connection,
+        "SELECT * FROM cloud_folder_mappings ORDER BY organization_id,folder_id",
+    )
+
+    connection.executescript(
+        """
+        ALTER TABLE cloud_settings RENAME TO cloud_settings_v20;
+        ALTER TABLE cloud_folder_mappings RENAME TO cloud_folder_mappings_v20;
+        ALTER TABLE cloud_accounts RENAME TO cloud_accounts_v20;
+
+        CREATE TABLE cloud_accounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL,
+            provider TEXT NOT NULL CHECK (provider IN ('ONEDRIVE','GOOGLE_DRIVE')),
+            email TEXT,
+            display_name TEXT,
+            access_token TEXT NOT NULL,
+            refresh_token TEXT,
+            expires_at TEXT,
+            status TEXT NOT NULL DEFAULT 'ACTIVE',
+            created_at TEXT NOT NULL,
+            token_ref TEXT UNIQUE,
+            FOREIGN KEY (organization_id) REFERENCES organizations(id),
+            UNIQUE (id, organization_id)
+        );
+        CREATE TABLE cloud_settings (
+            organization_id INTEGER PRIMARY KEY,
+            cloud_account_id INTEGER,
+            sync_mode TEXT NOT NULL DEFAULT 'LOCAL',
+            remote_root_id TEXT,
+            last_sync TEXT,
+            delta_token TEXT,
+            paused INTEGER NOT NULL DEFAULT 0 CHECK (paused IN (0,1)),
+            FOREIGN KEY (organization_id) REFERENCES organizations(id),
+            FOREIGN KEY (cloud_account_id, organization_id)
+                REFERENCES cloud_accounts(id, organization_id)
+        );
+        CREATE TABLE cloud_folder_mappings (
+            organization_id INTEGER NOT NULL,
+            folder_id INTEGER NOT NULL,
+            provider TEXT NOT NULL CHECK (provider IN ('ONEDRIVE','GOOGLE_DRIVE')),
+            remote_id TEXT NOT NULL,
+            remote_parent_id TEXT,
+            remote_name TEXT NOT NULL,
+            synced_at TEXT NOT NULL,
+            cloud_account_id INTEGER,
+            management_mode TEXT NOT NULL DEFAULT 'MANAGED'
+                CHECK (management_mode IN ('MANAGED','ADOPTED')),
+            PRIMARY KEY (organization_id, folder_id, provider),
+            FOREIGN KEY (organization_id) REFERENCES organizations(id),
+            FOREIGN KEY (folder_id) REFERENCES folders(id),
+            FOREIGN KEY (cloud_account_id, organization_id)
+                REFERENCES cloud_accounts(id, organization_id)
+        );
+        """
+    )
+
+    next_account_id = max(accounts, default=0) + 1
+    ownership: dict[tuple[int, int], int] = {}
+    copied_token_refs: set[str] = set()
+    original_settings_account: dict[int, int | None] = {}
+    shared_accounts: set[int] = set()
+
+    for setting in settings_rows:
+        organization_id = int(setting["organization_id"])
+        old_account_id = setting.get("cloud_account_id")
+        original_settings_account[organization_id] = (
+            int(old_account_id) if old_account_id is not None else None
+        )
+        account = accounts.get(int(old_account_id)) if old_account_id else None
+        valid = bool(
+            account
+            and setting.get("sync_mode") == account.get("provider")
+            and setting.get("sync_mode") in {"ONEDRIVE", "GOOGLE_DRIVE"}
+        )
+        new_account_id = None
+        if valid and account is not None:
+            previous_owners = [key for key in ownership if key[1] == int(old_account_id)]
+            token_ref = account.get("token_ref")
+            can_keep_secret = not previous_owners and (
+                not token_ref or token_ref not in copied_token_refs
+            )
+            if can_keep_secret:
+                new_account_id = int(old_account_id)
+                status = account.get("status") or "ACTIVE"
+                access_token = account.get("access_token") or "TOKEN_STORE"
+                refresh_token = account.get("refresh_token")
+                preserved_ref = token_ref
+            else:
+                shared_accounts.add(int(old_account_id))
+                new_account_id = next_account_id
+                next_account_id += 1
+                status = "REAUTH_REQUIRED"
+                access_token = "TOKEN_STORE"
+                refresh_token = "TOKEN_STORE"
+                preserved_ref = None
+            connection.execute(
+                """
+                INSERT INTO cloud_accounts (
+                    id,organization_id,provider,email,display_name,access_token,
+                    refresh_token,expires_at,status,created_at,token_ref
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    new_account_id, organization_id, account["provider"],
+                    account.get("email"), account.get("display_name"),
+                    access_token, refresh_token, account.get("expires_at"),
+                    status, account.get("created_at") or "", preserved_ref,
+                ),
+            )
+            ownership[(organization_id, int(old_account_id))] = new_account_id
+            if preserved_ref:
+                copied_token_refs.add(str(preserved_ref))
+
+        connection.execute(
+            """
+            INSERT INTO cloud_settings (
+                organization_id,cloud_account_id,sync_mode,remote_root_id,
+                last_sync,delta_token,paused
+            ) VALUES (?,?,?,?,?,?,?)
+            """,
+            (
+                organization_id,
+                new_account_id,
+                setting.get("sync_mode") if new_account_id else "LOCAL",
+                setting.get("remote_root_id") if new_account_id else None,
+                setting.get("last_sync") if new_account_id else None,
+                setting.get("delta_token") if new_account_id else None,
+                int(setting.get("paused") or 0) if new_account_id else 0,
+            ),
+        )
+
+    connection.execute(
+        """
+        INSERT OR IGNORE INTO cloud_settings (organization_id,sync_mode,paused)
+        SELECT id,'LOCAL',0 FROM organizations
+        """
+    )
+
+    for mapping in mapping_rows:
+        organization_id = int(mapping["organization_id"])
+        old_account_id = mapping.get("cloud_account_id")
+        if old_account_id is None:
+            old_account_id = original_settings_account.get(organization_id)
+        new_account_id = ownership.get(
+            (organization_id, int(old_account_id))
+        ) if old_account_id is not None else None
+        account = accounts.get(int(old_account_id)) if old_account_id else None
+        folder = connection.execute(
+            "SELECT 1 FROM folders WHERE id=? AND organization_id=?",
+            (mapping["folder_id"], organization_id),
+        ).fetchone()
+        unlinked_legacy_mapping = (
+            old_account_id is None
+            and mapping.get("provider") in {"ONEDRIVE", "GOOGLE_DRIVE"}
+        )
+        if folder is None or (
+            not unlinked_legacy_mapping
+            and (
+                new_account_id is None
+                or account is None
+                or mapping.get("provider") != account.get("provider")
+            )
+        ):
+            continue
+        connection.execute(
+            """
+            INSERT INTO cloud_folder_mappings (
+                organization_id,folder_id,provider,remote_id,remote_parent_id,
+                remote_name,synced_at,cloud_account_id,management_mode
+            ) VALUES (?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                organization_id, mapping["folder_id"], mapping["provider"],
+                mapping["remote_id"], mapping.get("remote_parent_id"),
+                mapping["remote_name"], mapping["synced_at"], new_account_id,
+                mapping.get("management_mode") or "MANAGED",
+            ),
+        )
+
+    all_token_refs = {
+        str(account["token_ref"])
+        for account in accounts.values() if account.get("token_ref")
+    }
+    orphan_token_refs = sorted(all_token_refs - copied_token_refs)
+    if orphan_token_refs:
+        connection.execute(
+            """
+            INSERT INTO app_settings(key,value) VALUES ('cloud.v21_orphan_token_refs',?)
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value
+            """,
+            (json.dumps(orphan_token_refs),),
+        )
+
+    connection.executescript(
+        """
+        DROP TABLE cloud_folder_mappings_v20;
+        DROP TABLE cloud_settings_v20;
+        DROP TABLE cloud_accounts_v20;
+        CREATE INDEX idx_cloud_accounts_provider
+            ON cloud_accounts(provider,status);
+        CREATE INDEX idx_cloud_accounts_organization
+            ON cloud_accounts(organization_id,provider,status);
+        CREATE INDEX idx_cloud_folder_remote
+            ON cloud_folder_mappings(organization_id,provider,remote_id);
+        CREATE INDEX idx_cloud_folder_account
+            ON cloud_folder_mappings(organization_id,cloud_account_id,provider);
+        CREATE UNIQUE INDEX idx_cloud_folder_account_remote
+            ON cloud_folder_mappings(
+                organization_id,cloud_account_id,provider,remote_id
+            ) WHERE cloud_account_id IS NOT NULL;
+        """
+    )
+    if shared_accounts:
+        logger.warning(
+            "Migration 21 isolou contas Cloud compartilhadas; reconexão exigida "
+            "para organizações secundárias: %s",
+            sorted(shared_accounts),
+        )
+
+
 def migrate(connection: sqlite3.Connection, schema_path: Path) -> int:
     """Cria o schema mínimo ou atualiza bancos legados sem perder documentos."""
     try:
@@ -1078,6 +1394,7 @@ def migrate(connection: sqlite3.Connection, schema_path: Path) -> int:
             _upgrade_transport_targets(connection)
             _upgrade_document_delivery(connection)
             _upgrade_delivery_acknowledgement_receipts(connection)
+            _upgrade_integrity_and_cloud_ownership_v21(connection)
             connection.execute(
                 "UPDATE documents SET source_path = path WHERE source_path IS NULL"
             )

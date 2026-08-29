@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS app_settings (
 
 CREATE TABLE IF NOT EXISTS cloud_accounts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    organization_id INTEGER NOT NULL,
     provider TEXT NOT NULL CHECK (provider IN ('ONEDRIVE', 'GOOGLE_DRIVE')),
     email TEXT,
     display_name TEXT,
@@ -46,7 +47,9 @@ CREATE TABLE IF NOT EXISTS cloud_accounts (
     expires_at TEXT,
     status TEXT NOT NULL DEFAULT 'ACTIVE',
     created_at TEXT NOT NULL,
-    token_ref TEXT
+    token_ref TEXT UNIQUE,
+    FOREIGN KEY (organization_id) REFERENCES organizations(id),
+    UNIQUE (id, organization_id)
 );
 
 CREATE TABLE IF NOT EXISTS users (
@@ -232,7 +235,7 @@ CREATE TABLE IF NOT EXISTS document_request_documents (
     created_at TEXT NOT NULL,
     PRIMARY KEY (request_id, document_id),
     FOREIGN KEY (request_id) REFERENCES document_requests(id) ON DELETE CASCADE,
-    FOREIGN KEY (document_id) REFERENCES documents(id),
+    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE,
     FOREIGN KEY (linked_by_user_id) REFERENCES users(id)
 );
 
@@ -282,7 +285,7 @@ CREATE TABLE IF NOT EXISTS document_delivery_items (
     sent_at TEXT,
     received_at TEXT,
     FOREIGN KEY (delivery_id) REFERENCES document_deliveries(id) ON DELETE CASCADE,
-    FOREIGN KEY (document_id) REFERENCES documents(id)
+    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS delivery_history (
@@ -342,7 +345,8 @@ CREATE TABLE IF NOT EXISTS cloud_settings (
     delta_token TEXT,
     paused INTEGER NOT NULL DEFAULT 0 CHECK (paused IN (0, 1)),
     FOREIGN KEY (organization_id) REFERENCES organizations(id),
-    FOREIGN KEY (cloud_account_id) REFERENCES cloud_accounts(id)
+    FOREIGN KEY (cloud_account_id, organization_id)
+        REFERENCES cloud_accounts(id, organization_id)
 );
 
 CREATE TABLE IF NOT EXISTS cloud_folder_mappings (
@@ -359,7 +363,8 @@ CREATE TABLE IF NOT EXISTS cloud_folder_mappings (
     PRIMARY KEY (organization_id, folder_id, provider),
     FOREIGN KEY (organization_id) REFERENCES organizations(id),
     FOREIGN KEY (folder_id) REFERENCES folders(id),
-    FOREIGN KEY (cloud_account_id) REFERENCES cloud_accounts(id)
+    FOREIGN KEY (cloud_account_id, organization_id)
+        REFERENCES cloud_accounts(id, organization_id)
 );
 
 INSERT INTO organizations (
@@ -464,7 +469,7 @@ CREATE TABLE IF NOT EXISTS sync_jobs (
     last_error TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    FOREIGN KEY (document_id) REFERENCES documents(id)
+    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
 );
 
 INSERT OR IGNORE INTO cloud_settings (organization_id, sync_mode, paused)
@@ -488,6 +493,8 @@ CREATE INDEX IF NOT EXISTS idx_documents_storage_path ON documents(storage_path)
 CREATE INDEX IF NOT EXISTS idx_documents_organization ON documents(organization_id);
 CREATE INDEX IF NOT EXISTS idx_documents_folder ON documents(folder_id);
 CREATE INDEX IF NOT EXISTS idx_documents_org_checksum ON documents(organization_id, checksum);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_id_organization
+    ON documents(id, organization_id);
 CREATE INDEX IF NOT EXISTS idx_documents_cloud_status ON documents(cloud_status);
 CREATE INDEX IF NOT EXISTS idx_history_document ON history(document_id);
 CREATE INDEX IF NOT EXISTS idx_organizations_status ON organizations(status);
@@ -499,6 +506,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_folders_sibling_name
 CREATE INDEX IF NOT EXISTS idx_sync_jobs_status ON sync_jobs(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_sync_jobs_document ON sync_jobs(document_id);
 CREATE INDEX IF NOT EXISTS idx_cloud_accounts_provider ON cloud_accounts(provider, status);
+CREATE INDEX IF NOT EXISTS idx_cloud_accounts_organization
+    ON cloud_accounts(organization_id, provider, status);
 CREATE INDEX IF NOT EXISTS idx_cloud_folder_remote
     ON cloud_folder_mappings(organization_id, provider, remote_id);
 CREATE INDEX IF NOT EXISTS idx_cloud_folder_account

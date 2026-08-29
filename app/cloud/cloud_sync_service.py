@@ -45,6 +45,9 @@ class CloudSyncService:
         self.organizations = OrganizationRepository(database=database)
 
     def enqueue_upload(self, document_id: int, organization_id: int) -> SyncJob | None:
+        document = self.documents.find_by_id(document_id, organization_id)
+        if document is None:
+            raise ValueError("O documento não pertence à organização informada.")
         settings = self.manager.settings(organization_id)
         if settings.sync_mode == "LOCAL" or settings.paused or settings.cloud_account_id is None:
             self.documents.update_cloud_state(document_id, CloudSyncState.LOCAL_ONLY)
@@ -74,7 +77,7 @@ class CloudSyncService:
             return self.enqueue_upload(document_id, organization_id)
         return self.queue.enqueue(document_id, CloudOperation.RENAME, settings.sync_mode)
 
-    def process_next(self, organization_id: int | None = None) -> SyncJob | None:
+    def process_next(self, organization_id: int) -> SyncJob | None:
         job = self.queue.next_pending(organization_id)
         if job is None:
             return None
@@ -83,7 +86,7 @@ class CloudSyncService:
             job.id, job.document_id, job.operation, job.provider,
         )
         self.queue.mark_running(job.id)
-        document = self.documents.find_by_id(job.document_id)
+        document = self.documents.find_by_id(job.document_id, organization_id)
         if document is None:
             message = "Documento local não encontrado para sincronização."
             self.queue.retry(job.id, message)
@@ -93,6 +96,14 @@ class CloudSyncService:
             )
             raise ValueError(message)
         try:
+            settings = self.manager.settings(organization_id)
+            if (
+                document.organization_id != organization_id
+                or settings.sync_mode != job.provider
+            ):
+                raise ValueError(
+                    "O job de sincronização não pertence à conta ativa desta organização."
+                )
             provider = self.manager.provider_for(document.organization_id)
             if provider is None:
                 raise CloudAuthenticationError(

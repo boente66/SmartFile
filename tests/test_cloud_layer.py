@@ -114,9 +114,18 @@ class FakeProvider(CloudProvider):
         self.access_token = ""
 
 
-def _account(manager: CloudManager, provider="ONEDRIVE", expired=False):
+def _account(
+    manager: CloudManager,
+    provider="ONEDRIVE",
+    expired=False,
+    organization_id=None,
+):
+    if organization_id is None:
+        organization_id = manager.database.fetch_one(
+            "SELECT id FROM organizations WHERE is_default=1"
+        )["id"]
     expires = datetime.now(timezone.utc) - timedelta(minutes=1) if expired else datetime.now(timezone.utc) + timedelta(hours=1)
-    return manager._save_account(provider, CloudAuthResult(
+    return manager._save_account(organization_id, provider, CloudAuthResult(
         access_token="secret-access-token", refresh_token="secret-refresh-token",
         expires_at=expires, email="teste@example.com", display_name="Conta Teste",
     ))
@@ -132,7 +141,7 @@ def test_tokens_are_encrypted_and_active_account_is_per_organization(tmp_path: P
     raw = database.fetch_one("SELECT access_token, refresh_token FROM cloud_accounts WHERE id = ?", (account.id,))
     assert "secret-access-token" not in raw["access_token"]
     assert "secret-refresh-token" not in raw["refresh_token"]
-    assert manager.account(account.id).access_token == "secret-access-token"
+    assert manager.account(account.id, organization["id"]).access_token == "secret-access-token"
     assert manager.settings(organization["id"]).sync_mode == "ONEDRIVE"
     key_path = database.data_dir / ".cloud_tokens.key"
     assert key_path.is_file()
@@ -219,14 +228,14 @@ def test_offline_import_stays_local_queue_retries_and_reconnects(tmp_path: Path)
     fake = FakeProvider(offline=True)
     manager.provider_for = lambda _organization_id: fake
     with pytest.raises(CloudOfflineError):
-        documents.cloud_sync_service.process_next()
+        documents.cloud_sync_service.process_next(documents.active_organization_id)
     retry_document = documents.get_document(document.id)
     assert retry_document.cloud_status == CloudSyncState.SYNC_ERROR
     assert CloudJobQueue(documents.database).next_pending().status == "RETRY"
     assert stored.read_bytes() == b"conteudo local"
 
     fake.offline = False
-    documents.cloud_sync_service.process_next()
+    documents.cloud_sync_service.process_next(documents.active_organization_id)
     synced = documents.get_document(document.id)
     assert synced.cloud_status == CloudSyncState.SYNCED
     assert synced.remote_id == "remote-1"
@@ -238,7 +247,9 @@ def test_queue_persists_and_settings_change_with_organization(tmp_path: Path):
     documents = DocumentService(db_path=str(tmp_path / "smartfile.db"))
     first = documents.import_document(str(source))
     company = documents.organization_service.create("Empresa")
-    account = _account(documents.cloud_manager, "GOOGLE_DRIVE")
+    account = _account(
+        documents.cloud_manager, "GOOGLE_DRIVE", organization_id=company.id
+    )
     documents.cloud_manager.configure(company.id, "GOOGLE_DRIVE", account.id)
     documents.set_active_organization(company.id)
     second = documents.import_document(str(source))
@@ -287,7 +298,9 @@ def test_queue_processing_is_isolated_by_organization(tmp_path: Path):
     first = documents.import_document(str(source))
 
     second_org = documents.organization_service.create("Empresa isolada")
-    second_account = _account(documents.cloud_manager, "GOOGLE_DRIVE")
+    second_account = _account(
+        documents.cloud_manager, "GOOGLE_DRIVE", organization_id=second_org.id
+    )
     documents.cloud_manager.configure(second_org.id, "GOOGLE_DRIVE", second_account.id)
     documents.set_active_organization(second_org.id)
     second = documents.import_document(str(source))
@@ -701,7 +714,7 @@ def test_sync_worker_requests_reauthentication_for_expired_authorization(
     worker.run()
 
     refreshed = documents.get_document(document.id)
-    linked_account = documents.cloud_manager.account(account.id)
+    linked_account = documents.cloud_manager.account(account.id, organization_id)
     assert failed == []
     assert reauthentication == [(
         "ONEDRIVE",

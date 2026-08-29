@@ -321,7 +321,7 @@ class DocumentController:
             settings = self.service.cloud_manager.settings(self.service.active_organization_id)
             self.view.set_cloud_settings(settings, None, CloudOAuthState.AUTHENTICATING)
             organization_id = self.service.active_organization_id
-            service=CloudPythonAuthService(self.service.database); worker=CloudAuthWorker(service,provider); self._cloud_auth_worker=worker
+            service=CloudPythonAuthService(self.service.database); worker=CloudAuthWorker(service,provider,organization_id); self._cloud_auth_worker=worker
             worker.progress.connect(lambda _value,message:self.view.set_status(message))
             worker.succeeded.connect(lambda result,p=provider,w=worker,o=organization_id:self._on_cloud_auth_succeeded(p,result,w,o))
             worker.failed.connect(lambda message,p=provider,w=worker,o=organization_id:self._on_cloud_auth_failed(p,message,w,o))
@@ -336,7 +336,9 @@ class DocumentController:
             self.service.cloud_manager.save_authentication_result(organization_id,provider,result)
             if self.service.active_organization_id == organization_id:
                 self._refresh_cloud()
-            self.view.set_status(f"{CloudOAuthConfigService.display_name(provider)} conectado com sucesso.")
+                self.view.set_status(
+                    f"{CloudOAuthConfigService.display_name(provider)} conectado com sucesso."
+                )
             if self._retry_sync_after_reauthentication == (
                 provider, organization_id
             ):
@@ -412,11 +414,22 @@ class DocumentController:
         )
         self._cloud_worker = worker
         self._active_cloud_workers[worker_key] = worker
-        worker.progress.connect(lambda value, message: self.main_view.progress.update(value, message))
-        worker.succeeded.connect(self._on_cloud_sync_succeeded)
-        worker.failed.connect(self._on_cloud_sync_failed)
+        worker.progress.connect(
+            lambda value, message, w=worker: self._on_cloud_sync_progress(
+                w, value, message
+            )
+        )
+        worker.succeeded.connect(
+            lambda result, w=worker: self._on_cloud_sync_succeeded(w, result)
+        )
+        worker.failed.connect(
+            lambda message, w=worker: self._on_cloud_sync_failed(w, message)
+        )
         worker.reauthentication_required.connect(
-            self._on_cloud_sync_reauthentication_required
+            lambda provider, message, w=worker:
+                self._on_cloud_sync_reauthentication_required(
+                    w, provider, message
+                )
         )
         worker.finished.connect(lambda worker=worker: self._cleanup_cloud_worker(worker))
         worker.finished.connect(worker.deleteLater)
@@ -482,7 +495,9 @@ class DocumentController:
                 raise ValueError(
                     "Conecte uma conta OneDrive nesta organização antes de mapear."
                 )
-            account = self.service.cloud_manager.account(settings.cloud_account_id)
+            account = self.service.cloud_manager.account(
+                settings.cloud_account_id, organization_id
+            )
             provider = self.service.cloud_manager.provider_for(organization_id)
             if provider is None:
                 raise ValueError("A conta OneDrive não está disponível.")
@@ -586,17 +601,25 @@ class DocumentController:
         except Exception as exc:
             QMessageBox.warning(self.view, "Remover mapeamento", str(exc))
 
-    def _on_cloud_sync_succeeded(self, result):
+    def _on_cloud_sync_progress(self, worker, value: int, message: str) -> None:
+        if worker.organization_id == self.service.active_organization_id:
+            self.main_view.progress.update(value, message)
+
+    def _on_cloud_sync_succeeded(self, worker, result):
         logger.info(
             "cloud.sync.ui.succeeded jobs=%s changes=%s",
             result["jobs"], result["changes"],
         )
+        if worker.organization_id != self.service.active_organization_id:
+            return
         self.main_view.progress.finish("Sincronização concluída")
         self._refresh_cloud(); self._refresh_documents()
         self.view.set_status(f"Sincronização concluída: {result['jobs']} job(s)")
 
-    def _on_cloud_sync_failed(self, message: str):
+    def _on_cloud_sync_failed(self, worker, message: str):
         logger.error("cloud.sync.ui.failed message=%s", message)
+        if worker.organization_id != self.service.active_organization_id:
+            return
         self.main_view.progress.finish("Falha na sincronização")
         self._refresh_cloud()
         self._refresh_documents()
@@ -604,12 +627,14 @@ class DocumentController:
         QMessageBox.warning(self.view, "Sincronização", message)
 
     def _on_cloud_sync_reauthentication_required(
-        self, provider: str, message: str,
+        self, worker, provider: str, message: str,
     ):
         logger.warning(
             "cloud.sync.ui.reauthentication_required provider=%s",
             provider,
         )
+        if worker.organization_id != self.service.active_organization_id:
+            return
         self.main_view.progress.finish("Reconexão necessária")
         self._refresh_cloud(provider)
         self._refresh_documents()
@@ -843,7 +868,9 @@ class DocumentController:
         account = None
         if settings.cloud_account_id:
             try:
-                account = self.service.cloud_manager.account(settings.cloud_account_id)
+                account = self.service.cloud_manager.account(
+                    settings.cloud_account_id, organization_id
+                )
             except Exception:
                 account = None
         provider = selected_provider or (account.provider if account else None)

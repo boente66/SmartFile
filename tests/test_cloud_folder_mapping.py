@@ -94,11 +94,11 @@ def _configured(tmp_path: Path):
     organization_id = database.fetch_one("SELECT id FROM organizations LIMIT 1")["id"]
     account_id = database.execute_query(
         """INSERT INTO cloud_accounts(
-               provider,email,display_name,access_token,refresh_token,
+               organization_id,provider,email,display_name,access_token,refresh_token,
                expires_at,status,created_at,token_ref
-           ) VALUES ('ONEDRIVE','test@example.com','Test','TOKEN_STORE',
+           ) VALUES (?,'ONEDRIVE','test@example.com','Test','TOKEN_STORE',
                      'TOKEN_STORE',NULL,'ACTIVE',?,NULL)""",
-        (datetime.now(timezone.utc).isoformat(),),
+        (organization_id, datetime.now(timezone.utc).isoformat()),
     ).lastrowid
     database.execute_query(
         """UPDATE cloud_settings SET cloud_account_id=?,sync_mode='ONEDRIVE',
@@ -286,11 +286,11 @@ def test_account_change_invalidates_mappings_and_remote_ids(tmp_path: Path):
     )
     new_account_id = database.execute_query(
         """INSERT INTO cloud_accounts(
-               provider,email,display_name,access_token,refresh_token,
+               organization_id,provider,email,display_name,access_token,refresh_token,
                expires_at,status,created_at,token_ref
-           ) VALUES ('ONEDRIVE','other@example.com','Other','TOKEN_STORE',
+           ) VALUES (?,'ONEDRIVE','other@example.com','Other','TOKEN_STORE',
                      'TOKEN_STORE',NULL,'ACTIVE',?,NULL)""",
-        (datetime.now(timezone.utc).isoformat(),),
+        (organization_id, datetime.now(timezone.utc).isoformat()),
     ).lastrowid
     manager.configure(organization_id, "ONEDRIVE", new_account_id)
     assert service.current(organization_id, local.id) is None
@@ -299,7 +299,7 @@ def test_account_change_invalidates_mappings_and_remote_ids(tmp_path: Path):
 
 def test_schema_19_persists_adoption_identity(tmp_path: Path):
     database = Database(str(tmp_path / "smartfile.db"))
-    assert database.fetch_one("PRAGMA user_version")[0] == CURRENT_SCHEMA_VERSION == 20
+    assert database.fetch_one("PRAGMA user_version")[0] == CURRENT_SCHEMA_VERSION == 21
     columns = {
         row["name"] for row in database.fetch_all("PRAGMA table_info(cloud_folder_mappings)")
     }
@@ -339,7 +339,7 @@ def test_schema_18_is_migrated_incrementally_without_losing_mapping(tmp_path: Pa
 
     migrated = Database(str(path))
     row = migrated.fetch_one("SELECT * FROM cloud_folder_mappings")
-    assert migrated.fetch_one("PRAGMA user_version")[0] == 20
+    assert migrated.fetch_one("PRAGMA user_version")[0] == 21
     assert row["remote_id"] == "legacy-id"
     assert row["management_mode"] == "MANAGED"
     assert row["cloud_account_id"] is None

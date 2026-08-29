@@ -326,7 +326,7 @@ class AuthService:
         now = self._now()
         previous_avatar = user.avatar_path
         token_refs: list[str] = []
-        cache_providers: set[str] = set()
+        cache_scopes: set[tuple[str, int]] = set()
         with self.database.transaction() as connection:
             self.audit.record(
                 "ACCOUNT_DELETED", user_id=user.id,
@@ -359,8 +359,13 @@ class AuthService:
                             if account:
                                 if account["token_ref"]:
                                     token_refs.append(account["token_ref"])
-                                cache_providers.add(account["provider"])
-                                connection.execute("DELETE FROM cloud_accounts WHERE id=?", (account_id,))
+                                cache_scopes.add(
+                                    (account["provider"], membership.organization_id)
+                                )
+                                connection.execute(
+                                    "DELETE FROM cloud_accounts WHERE id=? AND organization_id=?",
+                                    (account_id, membership.organization_id),
+                                )
                 membership.status = "REMOVED"
                 membership.deactivated_at = membership.updated_at = now
                 self.members.update(membership)
@@ -390,12 +395,8 @@ class AuthService:
             config = CloudOAuthConfigService(self.database)
             for reference in token_refs:
                 config.token_store.delete(reference)
-            for provider in cache_providers:
-                remaining = self.database.fetch_one(
-                    "SELECT COUNT(*) total FROM cloud_accounts WHERE provider=?", (provider,)
-                )["total"]
-                if remaining == 0:
-                    config.delete_cache(provider)
+            for provider, organization_id in cache_scopes:
+                config.delete_cache(provider, organization_id)
             if previous_avatar:
                 avatar = Path(previous_avatar).resolve()
                 if avatar.parent == self.avatars.directory.resolve():

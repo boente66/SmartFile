@@ -7,7 +7,7 @@ import pytest
 from app.database.database import Database
 from app.errors.storage_exceptions import InsufficientLocalDiskSpaceError, StorageQuotaError, StorageQuotaExceededError
 from app.errors.storage_exceptions import CloudStorageLimitError
-from app.cloud.cloud_models import CloudOperation, RemoteMetadata
+from app.cloud.cloud_models import CloudAuthResult, CloudOperation, RemoteMetadata
 from app.services.document_service import DocumentService
 from app.services.storage_quota_service import GB, StorageQuotaService
 
@@ -222,12 +222,20 @@ def test_remote_quota_failure_keeps_local_document_and_safe_message(tmp_path: Pa
     source = tmp_path / "local.pdf"
     source.write_bytes(b"local-preserved")
     service = DocumentService(db_path=str(tmp_path / "smartfile.db"))
+    account = service.cloud_manager.save_authentication_result(
+        service.active_organization_id,
+        "ONEDRIVE",
+        CloudAuthResult(access_token="quota-test-token"),
+    )
+    service.cloud_manager.configure(
+        service.active_organization_id, "ONEDRIVE", account.id
+    )
     document = service.import_document(str(source), sync_cloud=False)
     service.cloud_sync_service.queue.enqueue(document.id, CloudOperation.UPLOAD, "ONEDRIVE")
     service.cloud_manager.provider_for = lambda _organization_id: _FullProvider()
 
     with pytest.raises(CloudStorageLimitError):
-        service.cloud_sync_service.process_next()
+        service.cloud_sync_service.process_next(service.active_organization_id)
 
     refreshed = service.get_document(document.id)
     job = service.cloud_sync_service.queue.get(1)

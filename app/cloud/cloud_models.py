@@ -83,6 +83,7 @@ class CloudFolderManagementMode(StrEnum):
 @dataclass(slots=True)
 class CloudAccount:
     id: int | None = None
+    organization_id: int = 0
     provider: str = ""
     email: str | None = None
     display_name: str | None = None

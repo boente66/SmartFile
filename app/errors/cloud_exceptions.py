@@ -30,5 +30,9 @@ class CloudPermissionError(CloudOAuthError):
     pass
 
 
+class CloudAccountOwnershipError(CloudPermissionError):
+    """A conta operacional não pertence à organização solicitada."""
+
+
 class CloudTokenStoreError(CloudOAuthError):
     pass

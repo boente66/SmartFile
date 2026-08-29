@@ -37,6 +37,21 @@ Controllers, Services e Repositories foram preservados.
 - o remetente somente conclui `ACKNOWLEDGED` após verificar o PDF e seu checksum;
 - o schema 20 adiciona persistência durável e retry dos comprovantes.
 
+## Consolidação corretiva de integridade e isolamento Cloud
+
+- O schema 21 corrige as políticas de exclusão documental: jobs e vínculos
+  operacionais são removidos, enquanto solicitações, entregas, comprovantes,
+  snapshots e histórico permanecem preservados.
+- Itens históricos de entrega passam a manter nome, tamanho e SHA-256, com
+  `document_id` desligado automaticamente após a exclusão permanente.
+- A remoção física usa quarentena e transação; uma falha restaura o arquivo e
+  mantém catálogo e cota consistentes.
+- Contas, tokens, caches OAuth, pastas remotas, cotas e jobs de nuvem agora são
+  estritamente vinculados à organização proprietária.
+- Instalações antigas que compartilhavam uma conta Cloud entre organizações
+  mantêm o segredo somente na primeira organização; as demais exigem nova
+  autenticação, sem copiar credenciais.
+
 ## Destaques
 
 - cabeçalho unificado para organização, perfil, nuvem e armazenamento;
