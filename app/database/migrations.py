@@ -11,7 +11,7 @@ from uuid import uuid4
 from app.errors.persistence_exceptions import DatabaseError
 
 logger = logging.getLogger(__name__)
-CURRENT_SCHEMA_VERSION = 21
+CURRENT_SCHEMA_VERSION = 22
 GIB = 1024 ** 3
 
 
@@ -1360,6 +1360,159 @@ def _upgrade_integrity_and_cloud_ownership_v21(
         )
 
 
+def _upgrade_multicloud_workspace_v22(connection: sqlite3.Connection) -> None:
+    """Catálogo remoto somente leitura e planos autorizáveis, sem tocar no GED."""
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS remote_mounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL,
+            cloud_account_id INTEGER NOT NULL,
+            provider TEXT NOT NULL CHECK(provider IN ('ONEDRIVE','GOOGLE_DRIVE')),
+            remote_root_id TEXT NOT NULL,
+            remote_root_name TEXT NOT NULL,
+            logical_mount_name TEXT NOT NULL,
+            collection_key TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK(status IN
+                ('ACTIVE','SCANNING','STALE','DIVERGED','SYNCING','ERROR','DISCONNECTED')),
+            created_at TEXT NOT NULL,
+            last_scan_at TEXT,
+            last_error TEXT,
+            UNIQUE(organization_id,cloud_account_id,provider,remote_root_id),
+            UNIQUE(id,organization_id),
+            FOREIGN KEY(organization_id) REFERENCES organizations(id),
+            FOREIGN KEY(cloud_account_id,organization_id)
+                REFERENCES cloud_accounts(id,organization_id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS remote_catalog_nodes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL,
+            mount_id INTEGER NOT NULL,
+            cloud_account_id INTEGER NOT NULL,
+            provider TEXT NOT NULL,
+            remote_id TEXT NOT NULL,
+            remote_parent_id TEXT,
+            logical_path TEXT NOT NULL,
+            node_type TEXT NOT NULL CHECK(node_type IN ('FILE','FOLDER')),
+            name TEXT NOT NULL,
+            mime_type TEXT,
+            size INTEGER NOT NULL DEFAULT 0 CHECK(size>=0),
+            modified_at TEXT,
+            provider_hash TEXT,
+            version TEXT,
+            status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK(status IN ('ACTIVE','MISSING','ERROR')),
+            discovered_at TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL,
+            UNIQUE(mount_id,remote_id),
+            UNIQUE(id,organization_id),
+            FOREIGN KEY(mount_id,organization_id)
+                REFERENCES remote_mounts(id,organization_id) ON DELETE CASCADE,
+            FOREIGN KEY(cloud_account_id,organization_id)
+                REFERENCES cloud_accounts(id,organization_id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS logical_cloud_objects (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL,
+            collection_key TEXT NOT NULL,
+            logical_path TEXT NOT NULL,
+            logical_name TEXT NOT NULL,
+            object_type TEXT NOT NULL CHECK(object_type IN ('FILE','FOLDER')),
+            identity_state TEXT NOT NULL CHECK(identity_state IN
+                ('CANDIDATE_MATCH','VERIFIED_MATCH','DIVERGED','UNRELATED')),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(organization_id,collection_key,logical_path),
+            UNIQUE(id,organization_id),
+            FOREIGN KEY(organization_id) REFERENCES organizations(id)
+        );
+        CREATE TABLE IF NOT EXISTS cloud_replicas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL,
+            logical_object_id INTEGER NOT NULL,
+            mount_id INTEGER NOT NULL,
+            catalog_node_id INTEGER NOT NULL,
+            cloud_account_id INTEGER NOT NULL,
+            provider TEXT NOT NULL,
+            remote_id TEXT NOT NULL,
+            provider_hash TEXT,
+            verified_sha256 TEXT,
+            replica_status TEXT NOT NULL DEFAULT 'PRESENT' CHECK(replica_status IN
+                ('PRESENT','MISSING','DIVERGED','TRANSFERRING','ERROR')),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(organization_id,cloud_account_id,provider,remote_id),
+            FOREIGN KEY(logical_object_id,organization_id)
+                REFERENCES logical_cloud_objects(id,organization_id) ON DELETE CASCADE,
+            FOREIGN KEY(mount_id,organization_id)
+                REFERENCES remote_mounts(id,organization_id) ON DELETE CASCADE,
+            FOREIGN KEY(catalog_node_id,organization_id)
+                REFERENCES remote_catalog_nodes(id,organization_id) ON DELETE CASCADE,
+            FOREIGN KEY(cloud_account_id,organization_id)
+                REFERENCES cloud_accounts(id,organization_id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS multicloud_plans (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL,
+            plan_uuid TEXT NOT NULL UNIQUE,
+            status TEXT NOT NULL DEFAULT 'DRAFT' CHECK(status IN
+                ('DRAFT','AUTHORIZED','RUNNING','PARTIAL','COMPLETED','CANCELLED','INVALIDATED','ERROR')),
+            created_at TEXT NOT NULL,
+            authorized_at TEXT,
+            authorized_by_user_id INTEGER,
+            completed_at TEXT,
+            last_error TEXT,
+            UNIQUE(id,organization_id),
+            FOREIGN KEY(organization_id) REFERENCES organizations(id),
+            FOREIGN KEY(authorized_by_user_id) REFERENCES users(id)
+        );
+        CREATE TABLE IF NOT EXISTS multicloud_plan_actions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL,
+            plan_id INTEGER NOT NULL,
+            action_type TEXT NOT NULL CHECK(action_type IN
+                ('CREATE_FOLDER','REPLICATE_FILE','MOVE_FILE','RENAME_FILE','UPDATE_REPLICA','DELETE_REPLICA')),
+            source_replica_id INTEGER,
+            target_mount_id INTEGER NOT NULL,
+            target_parent_remote_id TEXT,
+            logical_object_id INTEGER,
+            risk_level TEXT NOT NULL CHECK(risk_level IN ('LOW','MEDIUM','HIGH')),
+            reason TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'PROPOSED' CHECK(status IN
+                ('PROPOSED','AUTHORIZED','RUNNING','COMPLETED','SKIPPED','CONFLICT','ERROR')),
+            idempotency_key TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL,
+            completed_at TEXT,
+            last_error TEXT,
+            FOREIGN KEY(plan_id,organization_id)
+                REFERENCES multicloud_plans(id,organization_id) ON DELETE CASCADE,
+            FOREIGN KEY(source_replica_id) REFERENCES cloud_replicas(id),
+            FOREIGN KEY(target_mount_id,organization_id)
+                REFERENCES remote_mounts(id,organization_id),
+            FOREIGN KEY(logical_object_id) REFERENCES logical_cloud_objects(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_remote_mounts_org_status
+            ON remote_mounts(organization_id,status);
+        CREATE INDEX IF NOT EXISTS idx_remote_catalog_mount_path
+            ON remote_catalog_nodes(mount_id,logical_path,status);
+        CREATE INDEX IF NOT EXISTS idx_logical_cloud_collection
+            ON logical_cloud_objects(organization_id,collection_key,identity_state);
+        CREATE INDEX IF NOT EXISTS idx_cloud_replicas_object
+            ON cloud_replicas(organization_id,logical_object_id,replica_status);
+        CREATE INDEX IF NOT EXISTS idx_multicloud_actions_plan
+            ON multicloud_plan_actions(plan_id,status,risk_level);
+        """
+    )
+    now = connection.execute("SELECT datetime('now')").fetchone()[0]
+    connection.execute(
+        """
+        INSERT OR IGNORE INTO organization_feature_settings
+            (organization_id,feature_code,enabled,updated_by_user_id,updated_at)
+        SELECT id,'multicloud_workspace',1,NULL,?
+        FROM organizations WHERE profile_code IN ('PERSONAL','STUDENT')
+        """,
+        (now,),
+    )
+
 def migrate(connection: sqlite3.Connection, schema_path: Path) -> int:
     """Cria o schema mínimo ou atualiza bancos legados sem perder documentos."""
     try:
@@ -1378,23 +1531,26 @@ def migrate(connection: sqlite3.Connection, schema_path: Path) -> int:
             _create_legacy_tables(connection)
             current = 1
         if current < CURRENT_SCHEMA_VERSION:
-            _upgrade_documents(connection)
-            _upgrade_organizations(connection)
-            _upgrade_cloud(connection)
-            _upgrade_auth(connection)
-            _upgrade_administration(connection)
-            _upgrade_system_administrator(connection)
-            _upgrade_password_recovery(connection)
-            _upgrade_storage_quotas(connection)
-            _upgrade_cloud_organization_structure(connection)
-            _upgrade_cloud_folder_adoption(connection)
-            _upgrade_profile_resources(connection)
-            _upgrade_business_feature_policy(connection)
-            _upgrade_corporate_transport_jobs(connection)
-            _upgrade_transport_targets(connection)
-            _upgrade_document_delivery(connection)
-            _upgrade_delivery_acknowledgement_receipts(connection)
-            _upgrade_integrity_and_cloud_ownership_v21(connection)
+            if current < 21:
+                _upgrade_documents(connection)
+                _upgrade_organizations(connection)
+                _upgrade_cloud(connection)
+                _upgrade_auth(connection)
+                _upgrade_administration(connection)
+                _upgrade_system_administrator(connection)
+                _upgrade_password_recovery(connection)
+                _upgrade_storage_quotas(connection)
+                _upgrade_cloud_organization_structure(connection)
+                _upgrade_cloud_folder_adoption(connection)
+                _upgrade_profile_resources(connection)
+                _upgrade_business_feature_policy(connection)
+                _upgrade_corporate_transport_jobs(connection)
+                _upgrade_transport_targets(connection)
+                _upgrade_document_delivery(connection)
+                _upgrade_delivery_acknowledgement_receipts(connection)
+                _upgrade_integrity_and_cloud_ownership_v21(connection)
+            if current < 22:
+                _upgrade_multicloud_workspace_v22(connection)
             connection.execute(
                 "UPDATE documents SET source_path = path WHERE source_path IS NULL"
             )

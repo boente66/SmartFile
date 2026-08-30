@@ -19,6 +19,7 @@ from app.controllers.handwritten_signature_controller import HandwrittenSignatur
 from app.services.document_service import DocumentService
 from app.services.version_notification_service import VersionNotificationService
 from app.services.application_update_service import ApplicationUpdateService
+from app.services.organization_feature_service import OrganizationFeatureService
 from app.workers.application_update_worker import ApplicationUpdateWorker
 from app.coordinators.corporate_transport_coordinator import CorporateTransportCoordinator
 from app.version import __version__
@@ -190,7 +191,15 @@ class AppController:
         elif tool_name == "documents":
             self.document_controller.activate()
         elif tool_name == "deliveries":
-            self.document_delivery_controller.activate()
+            organization = self.session_context.active_organization
+            features = OrganizationFeatureService(
+                self.document_controller.service.database, self.session_context
+            ).for_organization(organization)
+            if organization is not None and features.profile_code == "BUSINESS" and features.has("document_requests"):
+                self.document_delivery_controller.activate()
+            else:
+                logger.warning("delivery.route.rejected profile=%s", getattr(organization, "profile_code", None))
+                self.document_controller.activate()
 
     def _connect_enterprise_layer(self) -> None:
         view = self.document_controller.view

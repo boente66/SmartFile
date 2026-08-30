@@ -78,6 +78,7 @@ class DocumentView(QWidget):
     configure_transport_requested = pyqtSignal()
     document_requests_requested = pyqtSignal()
     audit_history_requested = pyqtSignal()
+    remote_mount_requested = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -89,6 +90,8 @@ class DocumentView(QWidget):
         self._filters_expanded = True
         self._cloud_folder_mapping_enabled = False
         self._selected_cloud_mapping = None
+        self._remote_mounts = []
+        self._remote_nodes = {}
         self._responsive_rows: list[QBoxLayout] = []
         self._setup_ui()
 
@@ -497,9 +500,18 @@ class DocumentView(QWidget):
         self.btn_new_folder = self._icon_button("Nova pasta", "folder_add")
         self.btn_rename_folder = self._icon_button("Renomear pasta", "edit")
         self.btn_delete_folder = self._icon_button("Excluir pasta", "action_trash")
+        self.btn_remote_mount = self._icon_button("Montar acervo remoto", "cloud_add")
+        self.btn_remote_mount.setObjectName("remoteMountButton")
+        self.btn_remote_mount.setFixedSize(32, 32)
+        self.btn_remote_mount.setToolTip(
+            "Montar pasta existente como espelho lógico (não copia arquivos)"
+        )
+        self.btn_remote_mount.hide()
         self.btn_new_folder.clicked.connect(self.create_folder_requested.emit)
         self.btn_rename_folder.clicked.connect(self.rename_folder_requested.emit)
         self.btn_delete_folder.clicked.connect(self.delete_folder_requested.emit)
+        self.btn_remote_mount.clicked.connect(self.remote_mount_requested.emit)
+        folders_header.addWidget(self.btn_remote_mount)
         folders_header.addWidget(self.btn_new_folder)
         folders_header.addWidget(self.btn_rename_folder)
         folders_header.addWidget(self.btn_delete_folder)
@@ -709,6 +721,7 @@ class DocumentView(QWidget):
         self.folder_tree.setCurrentItem(root)
         self.folder_tree.expandAll()
         self.folder_tree.blockSignals(False)
+        self._append_remote_tree()
         self.breadcrumb_label.setText(organization_name)
         self.folder_selected.emit(None)
 
@@ -812,6 +825,7 @@ class DocumentView(QWidget):
             ))
         )
         self.action_buttons["Assinar"].setVisible(feature_set.has("digital_signature"))
+        self.btn_remote_mount.setVisible(feature_set.has("multicloud_workspace"))
         if not feature_set.has("cloud_sync"):
             self.cloud_combo.setCurrentIndex(0)
             self.cloud_combo.setEnabled(False)
@@ -987,9 +1001,44 @@ class DocumentView(QWidget):
     def _emit_folder(self, current, _previous) -> None:
         self._update_breadcrumb(current)
         self._update_more_menu()
-        self.folder_selected.emit(
-            current.data(0, Qt.ItemDataRole.UserRole) if current else None
-        )
+        value = current.data(0, Qt.ItemDataRole.UserRole) if current else None
+        # Itens remotos são somente espelho: nunca são usados como folder_id do GED.
+        self.folder_selected.emit(value if isinstance(value, int) else None)
+
+    def set_remote_mounts(self, mounts, nodes_by_mount) -> None:
+        self._remote_mounts=list(mounts);self._remote_nodes=dict(nodes_by_mount)
+        self._append_remote_tree()
+
+    def set_remote_inventory_status(self, status: str, message: str) -> None:
+        self.btn_remote_mount.setProperty("inventoryStatus", status)
+        self.btn_remote_mount.setToolTip(message or "Montar acervo remoto")
+        self.btn_remote_mount.style().unpolish(self.btn_remote_mount)
+        self.btn_remote_mount.style().polish(self.btn_remote_mount)
+
+    def _append_remote_tree(self) -> None:
+        for index in reversed(range(self.folder_tree.topLevelItemCount())):
+            item=self.folder_tree.topLevelItem(index)
+            if item.data(0,Qt.ItemDataRole.UserRole)=="REMOTE_INVENTORY_ROOT":
+                self.folder_tree.takeTopLevelItem(index)
+        if not self._remote_mounts or not (
+            self._feature_set and self._feature_set.has("multicloud_workspace")
+        ):return
+        root=QTreeWidgetItem(["Acervo remoto"])
+        root.setData(0,Qt.ItemDataRole.UserRole,"REMOTE_INVENTORY_ROOT")
+        root.setIcon(0,IconProvider.icon("cloud_sync"));self.folder_tree.addTopLevelItem(root)
+        for mount in self._remote_mounts:
+            mount_item=QTreeWidgetItem([f"{mount.logical_mount_name}  ·  {mount.provider}"])
+            mount_item.setData(0,Qt.ItemDataRole.UserRole,{"remote_mount_id":mount.id})
+            mount_item.setIcon(0,IconProvider.icon("cloud_add"));root.addChild(mount_item)
+            by_path={"":mount_item}
+            for node in self._remote_nodes.get(mount.id,[]):
+                if node.node_type!="FOLDER":continue
+                parent_path=node.logical_path.rpartition("/")[0]
+                item=QTreeWidgetItem([node.name])
+                item.setData(0,Qt.ItemDataRole.UserRole,{"remote_node_id":node.id})
+                item.setIcon(0,IconProvider.icon("folder"))
+                by_path.get(parent_path,mount_item).addChild(item);by_path[node.logical_path]=item
+        root.setExpanded(True)
 
     def _update_breadcrumb(self, item: QTreeWidgetItem | None) -> None:
         if item is None:

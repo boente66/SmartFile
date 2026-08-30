@@ -998,3 +998,12 @@ QListWidget#capturePdfPages::item:selected { background: #173b63; border: 2px so
 QWidget#capturePdfPreview QScrollArea { background: #2b3138; border: none; }
 QLabel#capturePdfPageIndicator { background: #151a20; border: 1px solid #46515d; border-radius: 4px; padding: 6px 14px; }
 QPushButton#capturePdfGed { background: #249447; color: #ffffff; border: none; min-height: 38px; font-weight: 700; padding: 0 18px; }
+
+/* Acervo remoto: botão circular e estados do inventário */
+QPushButton#remoteMountButton {
+    border-radius: 16px; padding: 5px; background: #e8f5ed;
+    border: 1px solid #afd8bd;
+}
+QPushButton#remoteMountButton:hover { background: #d8efdf; border-color: #279153; }
+QPushButton#remoteMountButton[inventoryStatus="SCANNING"] { background: #eaf2ff; border-color: #7aa7ef; }
+QPushButton#remoteMountButton[inventoryStatus="ERROR"] { background: #fff0f0; border-color: #e79b9b; }

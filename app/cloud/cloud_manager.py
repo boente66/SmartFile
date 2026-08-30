@@ -93,6 +93,37 @@ class CloudManager:
         )
         return self.account(row["id"], organization_id) if row else None
 
+    def accounts_for_organization(self, organization_id: int) -> list[CloudAccount]:
+        """Lista somente identidades pertencentes à organização ativa."""
+        self._require("cloud.view")
+        rows = self.database.fetch_all(
+            """SELECT id FROM cloud_accounts
+               WHERE organization_id=? AND status!='DISCONNECTED'
+               ORDER BY provider,display_name,email,id""",
+            (organization_id,),
+        )
+        return [self.account(int(row["id"]), organization_id) for row in rows]
+
+    def provider_for_account(
+        self, organization_id: int, account_id: int, *, permission: str = "cloud.view",
+    ) -> CloudProvider:
+        """Resolve uma conta exata; nunca usa a conta ativa de outra organização."""
+        self._require(permission)
+        account = self.account(account_id, organization_id)
+        if self._expired(account):
+            if not account.refresh_token:
+                raise CloudTokenExpiredError(
+                    "A autorização expirou. Conecte novamente sua conta."
+                )
+            provider = CloudFactory.create(account.provider, transport=self.transport)
+            account = self._update_tokens(
+                account,
+                provider.refresh_token(
+                    account.refresh_token, self.oauth_credentials(account.provider)
+                ),
+            )
+        return CloudFactory.create(account.provider, account.access_token, self.transport)
+
     def begin_authentication(self, provider: str) -> CloudAuthResult:
         self._require("cloud.connect")
         return CloudFactory.create(provider, transport=self.transport).authenticate({

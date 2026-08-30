@@ -1,6 +1,6 @@
 """Versão pública do SmartFile e conversão para formatos de distribuição."""
 
-__version__ = "0.9.0-beta.3"
+__version__ = "0.9.0-beta.4"
 
 
 def debian_version() -> str:

@@ -6,7 +6,7 @@ on:
       version:
         description: Versão pública dos artefatos
         required: true
-        default: 0.9.0-beta.3
+        default: 0.9.0-beta.4
         type: string
       generate_setup:
         description: Gerar instalador Inno Setup
@@ -37,7 +37,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 60
     env:
-      SMARTFILE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '0.9.0-beta.3' }}
+      SMARTFILE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '0.9.0-beta.4' }}
       QT_QPA_PLATFORM: offscreen
       PYTHONUTF8: '1'
 
@@ -186,7 +186,7 @@ jobs:
           path: |
             release/windows/*
             CHANGELOG.md
-            docs/RELEASE_NOTES_0.9.0-beta.3.md
+            docs/RELEASE_NOTES_0.9.0-beta.4.md
             docs/GUIA_TESTE_WINDOWS_BETA.md
           if-no-files-found: error
           retention-days: 30

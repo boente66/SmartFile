@@ -28,6 +28,7 @@ from app.services.organization_feature_service import OrganizationFeatureService
 from app.views.document_import_dialog import DocumentImportDialog
 from app.views.cloud_folder_mapping_dialog import CloudFolderMappingDialog
 from app.workers.cloud_folder_worker import CloudFolderMappingWorker
+from app.controllers.remote_mount_controller import RemoteMountController
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,10 @@ class DocumentController:
         self._current_scope = "documents"
         self._search_filters = DocumentSearchFilters()
         self.feature_service = OrganizationFeatureService(self.service.database, session_context)
+        self.remote_mount_controller = RemoteMountController(
+            self.service.database,self.service.cloud_manager,session_context,
+            self.view,parent=self.view,
+        ) if session_context is not None else None
         self._cloud_worker = None
         self._cloud_auth_worker = None
         self._cloud_quota_worker = None
@@ -107,6 +112,8 @@ class DocumentController:
         self.view.change_storage_plan_requested.connect(self.on_change_storage_plan)
         self.view.rename_document_requested.connect(self.on_rename_document)
         self.view.smart_filters_changed.connect(self.on_smart_filters_changed)
+        if self.remote_mount_controller is not None:
+            self.view.remote_mount_requested.connect(self.remote_mount_controller.open)
 
     def _register_view(self):
         self.workspace.register_view("documents", self.view)
@@ -861,6 +868,8 @@ class DocumentController:
         organization = self.service.organization_service.active()
         folders = self.service.folder_service.list_folders(organization.id)
         self.view.set_folders(organization.name, folders)
+        if self.remote_mount_controller is not None:
+            self.remote_mount_controller.refresh()
 
     def _refresh_cloud(self, selected_provider=None):
         organization_id = self.service.active_organization_id
@@ -986,6 +995,8 @@ class DocumentController:
 
     def shutdown(self) -> None:
         self._cloud_timer.stop()
+        if self.remote_mount_controller is not None:
+            self.remote_mount_controller.shutdown()
         for worker in tuple(self._cloud_quota_workers):
             worker.requestInterruption()
         if (
@@ -1018,7 +1029,10 @@ class DocumentController:
     def _apply_profile_features(self):
         organization = self.service.organization_service.active()
         self.view.apply_cloud_permissions(self.session_context)
-        self.view.apply_profile_features(self.feature_service.for_organization(organization))
+        feature_set = self.feature_service.for_organization(organization)
+        self.view.apply_profile_features(feature_set)
+        if getattr(self.main_view, "sidebar", None) is not None:
+            self.main_view.sidebar.apply_profile_features(feature_set)
 
     def _open_file(self, path: str):
         document_path = Path(path)

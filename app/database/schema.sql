@@ -557,3 +557,140 @@ CREATE INDEX IF NOT EXISTS idx_documents_org_category
     ON documents(organization_id, category COLLATE NOCASE);
 CREATE INDEX IF NOT EXISTS idx_documents_org_favorite
     ON documents(organization_id, favorite, status);
+
+CREATE TABLE IF NOT EXISTS remote_mounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    organization_id INTEGER NOT NULL,
+    cloud_account_id INTEGER NOT NULL,
+    provider TEXT NOT NULL CHECK(provider IN ('ONEDRIVE','GOOGLE_DRIVE')),
+    remote_root_id TEXT NOT NULL,
+    remote_root_name TEXT NOT NULL,
+    logical_mount_name TEXT NOT NULL,
+    collection_key TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK(status IN
+        ('ACTIVE','SCANNING','STALE','DIVERGED','SYNCING','ERROR','DISCONNECTED')),
+    created_at TEXT NOT NULL,
+    last_scan_at TEXT,
+    last_error TEXT,
+    UNIQUE(organization_id,cloud_account_id,provider,remote_root_id),
+    UNIQUE(id,organization_id),
+    FOREIGN KEY(organization_id) REFERENCES organizations(id),
+    FOREIGN KEY(cloud_account_id,organization_id)
+        REFERENCES cloud_accounts(id,organization_id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS remote_catalog_nodes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    organization_id INTEGER NOT NULL,
+    mount_id INTEGER NOT NULL,
+    cloud_account_id INTEGER NOT NULL,
+    provider TEXT NOT NULL,
+    remote_id TEXT NOT NULL,
+    remote_parent_id TEXT,
+    logical_path TEXT NOT NULL,
+    node_type TEXT NOT NULL CHECK(node_type IN ('FILE','FOLDER')),
+    name TEXT NOT NULL,
+    mime_type TEXT,
+    size INTEGER NOT NULL DEFAULT 0 CHECK(size>=0),
+    modified_at TEXT,
+    provider_hash TEXT,
+    version TEXT,
+    status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK(status IN ('ACTIVE','MISSING','ERROR')),
+    discovered_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    UNIQUE(mount_id,remote_id),
+    UNIQUE(id,organization_id),
+    FOREIGN KEY(mount_id,organization_id)
+        REFERENCES remote_mounts(id,organization_id) ON DELETE CASCADE,
+    FOREIGN KEY(cloud_account_id,organization_id)
+        REFERENCES cloud_accounts(id,organization_id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS logical_cloud_objects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    organization_id INTEGER NOT NULL,
+    collection_key TEXT NOT NULL,
+    logical_path TEXT NOT NULL,
+    logical_name TEXT NOT NULL,
+    object_type TEXT NOT NULL CHECK(object_type IN ('FILE','FOLDER')),
+    identity_state TEXT NOT NULL CHECK(identity_state IN
+        ('CANDIDATE_MATCH','VERIFIED_MATCH','DIVERGED','UNRELATED')),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(organization_id,collection_key,logical_path),
+    UNIQUE(id,organization_id),
+    FOREIGN KEY(organization_id) REFERENCES organizations(id)
+);
+CREATE TABLE IF NOT EXISTS cloud_replicas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    organization_id INTEGER NOT NULL,
+    logical_object_id INTEGER NOT NULL,
+    mount_id INTEGER NOT NULL,
+    catalog_node_id INTEGER NOT NULL,
+    cloud_account_id INTEGER NOT NULL,
+    provider TEXT NOT NULL,
+    remote_id TEXT NOT NULL,
+    provider_hash TEXT,
+    verified_sha256 TEXT,
+    replica_status TEXT NOT NULL DEFAULT 'PRESENT' CHECK(replica_status IN
+        ('PRESENT','MISSING','DIVERGED','TRANSFERRING','ERROR')),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(organization_id,cloud_account_id,provider,remote_id),
+    FOREIGN KEY(logical_object_id,organization_id)
+        REFERENCES logical_cloud_objects(id,organization_id) ON DELETE CASCADE,
+    FOREIGN KEY(mount_id,organization_id)
+        REFERENCES remote_mounts(id,organization_id) ON DELETE CASCADE,
+    FOREIGN KEY(catalog_node_id,organization_id)
+        REFERENCES remote_catalog_nodes(id,organization_id) ON DELETE CASCADE,
+    FOREIGN KEY(cloud_account_id,organization_id)
+        REFERENCES cloud_accounts(id,organization_id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS multicloud_plans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    organization_id INTEGER NOT NULL,
+    plan_uuid TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL DEFAULT 'DRAFT' CHECK(status IN
+        ('DRAFT','AUTHORIZED','RUNNING','PARTIAL','COMPLETED','CANCELLED','INVALIDATED','ERROR')),
+    created_at TEXT NOT NULL,
+    authorized_at TEXT,
+    authorized_by_user_id INTEGER,
+    completed_at TEXT,
+    last_error TEXT,
+    UNIQUE(id,organization_id),
+    FOREIGN KEY(organization_id) REFERENCES organizations(id),
+    FOREIGN KEY(authorized_by_user_id) REFERENCES users(id)
+);
+CREATE TABLE IF NOT EXISTS multicloud_plan_actions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    organization_id INTEGER NOT NULL,
+    plan_id INTEGER NOT NULL,
+    action_type TEXT NOT NULL CHECK(action_type IN
+        ('CREATE_FOLDER','REPLICATE_FILE','MOVE_FILE','RENAME_FILE','UPDATE_REPLICA','DELETE_REPLICA')),
+    source_replica_id INTEGER,
+    target_mount_id INTEGER NOT NULL,
+    target_parent_remote_id TEXT,
+    logical_object_id INTEGER,
+    risk_level TEXT NOT NULL CHECK(risk_level IN ('LOW','MEDIUM','HIGH')),
+    reason TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'PROPOSED' CHECK(status IN
+        ('PROPOSED','AUTHORIZED','RUNNING','COMPLETED','SKIPPED','CONFLICT','ERROR')),
+    idempotency_key TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    completed_at TEXT,
+    last_error TEXT,
+    FOREIGN KEY(plan_id,organization_id)
+        REFERENCES multicloud_plans(id,organization_id) ON DELETE CASCADE,
+    FOREIGN KEY(source_replica_id) REFERENCES cloud_replicas(id),
+    FOREIGN KEY(target_mount_id,organization_id)
+        REFERENCES remote_mounts(id,organization_id),
+    FOREIGN KEY(logical_object_id) REFERENCES logical_cloud_objects(id)
+);
+CREATE INDEX IF NOT EXISTS idx_remote_mounts_org_status
+    ON remote_mounts(organization_id,status);
+CREATE INDEX IF NOT EXISTS idx_remote_catalog_mount_path
+    ON remote_catalog_nodes(mount_id,logical_path,status);
+CREATE INDEX IF NOT EXISTS idx_logical_cloud_collection
+    ON logical_cloud_objects(organization_id,collection_key,identity_state);
+CREATE INDEX IF NOT EXISTS idx_cloud_replicas_object
+    ON cloud_replicas(organization_id,logical_object_id,replica_status);
+CREATE INDEX IF NOT EXISTS idx_multicloud_actions_plan
+    ON multicloud_plan_actions(plan_id,status,risk_level);

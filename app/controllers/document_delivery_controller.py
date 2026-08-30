@@ -21,6 +21,7 @@ from app.workers.request_send_worker import RequestSendWorker
 from app.workers.lan_discovery_worker import LanConnectionWorker, LanDiscoveryWorker
 from app.delivery.protocol import DELIVERY_PROTOCOL_VERSION
 from app.workers.delivery_receipt_worker import DeliveryReceiptWorker
+from app.services.organization_feature_service import OrganizationFeatureService
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ class DocumentDeliveryController:
     def __init__(self,workspace,document_service,context,parent=None,pdf_viewer_controller=None,main_view=None):
         self.workspace=workspace; self.documents=document_service; self.context=context; self.parent=parent; self.pdf_viewer=pdf_viewer_controller; self.main_view=main_view
         self.view=DeliveryWorkspaceView(); self.requests=DocumentRequestService(document_service.database,context)
+        self.features=OrganizationFeatureService(document_service.database)
         self.service=DocumentDeliveryService(document_service.database,context,document_service)
         self.discovery=LanDeviceDiscoveryService()
         self.basket=DeliveryBasketService(document_service,context); self.coordinator=DeliveryCoordinator(self.service,context,self.view,discovery_service=self.discovery)
@@ -44,14 +46,24 @@ class DocumentDeliveryController:
         if self.pdf_viewer:
             self.pdf_viewer.view.document_displayed.connect(self._viewer_displayed)
             self.pdf_viewer.view.context_confirm_requested.connect(self.acknowledge)
-    def activate(self):self.workspace.show_view("deliveries"); self.refresh()
+    def _require_available(self):
+        organization=getattr(self.context,"active_organization",None)
+        if organization is None: raise PermissionError("Ative uma organização.")
+        self.features.require(organization,"document_requests")
+    def activate(self):
+        try:self._require_available()
+        except Exception as exc:self._error(exc);return
+        self.workspace.show_view("deliveries"); self.refresh()
     def organization_changed(self,*_):
         self.coordinator.stop()
-        self.basket.begin()
-        self.start();self.refresh()
+        try:
+            self._require_available();self.basket.begin();self.start();self.refresh()
+        except Exception:
+            logger.info("delivery.disabled_for_active_profile")
     def start(self):
-        try:self.coordinator.start(self.documents.active_organization_id)
+        try:self._require_available();self.coordinator.start(self.documents.active_organization_id)
         except OSError as exc:self.view.show_status(f"Recepção LAN indisponível: {exc}")
+        except PermissionError:logger.info("delivery.coordinator.not_started profile=non_business")
     def shutdown(self):
         if self.worker and self.worker.isRunning():self.worker.requestInterruption();self.worker.wait(5000)
         if self.request_worker and self.request_worker.isRunning():self.request_worker.requestInterruption();self.request_worker.wait(5000)

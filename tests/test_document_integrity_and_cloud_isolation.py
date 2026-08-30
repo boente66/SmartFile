@@ -247,7 +247,7 @@ def test_schema_20_shared_cloud_account_is_split_safely_on_migration(tmp_path: P
     connection.close()
 
     migrated = Database(str(path))
-    assert migrated.fetch_one("PRAGMA user_version")[0] == CURRENT_SCHEMA_VERSION == 21
+    assert migrated.fetch_one("PRAGMA user_version")[0] == CURRENT_SCHEMA_VERSION == 22
     rows = migrated.fetch_all(
         "SELECT * FROM cloud_accounts ORDER BY organization_id"
     )

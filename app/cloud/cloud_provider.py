@@ -187,6 +187,12 @@ class CloudProvider(ABC):
             "Este provedor ainda não permite navegar por pastas existentes."
         )
 
+    def list_children(self, parent_id: str | None = None) -> list[RemoteMetadata]:
+        """Lista arquivos e pastas sem modificar o provedor remoto."""
+        raise CloudError(
+            "Este provedor ainda não permite catalogar conteúdo existente."
+        )
+
     def get_storage_quota(self) -> CloudStorageQuota:
         """Retorna a quota remota; providers externos antigos permanecem compatíveis."""
         return CloudStorageQuota(

@@ -7,7 +7,7 @@ class VersionNotificationService:
     """Controla a notificação local exibida uma vez após cada atualização."""
 
     SETTING_KEY = "last_notified_version"
-    NOTIFICATION_REVISION = "documents-workspace-beta3-1"
+    NOTIFICATION_REVISION = "multicloud-workspace-beta4-1"
 
     def __init__(self, database):
         self.database = database
@@ -32,11 +32,11 @@ class VersionNotificationService:
     @staticmethod
     def message() -> str:
         return (
-            "O módulo Documentos ganhou uma organização visual mais compacta, com cabeçalho "
-            "de organização, nuvem e armazenamento, barra de ações, filtros recolhíveis, "
-            "breadcrumb das pastas e controles para mostrar ou ocultar navegação e detalhes. "
-            "Os fluxos, permissões, armazenamento local e sincronização existentes foram "
-            "preservados."
+            "A versão 0.9.0-beta.4 adiciona o Acervo Remoto Multicloud aos perfis "
+            "Pessoal e Estudante. Pastas existentes do OneDrive e Google Drive podem "
+            "ser montadas como espelhos lógicos sem copiar arquivos. Solicitações, "
+            "prazos e entregas permanecem exclusivos do perfil Empresarial. Contas "
+            "Google já conectadas precisam de novo consentimento para ler acervos existentes."
         )
 
     @classmethod

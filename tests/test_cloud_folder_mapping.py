@@ -299,7 +299,7 @@ def test_account_change_invalidates_mappings_and_remote_ids(tmp_path: Path):
 
 def test_schema_19_persists_adoption_identity(tmp_path: Path):
     database = Database(str(tmp_path / "smartfile.db"))
-    assert database.fetch_one("PRAGMA user_version")[0] == CURRENT_SCHEMA_VERSION == 21
+    assert database.fetch_one("PRAGMA user_version")[0] == CURRENT_SCHEMA_VERSION == 22
     columns = {
         row["name"] for row in database.fetch_all("PRAGMA table_info(cloud_folder_mappings)")
     }
@@ -339,7 +339,7 @@ def test_schema_18_is_migrated_incrementally_without_losing_mapping(tmp_path: Pa
 
     migrated = Database(str(path))
     row = migrated.fetch_one("SELECT * FROM cloud_folder_mappings")
-    assert migrated.fetch_one("PRAGMA user_version")[0] == 21
+    assert migrated.fetch_one("PRAGMA user_version")[0] == 22
     assert row["remote_id"] == "legacy-id"
     assert row["management_mode"] == "MANAGED"
     assert row["cloud_account_id"] is None

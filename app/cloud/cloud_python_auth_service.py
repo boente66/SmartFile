@@ -25,7 +25,7 @@ class CloudPythonAuthService:
 
     GOOGLE_SCOPES = [
         "openid", "email", "profile",
-        "https://www.googleapis.com/auth/drive.file",
+        "https://www.googleapis.com/auth/drive",
     ]
     MICROSOFT_SCOPES = ["User.Read", "Files.ReadWrite"]
 

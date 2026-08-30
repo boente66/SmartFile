@@ -111,3 +111,12 @@ class SidebarView(QWidget):
         for button in self._buttons.values():
             button.style().unpolish(button)
             button.style().polish(button)
+
+    def apply_profile_features(self, feature_set) -> None:
+        """Remove fluxos empresariais da UI quando eles não pertencem ao perfil."""
+        deliveries = self._buttons.get("deliveries")
+        if deliveries is not None:
+            deliveries.setVisible(
+                feature_set.profile_code == "BUSINESS"
+                and feature_set.has("document_requests")
+            )

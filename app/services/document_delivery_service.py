@@ -20,6 +20,8 @@ from app.repositories.user_repository import UserRepository
 from app.services.smartfile_instance_service import SmartFileInstanceService
 from app.services.delivery_receipt_pdf_service import DeliveryReceiptPdfService
 from app.services.signature_image_service import SignatureImageService
+from app.services.organization_feature_service import OrganizationFeatureService
+from app.services.organization_service import OrganizationService
 from app.models.delivery_receipt_request import DeliveryReceiptDocument, DeliveryReceiptRequest
 from app.utils.file_naming import safe_output_path
 from app.delivery.protocol import DELIVERY_PROTOCOL_VERSION
@@ -44,6 +46,8 @@ class DocumentDeliveryService:
         self.receipts = DeliveryAcknowledgementReceiptRepository(database=database)
         self.receipt_pdf = DeliveryReceiptPdfService()
         self.signature_images = SignatureImageService()
+        self.organizations = OrganizationService(database)
+        self.features = OrganizationFeatureService(database)
         self.notification_callback = None
 
     def create(self, organization_id: int, basket, recipient_instance_id: str, message: str | None = None) -> DocumentDeliveryEntity:
@@ -645,8 +649,14 @@ class DocumentDeliveryService:
         ))
 
     def _require(self, organization_id: int, permission: str) -> None:
-        if not self.context: return
-        if organization_id != getattr(getattr(self.context,"active_organization",None),"id",None): raise PermissionError("Ative a organização da entrega.")
+        organization = self.organizations.repository.find_by_id(organization_id)
+        if organization is None:
+            raise PermissionError("Organização da entrega não encontrada.")
+        self.features.require(organization, "document_requests")
+        if not self.context:
+            return
+        if organization_id != getattr(getattr(self.context,"active_organization",None),"id",None):
+            raise PermissionError("Ative a organização da entrega.")
         self.context.require_permission(permission)
 
     def _validate_recipient(self, organization_id: int, user_id: int) -> None:

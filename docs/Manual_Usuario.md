@@ -1077,14 +1077,14 @@ retorna à tela de login. Depois disso, a aplicação pode ser fechada normalmen
 Em sistemas amd64 com base Ubuntu 22.04 ou 24.04, incluindo versões compatíveis
 do Linux Mint e Zorin OS, instale o pacote
 baixado na página permanente da
-[Release 0.9.0 Beta 3](https://github.com/boente66/SmartFile/releases/tag/v0.9.0-beta.3).
+[Release 0.9.0 Beta 4](https://github.com/boente66/SmartFile/releases/tag/v0.9.0-beta.4).
 O usuário também pode abrir o `.deb` pelo gerenciador de arquivos e selecionar
 **Instalar**. Pelo terminal:
 
 ```bash
 cd ~/Downloads
-sha256sum -c smartfile_0.9.0.beta3_amd64.deb.sha256
-sudo apt install ./smartfile_0.9.0.beta3_amd64.deb
+sha256sum -c smartfile_0.9.0.beta4_amd64.deb.sha256
+sudo apt install ./smartfile_0.9.0.beta4_amd64.deb
 ```
 
 O SmartFile pode ser aberto pelo menu de aplicativos ou pelo comando
@@ -1153,3 +1153,18 @@ remetente estiver offline, o comprovante permanece na fila e é reenviado
 automaticamente. Quando o remetente validar tamanho e SHA-256, o protocolo passa
 para **ACKNOWLEDGED** e a ação **Ver comprovante** fica disponível nos dois
 computadores.
+# Acervo remoto multicloud (Pessoal e Estudante)
+
+O botão circular de nuvem ao lado da árvore de pastas permite montar uma
+pasta existente do OneDrive ou Google Drive como **espelho lógico**. Montar
+não copia arquivos para o SmartFile e não altera o provedor. O usuário pode
+atualizar o inventário, comparar duas montagens associadas à mesma coleção e
+revisar um plano antes de autorizar qualquer replicação.
+
+Arquivos de mesmo nome podem ser apenas candidatos. O SmartFile só os marca
+como correspondência verificada quando existe evidência compatível, como o
+hash informado pelo provedor. Diferenças são exibidas como divergência e não
+são resolvidas automaticamente.
+
+Solicitações, prazos, entregas e protocolos são exclusivos do perfil
+Empresarial e não aparecem nos perfis Pessoal, Estudante ou Essencial.

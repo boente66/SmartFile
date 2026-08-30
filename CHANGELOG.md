@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.9.0-beta.4] - 2026-08-30
+
+### Adicionado
+
+- montagem somente leitura de acervos existentes no OneDrive e Google Drive;
+- catálogo remoto persistente separado do GED e do armazenamento local;
+- objetos lógicos com réplicas multicloud e estados de identidade;
+- planos persistentes de reconciliação com autorização explícita;
+- interface de montagem, atualização, comparação e desmontagem local.
+
+### Corrigido
+
+- solicitações, prazos e entregas agora ficam totalmente restritos ao perfil Empresarial;
+- Google Drive passa a solicitar o escopo necessário para acervos preexistentes;
+- migração 21→22 não reexecuta a migração de isolamento Cloud 21.
+
 ## [Unreleased]
 
 - Fixed duplicate and overlapping cards in the LAN device dialog during

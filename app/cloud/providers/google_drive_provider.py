@@ -20,7 +20,9 @@ class GoogleDriveProvider(CloudProvider):
     UPLOAD = "https://www.googleapis.com/upload/drive/v3"
     AUTH = "https://accounts.google.com/o/oauth2/v2/auth"
     TOKEN = "https://oauth2.googleapis.com/token"
-    SCOPES = "openid email profile https://www.googleapis.com/auth/drive.file"
+    # O organizador precisa ler pastas preexistentes escolhidas pelo usuário.
+    # drive.file enxerga apenas arquivos criados/abertos pelo aplicativo.
+    SCOPES = "openid email profile https://www.googleapis.com/auth/drive"
 
     def authenticate(self, credentials: dict[str, str]) -> CloudAuthResult:
         action = credentials.get("action", "complete")
@@ -203,6 +205,39 @@ class GoogleDriveProvider(CloudProvider):
         )
         return self._metadata(created)
 
+    def list_children(self, parent_id: str | None = None) -> list[RemoteMetadata]:
+        parent = parent_id or "root"
+        token: str | None = None
+        result: list[RemoteMetadata] = []
+        visited: set[str] = set()
+        while True:
+            query = {
+                "q": f"'{parent}' in parents and trashed = false",
+                "fields": (
+                    "nextPageToken,files(id,name,size,version,modifiedTime,parents,"
+                    "trashed,mimeType,md5Checksum)"
+                ),
+                "pageSize": "1000",
+            }
+            if token:
+                if token in visited:
+                    raise CloudError("O Google Drive repetiu a mesma página remota.")
+                visited.add(token)
+                query["pageToken"] = token
+            data, _ = self._json_request("GET", f"{self.API}/files?{urlencode(query)}")
+            result.extend(self._metadata(item) for item in data.get("files", []))
+            next_token = data.get("nextPageToken")
+            if not next_token:
+                break
+            token = str(next_token)
+        return result
+
+    def list_folders(self, parent_id: str | None = None) -> list[RemoteMetadata]:
+        return [
+            item for item in self.list_children(parent_id)
+            if item.item_type == RemoteItemType.FOLDER
+        ]
+
     def disconnect(self) -> None:
         self.access_token = ""
 
@@ -257,4 +292,6 @@ class GoogleDriveProvider(CloudProvider):
                 if data.get("mimeType") == "application/vnd.google-apps.folder"
                 else RemoteItemType.FILE if data.get("mimeType") else RemoteItemType.UNKNOWN
             ),
+            mime_type=data.get("mimeType"),
+            provider_hash=data.get("md5Checksum"),
         )

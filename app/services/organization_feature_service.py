@@ -29,6 +29,10 @@ class OrganizationFeatureService:
         "cloud_protection": OrganizationFeature(
             "cloud_protection", "Proteção de credenciais", "Tokens fora do SQLite e sem exposição em logs."
         ),
+        "multicloud_workspace": OrganizationFeature(
+            "multicloud_workspace", "Acervo remoto multicloud",
+            "Monta e compara acervos existentes sem importar ou copiar silenciosamente.",
+        ),
         "digital_signature": OrganizationFeature(
             "digital_signature", "Assinatura e carimbo digital", "Assinatura criptográfica integrada ao PDF."
         ),
@@ -58,13 +62,18 @@ class OrganizationFeatureService:
     PROFILE_FEATURES = {
         "PERSONAL": (
             "contextual_actions", "smart_search", "indexed_filters",
-            "cloud_sync", "cloud_protection", "audit_history",
+            "cloud_sync", "cloud_protection", "multicloud_workspace", "audit_history",
         ),
         "STUDENT": (
             "contextual_actions", "smart_search", "indexed_filters",
-            "cloud_sync", "cloud_protection", "digital_signature", "audit_history",
+            "cloud_sync", "cloud_protection", "multicloud_workspace",
+            "digital_signature", "audit_history",
         ),
-        "BUSINESS": tuple(FEATURES),
+        "BUSINESS": (
+            "contextual_actions", "smart_search", "indexed_filters", "cloud_sync",
+            "cloud_protection", "digital_signature", "access_control",
+            "server_transport", "document_requests", "deadline_timers", "audit_history",
+        ),
         "EMPTY": ("contextual_actions", "smart_search", "indexed_filters", "audit_history"),
     }
     BUSINESS_DEFAULTS = frozenset({

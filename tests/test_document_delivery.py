@@ -114,7 +114,7 @@ def _identity_response(port: int) -> tuple[int, dict]:
 def test_current_schema_and_instance_uuid_survives_ip_change(tmp_path: Path, monkeypatch):
     database, context, _documents, _worker, _membership = _installation(tmp_path)
     version = database.connect().execute("PRAGMA user_version").fetchone()[0]
-    assert version == CURRENT_SCHEMA_VERSION == 21
+    assert version == CURRENT_SCHEMA_VERSION == 22
     service = DocumentDeliveryService(database, context)
     monkeypatch.setattr(service.instances, "current_ip", lambda: "192.168.1.10")
     first = service.instances.local(context.active_organization.id)
@@ -218,7 +218,7 @@ def test_migration_17_preserves_legacy_requests(tmp_path: Path):
     assert row["title"] == "Documento legado"
     from uuid import UUID
     assert str(UUID(row["request_uuid"])) == row["request_uuid"]
-    assert migrated.connect().execute("PRAGMA user_version").fetchone()[0] == 21
+    assert migrated.connect().execute("PRAGMA user_version").fetchone()[0] == 22
 
 
 def test_migration_19_adds_receipts_without_losing_deliveries(tmp_path: Path):
@@ -241,7 +241,7 @@ def test_migration_19_adds_receipts_without_losing_deliveries(tmp_path: Path):
 
     migrated = Database(str(tmp_path / "smartfile.db"))
 
-    assert migrated.fetch_one("PRAGMA user_version")[0] == 21
+    assert migrated.fetch_one("PRAGMA user_version")[0] == 22
     assert migrated.fetch_one(
         "SELECT protocol_number FROM document_deliveries WHERE id=?", (delivery.id,)
     )["protocol_number"] == delivery.protocol_number

@@ -140,6 +140,8 @@ class RemoteMetadata:
     parent_id: str | None = None
     deleted: bool = False
     item_type: RemoteItemType = RemoteItemType.UNKNOWN
+    mime_type: str | None = None
+    provider_hash: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

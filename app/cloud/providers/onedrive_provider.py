@@ -201,16 +201,22 @@ class OneDriveProvider(CloudProvider):
         return self._metadata(created)
 
     def list_folders(self, parent_id: str | None = None) -> list[RemoteMetadata]:
+        return [
+            item for item in self.list_children(parent_id)
+            if item.item_type == RemoteItemType.FOLDER
+        ]
+
+    def list_children(self, parent_id: str | None = None) -> list[RemoteMetadata]:
         base = (
             f"{self.GRAPH}/me/drive/items/{quote(parent_id, safe='')}/children"
             if parent_id else f"{self.GRAPH}/me/drive/root/children"
         )
         query = urlencode({
-            "$select": "id,name,folder,parentReference,size,eTag,lastModifiedDateTime",
+            "$select": "id,name,folder,file,parentReference,size,eTag,lastModifiedDateTime",
             "$top": "200",
         })
         url = f"{base}?{query}"
-        folders: list[RemoteMetadata] = []
+        children: list[RemoteMetadata] = []
         visited: set[str] = set()
         pages = 0
         while url:
@@ -227,15 +233,15 @@ class OneDriveProvider(CloudProvider):
             pages += 1
             data, _ = self._json_request("GET", url)
             for item in data.get("value", []):
-                if isinstance(item, dict) and item.get("folder") is not None:
-                    folders.append(self._metadata(item))
+                if isinstance(item, dict):
+                    children.append(self._metadata(item))
             next_url = data.get("@odata.nextLink")
             url = str(next_url) if next_url else ""
         logger.info(
-            "cloud.onedrive.folders.list parent_present=%s pages=%s folders=%s",
-            bool(parent_id), pages, len(folders),
+            "cloud.onedrive.children.list parent_present=%s pages=%s children=%s",
+            bool(parent_id), pages, len(children),
         )
-        return folders
+        return children
 
     def disconnect(self) -> None:
         self.access_token = ""
@@ -314,4 +320,7 @@ class OneDriveProvider(CloudProvider):
                 else RemoteItemType.FILE if data.get("file") is not None
                 else RemoteItemType.UNKNOWN
             ),
+            mime_type=(data.get("file") or {}).get("mimeType"),
+            provider_hash=(data.get("file") or {}).get("hashes", {}).get("sha256Hash")
+            or (data.get("file") or {}).get("hashes", {}).get("quickXorHash"),
         )

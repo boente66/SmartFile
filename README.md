@@ -132,6 +132,13 @@ revisão e códigos de recuperação — está disponível no
 
 ## Camada de Nuvem
 
+Nos perfis **Pessoal** e **Estudante**, o SmartFile também oferece o
+**Acervo remoto multicloud**: pastas existentes do OneDrive e Google Drive
+podem ser montadas como espelhos lógicos sem importar ou copiar arquivos. A
+comparação gera um plano revisável e nenhuma escrita remota ocorre sem
+autorização explícita. Consulte
+[a arquitetura e as garantias de segurança](docs/MULTICLOUD_WORKSPACE.md).
+
 A Cloud Layer mantém os módulos do SmartFile desacoplados das APIs externas:
 
 ```text
@@ -268,24 +275,24 @@ O pacote Linux amd64 é destinado a testes em Linux Mint, Zorin OS e Ubuntu com
 base Ubuntu 22.04 ou 24.04, além de derivados Debian amd64 compatíveis. O mesmo
 artefato é compilado em 22.04 e testado em 22.04/24.04. Baixe sempre pela
 página permanente de
-[Releases do SmartFile](https://github.com/boente66/SmartFile/releases/tag/v0.9.0-beta.3),
+[Releases do SmartFile](https://github.com/boente66/SmartFile/releases/tag/v0.9.0-beta.4),
 nunca renomeando uma página HTML ou um ZIP do GitHub Actions para `.deb`.
-[Baixe diretamente o instalador Linux amd64](https://github.com/boente66/SmartFile/releases/download/v0.9.0-beta.3/smartfile_0.9.0.beta3_amd64.deb)
+[Baixe diretamente o instalador Linux amd64](https://github.com/boente66/SmartFile/releases/download/v0.9.0-beta.4/smartfile_0.9.0.beta4_amd64.deb)
 ou abra a Release para baixar também o checksum.
 
 O arquivo publicado pelo GitHub chama-se
-`smartfile_0.9.0.beta3_amd64.deb`. Depois de baixá-lo:
+`smartfile_0.9.0.beta4_amd64.deb`. Depois de baixá-lo:
 
 ```bash
 cd ~/Downloads
-sha256sum -c smartfile_0.9.0.beta3_amd64.deb.sha256
-sudo apt install ./smartfile_0.9.0.beta3_amd64.deb
+sha256sum -c smartfile_0.9.0.beta4_amd64.deb.sha256
+sudo apt install ./smartfile_0.9.0.beta4_amd64.deb
 smartfile
 ```
 
 A receita local de build preserva o nome Debian
-`smartfile_0.9.0~beta3_amd64.deb`; os dois arquivos declaram internamente a
-mesma versão `0.9.0~beta3`.
+`smartfile_0.9.0~beta4_amd64.deb`; os dois arquivos declaram internamente a
+mesma versão `0.9.0~beta4`.
 
 A remoção normal preserva banco, documentos, configurações e backups do
 usuário. Consulte [SmartFile Beta Linux](docs/BETA_LINUX.md).
@@ -298,8 +305,8 @@ bundle em runner Windows antes de disponibilizar os artefatos.
 
 O GitHub Actions gera:
 
-- `SmartFile-0.9.0-beta.3-Windows-x64-Setup.exe`;
-- `SmartFile-0.9.0-beta.3-Windows-x64-Portable.zip`;
+- `SmartFile-0.9.0-beta.4-Windows-x64-Setup.exe`;
+- `SmartFile-0.9.0-beta.4-Windows-x64-Portable.zip`;
 - checksums SHA-256 dos dois arquivos.
 
 O instalador é construído em um runner oficial Windows com PyInstaller onedir e
