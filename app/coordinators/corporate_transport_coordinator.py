@@ -69,7 +69,7 @@ class CorporateTransportCoordinator(QObject):
             self._active_workers.pop(key, None)
         try:
             if not self.service.automatic_processing_enabled(target_id):
-                logger.info(
+                logger.debug(
                     "corporate.transport.coordinator.paused organization_id=%s",
                     target_id,
                 )

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.0-beta.5] - 2026-08-30
+
+### Adicionado
+
+- notificação não modal de boas-vindas com o primeiro nome da conta e a organização ativa;
+- estado amigável na interface quando uma entrega, solicitação ou comprovante aguarda um dispositivo offline.
+
+### Corrigido
+
+- indisponibilidades LAN esperadas não geram mais tracebacks repetitivos no log;
+- avisos offline repetidos são agregados, preservando diagnóstico completo para falhas inesperadas;
+- fila persistente mantém backoff exponencial e limite de tentativas sem bloquear a interface.
+
 ## [0.9.0-beta.4] - 2026-08-30
 
 ### Adicionado

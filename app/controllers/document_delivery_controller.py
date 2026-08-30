@@ -37,6 +37,7 @@ class DocumentDeliveryController:
         self.worker=None; self.request_worker=None; self.discovery_worker=None; self.connection_workers=set(); self.network_dialog=None; self.receipt_worker=None; self._viewer_delivery_id=None
         self.workspace.register_view("deliveries",self.view); self._connect()
         self.coordinator.notification.connect(self._notification)
+        self.coordinator.status_changed.connect(self.view.show_status)
     def _connect(self):
         self.view.create_request_requested.connect(self.create_request); self.view.request_status_requested.connect(self.update_request); self.view.prepare_request_requested.connect(self.prepare_request)
         self.view.select_documents_requested.connect(self.select_documents); self.view.remove_basket_requested.connect(self.remove_basket); self.view.clear_basket_requested.connect(self.clear_basket)

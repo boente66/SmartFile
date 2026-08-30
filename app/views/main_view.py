@@ -12,6 +12,7 @@ from app.views.sidebar_view import SidebarView
 from app.views.workspace_view import WorkspaceView
 from app.ui.progress_manager import ProgressManager
 from app.ui.icon_provider import IconProvider
+from app.ui.toast_notification import ToastNotification
 from app.version import __version__
 
 
@@ -26,6 +27,7 @@ class MainView(QMainWindow):
 
     def __init__(self):
         super().__init__()
+        self._welcome_toast = None
         self._setup_window()
         self._setup_ui()
 
@@ -77,6 +79,33 @@ class MainView(QMainWindow):
     def set_account(self, display_name: str, menu) -> None:
         self.account_button.setText(display_name)
         self.account_button.setMenu(menu)
+
+    def show_welcome_notification(
+        self, display_name: str, organization_name: str | None = None,
+    ) -> None:
+        """Exibe boas-vindas após autenticação sem bloquear o fluxo do usuário."""
+
+        normalized_name = " ".join((display_name or "").split()) or "Usuário"
+        first_name = normalized_name.split(maxsplit=1)[0]
+        organization = " ".join((organization_name or "").split())
+        message = "Sua sessão está pronta."
+        if organization:
+            message = f"Organização ativa: {organization}."
+        if self._welcome_toast is not None:
+            self._welcome_toast.hide()
+            self._welcome_toast.deleteLater()
+        toast = ToastNotification(
+            self,
+            title=f"Bem-vindo, {first_name}!",
+            message=message,
+        )
+        self._welcome_toast = toast
+        toast.show_toast()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if self._welcome_toast is not None:
+            self._welcome_toast.reposition()
 
     def show_version_notification(self, version: str, message: str) -> None:
         button = getattr(self, "version_notification_button", None)

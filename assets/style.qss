@@ -894,6 +894,25 @@ QFrame#registrationFooter QLabel { color: #4a586b; }
 QLabel#registrationSecureText { color: #187c3c; }
 QToolButton#accountButton { background: #17212a; color: #e5e7eb; border: 1px solid #334155; border-radius: 6px; padding: 5px 10px; }
 
+/* Notificação não modal da janela principal */
+QFrame#toastNotification {
+    background: #ffffff;
+    border: 1px solid #b9dfc6;
+    border-left: 4px solid #16a34a;
+    border-radius: 10px;
+}
+QLabel#toastIcon { background: #eaf8ef; border-radius: 16px; padding: 4px; }
+QLabel#toastTitle { color: #122033; font-size: 14px; font-weight: 750; }
+QLabel#toastMessage { color: #526174; font-size: 12px; }
+QToolButton#toastClose {
+    background: transparent;
+    color: #64748b;
+    border: none;
+    font-size: 20px;
+    padding: 0 3px;
+}
+QToolButton#toastClose:hover { color: #172033; background: #eef2f6; border-radius: 5px; }
+
 /* Solicitações e Entregas */
 QWidget#deliveryWorkspace { background: #f5f7fa; color: #172033; }
 QWidget#deliveryWorkspace QLabel { color: #334155; }

@@ -8,6 +8,7 @@ from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
 from app.delivery.delivery_http_client import DeliveryHttpClient
 from app.delivery.delivery_http_server import DeliveryHttpServer
+from app.errors.delivery_exceptions import DeliveryNetworkError
 from app.workers.delivery_queue_worker import DeliveryQueueWorker
 
 logger=logging.getLogger(__name__)
@@ -18,6 +19,8 @@ class DeliveryCoordinator(QObject):
     def __init__(self, service, context=None, parent=None, client=None, discovery_service=None):
         super().__init__(parent); self.service=service; self.context=context; self.client=client or DeliveryHttpClient(); self.server=None; self.discovery_service=discovery_service
         self.service.notification_callback = self.notification.emit; self.queue_worker=None
+        self._last_cycle_message: str | None = None
+        self._reported_unavailable: set[tuple[str, str]] = set()
         self.timer=QTimer(self); self.timer.setInterval(30_000); self.timer.timeout.connect(self.process_pending)
 
     def start(self, organization_id: int, host: str="0.0.0.0", port: int|None=None, *, background: bool=True) -> int:
@@ -69,15 +72,26 @@ class DeliveryCoordinator(QObject):
 
     def _queue_finished(self):
         self.queue_worker=None
-        self.status_changed.emit("Fila de entregas atualizada.")
+        self.status_changed.emit(
+            self._last_cycle_message or "Fila de entregas atualizada."
+        )
+        self._last_cycle_message = None
 
     def process_pending_sync(self, cancelled=None):
+        self._last_cycle_message = None
         self.process_pending_requests()
         for delivery in self.service.deliveries.pending(datetime.now(timezone.utc).isoformat()):
             if cancelled and cancelled():
                 return
-            try: self.send_once(delivery.id,cancelled=cancelled)
-            except Exception: logger.warning("delivery.retry.failed protocol=%s",delivery.protocol_number,exc_info=True)
+            try:
+                self.send_once(delivery.id, cancelled=cancelled)
+                self._clear_network_unavailable("entrega", delivery.protocol_number)
+            except DeliveryNetworkError as exc:
+                self._report_network_unavailable("entrega", delivery.protocol_number, exc)
+            except Exception:
+                logger.exception(
+                    "delivery.retry.unexpected protocol=%s", delivery.protocol_number,
+                )
         self.process_pending_receipts(cancelled)
         self.refresh_outgoing_statuses()
 
@@ -88,10 +102,15 @@ class DeliveryCoordinator(QObject):
                 return
             try:
                 self.send_receipt_once(receipt.id)
+                self._clear_network_unavailable("comprovante", receipt.receipt_uuid)
+            except DeliveryNetworkError as exc:
+                self._report_network_unavailable(
+                    "comprovante", receipt.receipt_uuid, exc,
+                )
             except Exception:
-                logger.warning(
-                    "delivery.receipt.retry_failed receipt=%s",
-                    receipt.receipt_uuid, exc_info=True,
+                logger.exception(
+                    "delivery.receipt.retry_unexpected receipt=%s",
+                    receipt.receipt_uuid,
                 )
 
     def send_receipt_once(self, receipt_id: int, progress=None):
@@ -137,9 +156,14 @@ class DeliveryCoordinator(QObject):
                 continue
             try:
                 self.send_request(request.id, peer)
+                self._clear_network_unavailable("solicitação", request.request_uuid)
+            except DeliveryNetworkError as exc:
+                self._report_network_unavailable(
+                    "solicitação", request.request_uuid, exc,
+                )
             except Exception:
-                logger.info(
-                    "delivery.request.remote_unavailable request_uuid=%s",
+                logger.exception(
+                    "delivery.request.retry_unexpected request_uuid=%s",
                     request.request_uuid,
                 )
 
@@ -148,13 +172,43 @@ class DeliveryCoordinator(QObject):
         if not organization:
             return
         outgoing = self.service.deliveries.list_for_organization(organization, "OUTGOING")
+        unavailable = 0
         for delivery in outgoing:
             if delivery.status not in {"DELIVERED", "VIEWED"}:
                 continue
             try:
                 self.refresh_remote(delivery.id)
+            except DeliveryNetworkError:
+                unavailable += 1
             except Exception:
-                logger.info("delivery.status.remote_unavailable protocol=%s", delivery.protocol_number)
+                logger.exception(
+                    "delivery.status.refresh_unexpected protocol=%s",
+                    delivery.protocol_number,
+                )
+        if unavailable:
+            logger.debug(
+                "delivery.status.remote_unavailable count=%s", unavailable,
+            )
+
+    def _report_network_unavailable(
+        self, operation: str, reference: str, exc: DeliveryNetworkError,
+    ) -> None:
+        """Registra indisponibilidade esperada sem expor traceback repetitivo."""
+
+        key = (operation, reference)
+        log = logger.info if key not in self._reported_unavailable else logger.debug
+        log(
+            "delivery.network.deferred operation=%s reference=%s reason=%s",
+            operation, reference, str(exc),
+        )
+        self._reported_unavailable.add(key)
+        self._last_cycle_message = (
+            "Dispositivo remoto indisponível. A operação permanece na fila e "
+            "será tentada novamente automaticamente."
+        )
+
+    def _clear_network_unavailable(self, operation: str, reference: str) -> None:
+        self._reported_unavailable.discard((operation, reference))
 
     def refresh_remote(self, delivery_id: int):
         delivery=self.service.deliveries.find_by_id(delivery_id); payload=self.client.status(delivery); self.service.apply_remote_status(delivery_id,payload); return payload

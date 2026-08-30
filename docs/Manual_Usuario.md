@@ -32,6 +32,9 @@ venv/bin/python run.py
 
 Na primeira execução, o SmartFile abre o cadastro inicial. Nas execuções seguintes,
 abre a tela de login. A janela principal não é disponibilizada sem autenticação.
+Após autenticar, uma notificação não modal cumprimenta o usuário pelo primeiro
+nome e confirma a organização ativa. Ela desaparece automaticamente e não contém
+e-mail, credenciais ou conteúdo documental.
 
 ## 3. Primeiro acesso
 
@@ -493,6 +496,9 @@ Se o destinatário não responder, a entrega permanece **QUEUED**. O SmartFile
 aplica retry com intervalo crescente e mantém a fila no SQLite, inclusive após
 reiniciar o aplicativo. Após o limite automático, o estado passa a **FAILED** e
 o usuário pode selecionar **Tentar novamente**, reiniciando a política de retry.
+Erros esperados como **Não há rota para o host** aparecem como indisponibilidade
+temporária, sem traceback na interface. O primeiro evento é registrado para
+diagnóstico e repetições equivalentes são agregadas para não poluir o log.
 
 ### Configuração LAN
 
@@ -1077,14 +1083,14 @@ retorna à tela de login. Depois disso, a aplicação pode ser fechada normalmen
 Em sistemas amd64 com base Ubuntu 22.04 ou 24.04, incluindo versões compatíveis
 do Linux Mint e Zorin OS, instale o pacote
 baixado na página permanente da
-[Release 0.9.0 Beta 4](https://github.com/boente66/SmartFile/releases/tag/v0.9.0-beta.4).
+[Release 0.9.0 Beta 5](https://github.com/boente66/SmartFile/releases/tag/v0.9.0-beta.5).
 O usuário também pode abrir o `.deb` pelo gerenciador de arquivos e selecionar
 **Instalar**. Pelo terminal:
 
 ```bash
 cd ~/Downloads
-sha256sum -c smartfile_0.9.0.beta4_amd64.deb.sha256
-sudo apt install ./smartfile_0.9.0.beta4_amd64.deb
+sha256sum -c smartfile_0.9.0.beta5_amd64.deb.sha256
+sudo apt install ./smartfile_0.9.0.beta5_amd64.deb
 ```
 
 O SmartFile pode ser aberto pelo menu de aplicativos ou pelo comando
@@ -1150,7 +1156,8 @@ incorporada ao comprovante e liberada da memória ao término.
 O SmartFile cria um PDF A4 separado com protocolo, participantes, documentos,
 checksums e assinatura visual. O documento recebido não é alterado. Se o
 remetente estiver offline, o comprovante permanece na fila e é reenviado
-automaticamente. Quando o remetente validar tamanho e SHA-256, o protocolo passa
+automaticamente com a mesma política de backoff e limite de tentativas. Quando o
+remetente validar tamanho e SHA-256, o protocolo passa
 para **ACKNOWLEDGED** e a ação **Ver comprovante** fica disponível nos dois
 computadores.
 # Acervo remoto multicloud (Pessoal e Estudante)

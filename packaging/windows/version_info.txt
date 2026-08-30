@@ -17,12 +17,12 @@ VSVersionInfo(
         [
           StringStruct('CompanyName', 'SmartFile contributors'),
           StringStruct('FileDescription', 'SmartFile - sistema de gestão documental'),
-          StringStruct('FileVersion', '0.9.0-beta.4'),
+          StringStruct('FileVersion', '0.9.0-beta.5'),
           StringStruct('InternalName', 'SmartFile'),
           StringStruct('LegalCopyright', 'Copyright (c) 2026 SmartFile contributors'),
           StringStruct('OriginalFilename', 'SmartFile.exe'),
           StringStruct('ProductName', 'SmartFile'),
-          StringStruct('ProductVersion', '0.9.0-beta.4')
+          StringStruct('ProductVersion', '0.9.0-beta.5')
         ]
       )
     ]),

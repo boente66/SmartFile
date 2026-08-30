@@ -30,7 +30,11 @@ from app.entities.document_delivery_entity import (
     DocumentDeliveryEntity, DocumentDeliveryItemEntity,
 )
 from app.entities.user_entity import UserEntity
-from app.errors.delivery_exceptions import DeliveryIntegrityError, DeliveryValidationError
+from app.errors.delivery_exceptions import (
+    DeliveryIntegrityError,
+    DeliveryNetworkError,
+    DeliveryValidationError,
+)
 from app.models.registration_request import RegistrationRequest
 from app.models.user_model import UserModel
 from app.repositories.organization_member_repository import OrganizationMemberRepository
@@ -563,3 +567,32 @@ def test_offline_delivery_remains_queued_then_retries(tmp_path: Path):
         assert service_a.deliveries.find_by_id(delivery.id).status == "DELIVERED"
     finally:
         coordinator_b.stop()
+
+
+def test_offline_receipt_is_deferred_without_expected_network_traceback(
+    caplog, monkeypatch,
+):
+    receipt = SimpleNamespace(id=7, receipt_uuid="receipt-offline")
+    service = SimpleNamespace(
+        notification_callback=None,
+        receipts=SimpleNamespace(pending=lambda _now: [receipt]),
+    )
+    coordinator = DeliveryCoordinator(service)
+
+    def unavailable(_receipt_id):
+        raise DeliveryNetworkError(
+            "Não foi possível enviar o comprovante: rede indisponível"
+        )
+
+    monkeypatch.setattr(coordinator, "send_receipt_once", unavailable)
+    with caplog.at_level("INFO"):
+        coordinator.process_pending_receipts()
+        coordinator.process_pending_receipts()
+
+    records = [
+        record for record in caplog.records
+        if record.getMessage().startswith("delivery.network.deferred")
+    ]
+    assert len(records) == 1
+    assert records[0].exc_info is None
+    assert "permanece na fila" in coordinator._last_cycle_message

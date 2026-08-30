@@ -156,6 +156,23 @@ def test_authenticated_app_keeps_existing_modules_registered(tmp_path: Path):
     main.close()
 
 
+def test_main_view_shows_non_modal_welcome_with_account_name():
+    app = _app()
+    main = MainView()
+    main.resize(1000, 700)
+    main.show()
+    main.show_welcome_notification("Leonardo Gabriel Boente", "Empresa ABC")
+    app.processEvents()
+
+    toast = main._welcome_toast
+    assert toast is not None
+    assert toast.isVisible()
+    assert toast.title_label.text() == "Bem-vindo, Leonardo!"
+    assert toast.message_label.text() == "Organização ativa: Empresa ABC."
+    assert toast.x() + toast.width() <= main.width()
+    main.close()
+
+
 def test_wizard_navigates_validates_and_builds_summary():
     app=_app(); wizard=FirstUserSetupView()
     wizard.next_step(); assert wizard.stack.currentIndex()==0 and wizard.error_label.text()

@@ -30,6 +30,11 @@
   </categories>
   <content_rating type="oars-1.1" />
   <releases>
+    <release version="0.9.0-beta.5" date="2026-08-30" type="development">
+      <description>
+        <p>Boas-vindas personalizadas e filas LAN resilientes em modo offline.</p>
+      </description>
+    </release>
     <release version="0.9.0-beta.4" date="2026-08-30" type="development">
       <description>
         <p>Perfis exclusivos e acervo remoto com espelho lógico multicloud.</p>

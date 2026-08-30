@@ -1,5 +1,6 @@
 import logging
 
+from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from app.auth.session_context import SessionContext
@@ -132,6 +133,21 @@ class AuthController:
         if not self.session_context.is_authenticated(): raise RuntimeError("MainView exige sessão autenticada.")
         self.auth_view.hide(); self.main_view=MainView(); self.app_controller=AppController(self.main_view,self.session_context,self.database); self.app_controller.start()
         self.account_controller=AccountController(self.main_view,self.service,self.app_controller,self.logout); self.main_view.show()
+        user = self.session_context.current_user
+        organization = self.session_context.active_organization
+        view = self.main_view
+        QTimer.singleShot(
+            180,
+            lambda: self._show_welcome_notification(
+                view, user.display_name, getattr(organization, "name", None),
+            ),
+        )
+
+    def _show_welcome_notification(
+        self, view: MainView, display_name: str, organization_name: str | None,
+    ) -> None:
+        if view is self.main_view and view.isVisible():
+            view.show_welcome_notification(display_name, organization_name)
 
     def logout(self):
         if self.app_controller:

@@ -6,7 +6,7 @@ from app.services.application_update_service import ApplicationUpdateService
 from app.workers.application_update_worker import ApplicationUpdateWorker
 
 
-def _release(version="0.9.0-beta.4", prerelease=True):
+def _release(version="0.9.0-beta.5", prerelease=True):
     return {
         "tag_name": f"v{version}",
         "draft": False,
