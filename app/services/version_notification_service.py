@@ -36,7 +36,9 @@ class VersionNotificationService:
             "Pessoal e Estudante. Pastas existentes do OneDrive e Google Drive podem "
             "ser montadas como espelhos lógicos sem copiar arquivos. Solicitações, "
             "prazos e entregas permanecem exclusivos do perfil Empresarial. Contas "
-            "Google já conectadas precisam de novo consentimento para ler acervos existentes."
+            "Google já conectadas precisam de novo consentimento para ler acervos existentes. "
+            "Os fluxos, permissões, armazenamento local e sincronização existentes "
+            "foram preservados."
         )
 
     @classmethod
