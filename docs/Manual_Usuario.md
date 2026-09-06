@@ -1083,14 +1083,14 @@ retorna à tela de login. Depois disso, a aplicação pode ser fechada normalmen
 Em sistemas amd64 com base Ubuntu 22.04 ou 24.04, incluindo versões compatíveis
 do Linux Mint e Zorin OS, instale o pacote
 baixado na página permanente da
-[Release 0.9.0 Beta 5](https://github.com/boente66/SmartFile/releases/tag/v0.9.0-beta.5).
+[Release 0.9.0 Beta 6](https://github.com/boente66/SmartFile/releases/tag/v0.9.0-beta.6).
 O usuário também pode abrir o `.deb` pelo gerenciador de arquivos e selecionar
 **Instalar**. Pelo terminal:
 
 ```bash
 cd ~/Downloads
-sha256sum -c smartfile_0.9.0.beta5_amd64.deb.sha256
-sudo apt install ./smartfile_0.9.0.beta5_amd64.deb
+sha256sum -c smartfile_0.9.0.beta6_amd64.deb.sha256
+sudo apt install ./smartfile_0.9.0.beta6_amd64.deb
 ```
 
 O SmartFile pode ser aberto pelo menu de aplicativos ou pelo comando

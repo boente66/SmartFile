@@ -212,9 +212,9 @@ def test_provider_configuration_is_visible_only_with_administrative_permission()
     context=SessionContext(); context.permissions={"cloud.view"}; context.current_user=UserModel(1,"comum",None,"Comum",None,True,False,None); menu.apply_permissions(context)
     assert not menu.provider_settings_action.isVisible()
     assert not menu.backup_action.isVisible()
-    context.current_user=UserModel(2,"admin",None,"Admin",None,True,True,None); menu.apply_permissions(context)
+    context.current_user=UserModel(2,"admin",None,"Admin",None,True,False,None); context.permissions.add("cloud.configure_provider"); menu.apply_permissions(context)
     assert menu.provider_settings_action.isVisible()
-    assert menu.backup_action.isVisible()
+    assert not menu.backup_action.isVisible()
 
 
 def test_delete_account_dialog_protects_password_and_requires_explicit_text():

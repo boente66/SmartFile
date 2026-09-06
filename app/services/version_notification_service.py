@@ -7,7 +7,7 @@ class VersionNotificationService:
     """Controla a notificação local exibida uma vez após cada atualização."""
 
     SETTING_KEY = "last_notified_version"
-    NOTIFICATION_REVISION = "welcome-offline-beta5-1"
+    NOTIFICATION_REVISION = "cloud-admin-beta6-1"
 
     def __init__(self, database):
         self.database = database
@@ -32,11 +32,10 @@ class VersionNotificationService:
     @staticmethod
     def message() -> str:
         return (
-            "A versão 0.9.0-beta.5 apresenta uma recepção personalizada após o login "
-            "e melhora a experiência quando outro SmartFile está offline. Entregas, "
-            "solicitações e comprovantes permanecem na fila com retentativa automática, "
-            "sem exibir rastreamentos técnicos repetitivos. Os fluxos, permissões, "
-            "armazenamento local e sincronização existentes foram preservados."
+            "A versão 0.9.0-beta.6 permite que proprietários e administradores "
+            "configurem os provedores OAuth da nuvem em organizações de qualquer "
+            "perfil. Editores e visualizadores continuam sem esse acesso, e os "
+            "demais privilégios administrativos permanecem preservados."
         )
 
     @classmethod

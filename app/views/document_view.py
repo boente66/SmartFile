@@ -774,7 +774,10 @@ class DocumentView(QWidget):
         can_view = context is None or context.has_permission("cloud.view")
         can_connect = context is None or context.has_permission("cloud.connect")
         can_sync = context is None or context.has_permission("cloud.sync")
-        can_configure = context is not None and context.is_system_admin()
+        can_configure = (
+            context is not None
+            and context.has_permission("cloud.configure_provider")
+        )
         self.cloud_combo.setVisible(can_view)
         self.cloud_status_label.setVisible(can_view)
         self.cloud_storage_caption.setVisible(can_view)

@@ -48,7 +48,7 @@ jobs:
           path: |
             release/*.deb
             release/*.sha256
-            docs/RELEASE_NOTES_0.9.0-beta.5.md
+            docs/RELEASE_NOTES_0.9.0-beta.6.md
           if-no-files-found: error
           retention-days: 30
 

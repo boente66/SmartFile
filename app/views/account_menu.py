@@ -12,4 +12,14 @@ class AccountMenu(QMenu):
         for organization in organizations:
             action=self.organization_menu.addAction(organization.name); action.setCheckable(True); action.setChecked(organization.id==active_id); action.triggered.connect(lambda _checked=False,item=organization: callback(item))
     def apply_permissions(self,context):
-        self.manage_organizations_action.setVisible(context.has_permission("organization.view")); self.members_action.setVisible(context.has_permission("member.view")); self.profile_action.setVisible(context.has_permission("profile.view")); self.sessions_action.setVisible(context.has_permission("session.view")); self.provider_settings_action.setVisible(context.is_system_admin()); self.backup_action.setVisible(context.is_system_admin()); self.settings_action.setVisible(False)
+        self.manage_organizations_action.setVisible(
+            context.has_permission("organization.view")
+        )
+        self.members_action.setVisible(context.has_permission("member.view"))
+        self.profile_action.setVisible(context.has_permission("profile.view"))
+        self.sessions_action.setVisible(context.has_permission("session.view"))
+        self.provider_settings_action.setVisible(
+            context.has_permission("cloud.configure_provider")
+        )
+        self.backup_action.setVisible(context.is_system_admin())
+        self.settings_action.setVisible(False)

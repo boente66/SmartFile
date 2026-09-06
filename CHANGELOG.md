@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.0-beta.6] - 2026-09-06
+
+### Alterado
+
+- configuração OAuth de OneDrive e Google Drive disponível para `OWNER` e
+  `ADMIN` da organização ativa, independentemente do perfil de recursos;
+- autorização centralizada na permissão explícita `cloud.configure_provider`.
+
+### Segurança
+
+- `EDITOR` e `VIEWER` permanecem sem acesso à configuração técnica;
+- backup e demais privilégios globais não foram ampliados.
+
 ## [0.9.0-beta.5] - 2026-08-30
 
 ### Adicionado

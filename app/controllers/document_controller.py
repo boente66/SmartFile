@@ -376,9 +376,12 @@ class DocumentController:
 
     def on_configure_cloud_oauth(self):
         try:
-            if self.session_context is None or not self.session_context.is_system_admin():
+            if (
+                self.session_context is None
+                or not self.session_context.has_permission("cloud.configure_provider")
+            ):
                 raise CloudPermissionError(
-                    "Somente o administrador do sistema pode configurar provedores OAuth."
+                    "Somente proprietários e administradores da organização podem configurar provedores OAuth."
                 )
             dialog = CloudApiSettingsDialog(
                 CloudOAuthConfigService(self.service.database),

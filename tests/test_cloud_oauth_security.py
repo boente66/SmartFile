@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 from PyQt6.QtWidgets import QApplication
 
-from app.auth.session_context import SessionContext
+from app.auth.session_context import ROLE_PERMISSIONS, SessionContext
 from app.cloud.cloud_manager import CloudManager
 from app.cloud.cloud_models import (
     CloudAuthResult,
@@ -97,7 +97,7 @@ def test_cloud_permissions_are_enforced_in_service(tmp_path):
         )
 
 
-def test_common_user_never_sees_technical_oauth_action():
+def test_only_organization_administrators_see_technical_oauth_action():
     app = QApplication.instance() or QApplication([])
     view = DocumentView()
     common = SessionContext()
@@ -107,12 +107,20 @@ def test_common_user_never_sees_technical_oauth_action():
     view.apply_cloud_permissions(common)
     assert not view.oauth_settings_action.isVisible()
     assert view.btn_configure_provider.isHidden()
-    common.current_user = UserModel(2,"admin",None,"Administrador",None,True,True,None)
+    common.current_user = UserModel(2,"admin",None,"Administrador",None,True,False,None)
+    common.permissions.add("cloud.configure_provider")
     view.apply_cloud_permissions(common)
     assert view.oauth_settings_action.isVisible()
     assert not view.btn_configure_provider.isHidden()
     view.close()
     app.processEvents()
+
+
+def test_provider_configuration_permission_belongs_to_organization_admins():
+    assert "cloud.configure_provider" in ROLE_PERMISSIONS["ADMIN"]
+    assert "*" in ROLE_PERMISSIONS["OWNER"]
+    assert "cloud.configure_provider" not in ROLE_PERMISSIONS["EDITOR"]
+    assert "cloud.configure_provider" not in ROLE_PERMISSIONS["VIEWER"]
 
 
 def test_all_required_oauth_states_are_explicit():

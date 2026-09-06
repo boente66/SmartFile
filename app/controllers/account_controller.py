@@ -126,8 +126,10 @@ class AccountController:
 
     def configure_provider(self):
         try:
-            if not self.auth.session_context.is_system_admin():
-                raise PermissionError("Somente o administrador do sistema pode configurar provedores OAuth.")
+            if not self.auth.session_context.has_permission("cloud.configure_provider"):
+                raise PermissionError(
+                    "Somente proprietários e administradores da organização podem configurar provedores OAuth."
+                )
             CloudApiSettingsDialog(
                 CloudOAuthConfigService(self.auth.database),
                 self.main_view,
