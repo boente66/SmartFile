@@ -19,6 +19,8 @@ class RemoteMountController:
         self.reconciliation=MulticloudReconciliationService(database,cloud_manager,context)
         self.dialog=None;self.browse_worker=None;self.scan_worker=None;self.plan_worker=None;self._request=0
         self._browse_org_id=None;self._scan_org_id=None
+        self._browse_workers=set()
+        self._pending_browse={}
 
     def open(self):
         try:
@@ -42,7 +44,10 @@ class RemoteMountController:
             if not accounts:raise ValueError("Conecte uma conta OneDrive ou Google Drive primeiro.")
             dialog=RemoteMountDialog(accounts,self.parent);self.dialog=dialog
             dialog.browse_requested.connect(self._browse)
+            dialog.finished.connect(lambda _result:self._close_browse(dialog))
+            dialog.load_root()
             if dialog.exec()!=QDialog.DialogCode.Accepted:return
+            if org.id!=getattr(self.context.active_organization,"id",None):return
             account,metadata,logical,collection=dialog.values()
             mount=self.service.mount(org.id,account.id,account.provider,metadata.remote_id,
                                      metadata.name,logical,collection_key=collection)
@@ -89,19 +94,40 @@ class RemoteMountController:
             self._browse_org_id=org_id
             provider=self.cloud_manager.provider_for_account(org_id,account_id)
             self._request+=1;request=self._request
+            self._pending_browse[request]=(self.dialog,org_id,account_id,parent_id,self.dialog.browse_generation)
             worker=RemoteBrowseWorker(provider,parent_id,request,self.parent);self.browse_worker=worker
+            self._browse_workers.add(worker)
             worker.succeeded.connect(lambda req,items,p=parent_id:self._browsed(req,p,items))
             worker.failed.connect(lambda req,msg:self._browse_failed(req,msg))
+            worker.finished.connect(lambda w=worker:self._browse_workers.discard(w))
             worker.finished.connect(worker.deleteLater);worker.start()
         except Exception as exc:self.dialog.show_error(str(exc))
     def _browsed(self,request,parent_id,items):
-        if (request!=self._request or self.dialog is None or
-            self._browse_org_id!=getattr(self.context.active_organization,"id",None)):return
+        if not self._valid_browse(request):return
         self.dialog.populate(parent_id,items)
+        if self._pending_browse:self.dialog.progress.show()
     def _browse_failed(self,request,message):
-        if (request==self._request and self.dialog and
-            self._browse_org_id==getattr(self.context.active_organization,"id",None)):
+        if self._valid_browse(request):
             self.dialog.show_error(message)
+            if self._pending_browse:self.dialog.progress.show()
+
+    def _valid_browse(self,request):
+        pending=self._pending_browse.pop(request,None)
+        if not pending:return False
+        dialog,org,account,_parent,generation=pending
+        valid=(dialog is self.dialog and dialog.browse_active and generation==dialog.browse_generation and org==getattr(self.context.active_organization,"id",None)
+               and account==getattr(dialog.account.currentData(),"id",None))
+        self._pending_browse={key:value for key,value in self._pending_browse.items()
+                              if self.dialog and value[:3]==(self.dialog,getattr(self.context.active_organization,"id",None),
+                                             getattr(self.dialog.account.currentData(),"id",None)) and value[4]==self.dialog.browse_generation}
+        if not valid and self.dialog and not self._pending_browse:self.dialog.progress.hide()
+        return valid
+
+    def _close_browse(self,dialog):
+        self._pending_browse.clear()
+        dialog.browse_active=False
+        dialog.progress.hide()
+        # Keep accepted values readable until mount() has consumed them.
     def _scan(self,mount_id,organization_id):
         self._scan_org_id=organization_id
         self.view.set_remote_inventory_status("SCANNING","Atualizando espelho…")
@@ -117,6 +143,8 @@ class RemoteMountController:
     def refresh(self):
         try:
             org_id=self.context.active_organization.id
+            if self.dialog and self._browse_org_id is not None and self._browse_org_id!=org_id:
+                self._close_browse(self.dialog);self.dialog.reject()
             mounts=self.service.list_mounts(org_id)
             nodes={mount.id:self.service.nodes(org_id,mount.id) for mount in mounts}
             self.view.set_remote_mounts(mounts,nodes)
@@ -124,5 +152,5 @@ class RemoteMountController:
         except PermissionError:self.view.set_remote_mounts([],{});self.view.set_remote_inventory_status("HIDDEN","")
 
     def shutdown(self):
-        for worker in (self.browse_worker,self.scan_worker,self.plan_worker):
+        for worker in (*self._browse_workers,self.scan_worker,self.plan_worker):
             if worker is not None and worker.isRunning():worker.requestInterruption();worker.wait(5000)

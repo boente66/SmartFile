@@ -37,6 +37,18 @@ class PDFSignatureService:
             "Iniciando assinatura input=%s output=%s perfil=%s",
             request.input_path, request.output_path, request.pades_profile,
         )
+        qr_source = None
+        if request.qr_visible:
+            from app.services.signature_verification_service import SignatureVerificationService
+            SignatureVerificationService.validate_url(request.verification_url or "")
+            # Inserting marks into an already signed PDF would invalidate previous signatures.
+            with request.input_path.open("rb") as stream:
+                if PdfFileReader(stream).embedded_signatures:
+                    raise SignatureError("Insira o QR antes da primeira assinatura digital; preserve as assinaturas existentes.")
+            from io import BytesIO
+            with fitz.open(request.input_path) as document:
+                SignatureVerificationService.insert_qr(document, request.verification_url, request.qr_page_number, request.qr_rect)
+                qr_source = BytesIO(document.tobytes())
         signer = self.certificate_service.load_a1(
             request.certificate_path, request.certificate_password
         )
@@ -68,7 +80,7 @@ class PDFSignatureService:
         output = request.output_path.expanduser().resolve()
         temporary = output.with_name(f".{output.stem}.{uuid4().hex}.tmp.pdf")
         try:
-            with request.input_path.open("rb") as source, temporary.open("wb") as target:
+            with (qr_source or request.input_path.open("rb")) as source, temporary.open("wb") as target:
                 writer = IncrementalPdfFileWriter(source)
                 pdf_signer = signers.PdfSigner(
                     metadata,

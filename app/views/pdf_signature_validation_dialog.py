@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QTableWidget, QTableWidgetItem, QVBoxLayout
+from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QLabel, QPushButton
 
 
 class PDFSignatureValidationDialog(QDialog):
@@ -21,6 +21,15 @@ class PDFSignatureValidationDialog(QDialog):
                 table.setItem(row, column, QTableWidgetItem(str(value)))
         table.resizeColumnsToContents()
         layout.addWidget(table)
+        notice = QLabel("Validação local: integridade e confiança são resultados separados. Marca manuscrita não fornece prova criptográfica de autoria.")
+        notice.setWordWrap(True); layout.addWidget(notice)
+        official = QPushButton("Validar ICP-Brasil / Gov.br no serviço oficial")
+        def open_official():
+            from PyQt6.QtCore import QUrl
+            from PyQt6.QtGui import QDesktopServices
+            from app.services.signature_verification_service import SignatureVerificationService
+            QDesktopServices.openUrl(QUrl(SignatureVerificationService.VALIDATOR_URL))
+        official.clicked.connect(open_official); layout.addWidget(official)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
         buttons.accepted.connect(self.accept)

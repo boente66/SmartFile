@@ -14,6 +14,7 @@ class RemoteMountDialog(QDialog):
     browse_requested=pyqtSignal(int,object)
     def __init__(self,accounts,parent=None):
         super().__init__(parent);self.setWindowTitle("Montar acervo remoto");self.resize(660,520)
+        self.browse_generation=0;self.browse_active=True
         layout=QVBoxLayout(self)
         layout.addWidget(QLabel(
             "Selecione uma pasta existente. Montar apenas cataloga metadados: "
@@ -36,14 +37,15 @@ class RemoteMountDialog(QDialog):
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel|QDialogButtonBox.StandardButton.Ok)
         buttons.accepted.connect(self.accept);buttons.rejected.connect(self.reject);layout.addWidget(buttons)
         self.account.currentIndexChanged.connect(self.load_root)
-        if accounts:self.load_root()
 
     def load_root(self):
+        self.browse_generation+=1
         self.tree.clear();account=self.account.currentData()
-        if account:self.progress.show();self.browse_requested.emit(account.id,None)
+        if account:self.status.setText("Carregando pastas…");self.progress.show();self.browse_requested.emit(account.id,None)
 
     def populate(self,parent_id,items):
         parent=self._find(parent_id) if parent_id else None
+        if parent_id and parent is None:return
         target=parent or self.tree.invisibleRootItem()
         if parent:
             while parent.childCount():parent.removeChild(parent.child(0))
@@ -53,7 +55,7 @@ class RemoteMountDialog(QDialog):
             item.setData(0,Qt.ItemDataRole.UserRole,metadata)
             item.setIcon(0,IconProvider.icon("folder"));item.addChild(QTreeWidgetItem(["Carregando…",""]))
             target.addChild(item)
-        self.progress.hide();self.status.setText("Selecione a pasta que deseja montar.")
+        self.progress.hide();self.status.setText("Selecione a pasta que deseja montar." if target.childCount() else "Nenhuma subpasta encontrada." if parent else "Nenhuma pasta encontrada nesta conta.")
 
     def show_error(self,message):self.progress.hide();self.status.setText(message)
     def _expanded(self,item):

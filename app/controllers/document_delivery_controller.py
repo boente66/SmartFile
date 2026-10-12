@@ -3,6 +3,10 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from PyQt6.QtCore import QTimer, QUrl
+from app.services.request_notification_service import RequestNotificationService
+from app.system.resources import resource_path
+
 from PyQt6.QtWidgets import QDialog,QFileDialog,QInputDialog,QMessageBox
 
 from app.coordinators.delivery_coordinator import DeliveryCoordinator
@@ -38,6 +42,20 @@ class DocumentDeliveryController:
         self.workspace.register_view("deliveries",self.view); self._connect()
         self.coordinator.notification.connect(self._notification)
         self.coordinator.status_changed.connect(self.view.show_status)
+        self.notifications=RequestNotificationService(document_service.database)
+        self._request_fingerprint=None
+        self._alert_sound=None
+        try:
+            from PyQt6.QtMultimedia import QSoundEffect
+            self._alert_sound=QSoundEffect(self.view)
+            self._alert_sound.setSource(QUrl.fromLocalFile(str(resource_path("assets/sounds/request_alert.wav"))))
+            self._alert_sound.setLoopCount(1);self._alert_sound.setVolume(.35)
+        except ImportError:logger.warning("request.audio.unavailable")
+        self.notification_timer=QTimer(self.view);self.notification_timer.setInterval(3000)
+        self.notification_timer.timeout.connect(self._poll_requests)
+        self.coordinator.request_received.connect(self._received_request)
+        self.view.request_read.connect(self._mark_request_read)
+        self.view.preferences_changed.connect(self.notifications.preferences)
     def _connect(self):
         self.view.create_request_requested.connect(self.create_request); self.view.request_status_requested.connect(self.update_request); self.view.prepare_request_requested.connect(self.prepare_request)
         self.view.select_documents_requested.connect(self.select_documents); self.view.remove_basket_requested.connect(self.remove_basket); self.view.clear_basket_requested.connect(self.clear_basket)
@@ -57,15 +75,25 @@ class DocumentDeliveryController:
         self.workspace.show_view("deliveries"); self.refresh()
     def organization_changed(self,*_):
         self.coordinator.stop()
+        self.notification_timer.stop();self.view.flow.stop_alert();self.view.set_unread(set())
+        self._update_request_badge(0)
+        self.view.set_requests([],self.context.current_user.id)
+        self.view.set_deliveries([],[]);self.view.set_history([])
+        self.basket.clear();self.view.set_basket(self.basket.basket)
+        self.notifications.scope=None;self._request_fingerprint=None
+        if self._alert_sound:self._alert_sound.stop()
         try:
             self._require_available();self.basket.begin();self.start();self.refresh()
         except Exception:
             logger.info("delivery.disabled_for_active_profile")
     def start(self):
-        try:self._require_available();self.coordinator.start(self.documents.active_organization_id)
+        try:
+            self._require_available();self._poll_requests();self.notification_timer.start()
+            self.coordinator.start(self.documents.active_organization_id)
         except OSError as exc:self.view.show_status(f"Recepção LAN indisponível: {exc}")
         except PermissionError:logger.info("delivery.coordinator.not_started profile=non_business")
     def shutdown(self):
+        self.notification_timer.stop();self.view.flow.stop_alert()
         if self.worker and self.worker.isRunning():self.worker.requestInterruption();self.worker.wait(5000)
         if self.request_worker and self.request_worker.isRunning():self.request_worker.requestInterruption();self.request_worker.wait(5000)
         if self.receipt_worker and self.receipt_worker.isRunning():self.receipt_worker.requestInterruption();self.receipt_worker.wait(5000)
@@ -76,6 +104,8 @@ class DocumentDeliveryController:
         self.coordinator.stop()
     def refresh(self):
         try:
+            self._require_available()
+            self._poll_requests()
             org=self.documents.active_organization_id; members=self.requests.list_assignable_members(org); requests=self.requests.list_requests(org)
             self.view.set_permissions(self.context)
             self.view.set_members(members); self.view.set_peers(self.service.instances.repository.list_peers(org)); self.view.set_requests(requests,self.context.current_user.id); self.view.set_basket(self.basket.basket)
@@ -392,5 +422,37 @@ class DocumentDeliveryController:
     def _worker_done(self):self.worker=None
     def _request_worker_done(self):self.request_worker=None
     def _notification(self,title,message):
-        self.view.show_status(message);QMessageBox.information(self.view,title,message)
+        self.view.show_status(message)
+    def _poll_requests(self):
+        try:
+            self._require_available()
+            org=self.documents.active_organization_id;user=self.context.current_user.id
+            requests=self.requests.list_requests(org)
+            new=self.notifications.observe(org,user,requests)
+            self.view.set_alert_preferences(self.notifications.sound,self.notifications.animation)
+            fingerprint=(org,user,tuple((r.id,r.status,r.title,r.updated_at) for r in requests))
+            if fingerprint!=self._request_fingerprint:
+                self._request_fingerprint=fingerprint
+                self.view.set_requests(requests,user)
+            self.view.set_unread(self.notifications.unread)
+            self._update_request_badge(len(self.notifications.unread))
+            if new:
+                if self.notifications.sound and self._alert_sound:self._alert_sound.play()
+                if self.notifications.animation:self.view.flow.alert()
+        except PermissionError:
+            self.notification_timer.stop()
+        except Exception:logger.warning("request.notifications.poll_failed",exc_info=True)
+
+    def _received_request(self,organization_id):
+        if organization_id==self.documents.active_organization_id:self._poll_requests()
+
+    def _mark_request_read(self,request_id):
+        self.notifications.mark_read(request_id)
+        self.view.set_unread(self.notifications.unread)
+        self._update_request_badge(len(self.notifications.unread))
+
+    def _update_request_badge(self,count):
+        sidebar=getattr(self.main_view,"sidebar",None)
+        if sidebar and hasattr(sidebar,"set_request_badge"):sidebar.set_request_badge(count)
+
     def _error(self,exc):QMessageBox.warning(self.view,"Solicitações e Entregas",str(exc))

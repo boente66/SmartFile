@@ -40,7 +40,7 @@ class DocumentRequestService:
     def list_requests(self, organization_id: int) -> list[DocumentRequestEntity]:
         self._require(organization_id, "document.request.view")
         requests = self.repository.find_by_organization(organization_id)
-        return [replace(item, status="OVERDUE") if item.is_overdue() else item for item in requests]
+        return [replace(item, status="OVERDUE", operational_status=item.status) if item.is_overdue() else item for item in requests]
 
     def list_assignable_members(self, organization_id: int):
         self._require(organization_id, "document.request.view")

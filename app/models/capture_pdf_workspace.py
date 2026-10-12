@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import uuid4
 
+from app.models.document_geometry import DocumentGeometryResult
+
 
 @dataclass(slots=True)
 class CapturePdfPage:
@@ -15,6 +17,11 @@ class CapturePdfPage:
     source_page: int | None = None
     image: object | None = None
     rotation: int = 0
+    geometry: DocumentGeometryResult | None = None
+    scan_dpi: object | None = None
+    measurement_source: str = "UNKNOWN"
+    physical_area_mm: tuple | None = None
+    output_format: str = "A4_AUTO"
 
 
 @dataclass(slots=True)
@@ -44,6 +51,9 @@ class CapturePdfWorkspace:
                 source_page=page.source_page,
                 image=page.image.copy() if hasattr(page.image, "copy") else page.image,
                 rotation=page.rotation,
+                geometry=page.geometry, scan_dpi=page.scan_dpi,
+                measurement_source=page.measurement_source,
+                physical_area_mm=page.physical_area_mm, output_format=page.output_format,
             )
             for page in self.pages
         ]

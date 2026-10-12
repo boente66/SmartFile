@@ -176,3 +176,24 @@ def test_ged_flow_uses_document_service_managed_storage(tmp_path: Path, monkeypa
     assert Path(document.path).is_file()
     assert not list(database.paths.temp.glob("capture-pdf-*.pdf"))
     controller.clear_workspace(confirm=False)
+
+
+def test_geometry_results_ignore_clear_removed_page_and_old_generation(tmp_path):
+    from app.services.document_geometry_service import DocumentGeometryService
+    app()
+    database=Database(str(tmp_path/'geometry.sqlite'))
+    controller=CapturePdfController(WorkspaceView(),DocumentService(database=database))
+    page=CapturePdfService.page_from_scan(Image.new('RGB',(100,150),'white'))
+    controller.state.add_pages([page])
+    result=DocumentGeometryService.from_corners(page.image.size,DocumentGeometryService.FULL)
+    controller._geometry_ready((controller._geometry_generation-1,page.id,result))
+    assert page.geometry is None
+    controller._geometry_ready((controller._geometry_generation,page.id,result))
+    assert page.geometry is result
+    controller.clear_workspace(confirm=False)
+    controller._geometry_ready((controller._geometry_generation-1,page.id,result))
+    assert not controller.state.pages
+    old_scan=Image.new('RGB',(100,150),'white')
+    controller._scan_received(controller._scan_generation-1,old_scan)
+    assert not controller.state.pages
+    controller.shutdown()

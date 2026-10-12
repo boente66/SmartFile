@@ -49,6 +49,7 @@ class DocumentDeliveryService:
         self.organizations = OrganizationService(database)
         self.features = OrganizationFeatureService(database)
         self.notification_callback = None
+        self.request_received_callback = None
 
     def create(self, organization_id: int, basket, recipient_instance_id: str, message: str | None = None) -> DocumentDeliveryEntity:
         self._require(organization_id, "delivery.create")
@@ -578,6 +579,7 @@ class DocumentDeliveryService:
             target_instance_id=local.instance_id,
         ))
         self._record_request(created, "REQUEST_RECEIVED", "Solicitação recebida de outra instalação SmartFile.")
+        if self.request_received_callback:self.request_received_callback(created.organization_id)
         return created
 
     def status_payload(self, protocol: str) -> dict:

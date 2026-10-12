@@ -19,6 +19,7 @@ hiddenimports = [
     "zeroconf",
 ]
 hiddenimports += collect_submodules("keyring.backends")
+hiddenimports += collect_submodules("reportlab.graphics.barcode")
 if find_spec("sane") is not None:
     hiddenimports.append("sane")
 

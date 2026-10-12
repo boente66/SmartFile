@@ -4,7 +4,7 @@
 from importlib.util import find_spec
 from pathlib import Path
 
-from PyInstaller.utils.hooks import copy_metadata
+from PyInstaller.utils.hooks import collect_submodules, copy_metadata
 
 project_root = Path(SPECPATH).resolve().parents[1]
 
@@ -25,6 +25,7 @@ hiddenimports = [
     "msal",
     "zeroconf",
 ]
+hiddenimports += collect_submodules("reportlab.graphics.barcode")
 if find_spec("twain") is not None:
     hiddenimports.append("twain")
 

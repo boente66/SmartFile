@@ -30,6 +30,11 @@ class HandwrittenSignatureRequest:
     existing_signatures_confirmed: bool = False
     signature_method: str = "DRAWN"
 
+    qr_visible: bool = False
+    verification_url: str | None = None
+    qr_page_number: int = 1
+    qr_rect: tuple | None = None
+
     def validate(self, page_count: int, page_size: tuple[float, float]) -> None:
         source = self.input_path.expanduser().resolve()
         output = self.output_path.expanduser().resolve()

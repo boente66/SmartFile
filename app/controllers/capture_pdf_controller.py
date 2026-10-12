@@ -10,6 +10,8 @@ from PyQt6.QtWidgets import QDialog, QMessageBox
 from app.models.capture_pdf_workspace import CapturePdfWorkspace
 from app.models.scan_config_model import ScanConfigModel
 from app.services.capture_pdf_service import CapturePdfService
+from app.services.document_geometry_service import DocumentGeometryService
+from time import perf_counter
 from app.services.document_service import DocumentService
 from app.services.scan_service import ScanService
 from app.utils.file_naming import safe_output_path
@@ -43,12 +45,19 @@ class CapturePdfController:
         self._render_worker: CapturePdfWorker | None = None
         self._render_generation = 0
         self._render_pending = False
+        self._geometry_workers = set()
+        self._geometry_generation = 0
+        self._scan_generation = 0
         self._connect_signals()
         self.workspace.register_view("capture_pdf", self.view)
         self.workspace.register_alias("scanner", "capture_pdf")
         self.workspace.register_alias("pdf", "capture_pdf")
 
     def _connect_signals(self) -> None:
+        self.view.geometry_changed.connect(self._manual_geometry)
+        self.view.detect_requested.connect(lambda: self._detect_page(self._current_page(), force=True))
+        self.view.reset_geometry_requested.connect(self._reset_geometry)
+        self.view.output_format_changed.connect(self._output_format)
         self.view.scan_requested.connect(self.on_scan_requested)
         self.view.import_images_requested.connect(self.on_import_images)
         self.view.open_pdf_requested.connect(self.on_open_pdf)
@@ -105,24 +114,33 @@ class CapturePdfController:
         except Exception as exc:
             QMessageBox.warning(self.view, "Scanner", ScanService.friendly_error(exc, values.get("source")))
             return
+        self._invalidate_geometry()
+        self._scan_generation += 1
         worker = ScanWorker(config)
         self._scan_worker = worker
         worker.progress.connect(self._show_progress)
-        worker.succeeded.connect(self._on_scan_succeeded)
+        worker.succeeded.connect(lambda image, generation=self._scan_generation: self._scan_received(generation, image))
         worker.failed.connect(self._on_scan_failed)
         worker.finished.connect(lambda worker=worker: self._cleanup_scan_worker(worker))
         worker.finished.connect(worker.deleteLater)
         self._set_busy(True)
         worker.start()
 
+    def _scan_received(self, generation, image):
+        if generation != self._scan_generation:
+            image.close(); return
+        self._on_scan_succeeded(image)
+
     def _on_scan_succeeded(self, image) -> None:
         try:
             page = CapturePdfService.page_from_scan(image)
+            page.output_format = self.view.output_combo.currentData()
             self.state.add_pages([page])
             self.state.source = "SCANNER"
             if self.state.output_name == "Novo documento":
                 self.state.output_name = "Documento digitalizado"
             self._schedule_render()
+            self._detect_page(page)
         finally:
             if hasattr(image, "close"):
                 image.close()
@@ -153,6 +171,9 @@ class CapturePdfController:
 
     def _on_images_loaded(self, pages) -> None:
         self.state.add_pages(pages)
+        for page in pages:
+            page.output_format = self.view.output_combo.currentData()
+            self._detect_page(page)
         self.state.source = self.state.source or "IMAGES"
         if self.state.output_name == "Novo documento":
             self.state.output_name = sources_name(pages, "Imagens importadas")
@@ -176,6 +197,7 @@ class CapturePdfController:
         )
 
     def _replace_with_pdf(self, source: Path, pages) -> None:
+        self._invalidate_geometry()
         CapturePdfService.close_pages(self.state.clear())
         self.state.add_pages(pages)
         self.state.source = "PDF"
@@ -368,6 +390,9 @@ class CapturePdfController:
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return False
+        self._invalidate_geometry()
+        self._scan_generation += 1
+        if self._scan_worker: self._scan_worker.requestInterruption()
         CapturePdfService.close_pages(self.state.clear())
         # Invalida qualquer resultado já enfileirado antes de limpar a View.
         self._render_generation += 1
@@ -413,6 +438,8 @@ class CapturePdfController:
         def task(progress, cancelled):
             try:
                 progress(10, "Gerando visualização")
+                # Overlay is in source coordinates, so preview original page geometry.
+                for page in snapshot: page.geometry = None
                 images = CapturePdfService.render_pages(snapshot, scale=0.55, cancelled=cancelled)
                 progress(100, "Visualização pronta")
                 return generation, [page.id for page in snapshot], images
@@ -434,6 +461,7 @@ class CapturePdfController:
             return
         pixmaps = [(page_id, QPixmap.fromImage(image)) for page_id, image in zip(page_ids, images)]
         self.view.set_pages(pixmaps, self.state.current_page)
+        self._show_geometry()
         self._update_view_state()
 
     def _cleanup_render(self, worker: CapturePdfWorker) -> None:
@@ -447,6 +475,91 @@ class CapturePdfController:
     def _set_current_page(self, index: int) -> None:
         if 0 <= index < len(self.state.pages):
             self.state.current_page = index
+            self._show_geometry()
+
+    def _current_page(self):
+        return self.state.pages[self.state.current_page] if 0 <= self.state.current_page < len(self.state.pages) else None
+
+    def _invalidate_geometry(self):
+        self._geometry_generation += 1
+        for worker in self._geometry_workers: worker.requestInterruption()
+
+    def _detect_page(self, page, force=False):
+        if page is None or page.image is None or (page.geometry is not None and not force): return
+        if force: self._invalidate_geometry()
+        generation = self._geometry_generation
+        page_id = page.id
+        original = page.image.copy()
+        dpi, source, area = page.scan_dpi, page.measurement_source, page.physical_area_mm
+        def task(progress, cancelled):
+            try:
+                result = DocumentGeometryService.detect(original, dpi=dpi, measurement_source=source,
+                    physical_area_mm=area, cancelled=cancelled)
+                return generation, page_id, result
+            finally: original.close()
+        worker = CapturePdfWorker(task)
+        self._geometry_workers.add(worker)
+        worker.succeeded.connect(self._geometry_ready)
+        worker.failed.connect(lambda message: logger.warning("geometry.failed %s", message))
+        worker.finished.connect(lambda w=worker: self._geometry_workers.discard(w))
+        worker.finished.connect(worker.deleteLater)
+        worker.start()
+
+    def _geometry_ready(self, payload):
+        generation, page_id, result = payload
+        if generation != self._geometry_generation: return
+        page = next((p for p in self.state.pages if p.id == page_id), None)
+        if page is None: return
+        start = perf_counter()
+        page.geometry = result
+        if page is self._current_page(): self._show_geometry()
+        logger.info("geometry.result preview=%s detection_ms=%.2f application_ms=%.2f", result.analysis_resolution,
+                    result.detection_ms, (perf_counter()-start)*1000)
+
+    def _show_geometry(self):
+        page = self._current_page()
+        geometry = page.geometry if page else None
+        overlay = geometry
+        if page and geometry and page.rotation:
+            from dataclasses import replace
+            corners = geometry.normalized_corners
+            for _ in range(page.rotation//90): corners = tuple((1-y,x) for x,y in corners)
+            overlay = replace(geometry, normalized_corners=corners)
+        self.view.preview.set_geometry(overlay)
+        self.view.geometry_label.setText(geometry.description() if geometry else "")
+
+    def _manual_geometry(self, corners):
+        page = self._current_page()
+        if page is None or page.image is None: return
+        for _ in range(page.rotation//90): corners = tuple((y,1-x) for x,y in corners)
+        try:
+            geometry = DocumentGeometryService.from_corners(page.image.size, corners,
+                dpi=page.scan_dpi, measurement_source=page.measurement_source,
+                physical_area_mm=page.physical_area_mm)
+        except ValueError: return
+        self._invalidate_geometry()
+        page.geometry = geometry
+        self.state.dirty = True
+        self._show_geometry()
+
+    def _reset_geometry(self):
+        page = self._current_page()
+        if page is None: return
+        self._invalidate_geometry()
+        if page.image is not None:
+            page.geometry = DocumentGeometryService.from_corners(page.image.size, DocumentGeometryService.FULL, confidence=0, detection_status="NOT_DETECTED")
+        self.state.dirty = True
+        self._show_geometry()
+
+    def _output_format(self, value):
+        for page in self.state.pages: page.output_format = value
+        self.state.dirty = bool(self.state.pages)
+
+    def shutdown(self):
+        self._scan_generation += 1
+        self._invalidate_geometry()
+        for worker in (*self._geometry_workers, self._scan_worker, self._render_worker, self._operation_worker):
+            if worker and worker.isRunning(): worker.requestInterruption(); worker.wait(5000)
 
     def _set_busy(self, busy: bool) -> None:
         self.view.set_document_state(self.state.output_name, len(self.state.pages), busy)

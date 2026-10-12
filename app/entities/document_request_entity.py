@@ -14,6 +14,7 @@ class DocumentRequestEntity:
     requested_by_user_id: int | None = None
     assigned_to_user_id: int | None = None
     status: str = "OPEN"
+    operational_status: str | None = None
     due_at: str | None = None
     created_at: str = ""
     updated_at: str = ""

@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtWidgets import (QComboBox,QFormLayout,QFrame,QHBoxLayout,QLabel,QLineEdit,QListWidget,QListWidgetItem,QPushButton,QTabWidget,QTextEdit,QVBoxLayout,QWidget)
+from PyQt6.QtWidgets import (QComboBox,QFormLayout,QFrame,QHBoxLayout,QLabel,QLineEdit,QListWidget,QListWidgetItem,QPushButton,QStackedWidget,QCheckBox,QTextEdit,QVBoxLayout,QWidget)
 
 from app.ui.icon_provider import IconProvider
+from app.views.widgets.flow_step_indicator import FlowStepIndicator
+from app.services.request_notification_service import request_stage
+
+
+class WorkspacePanels(QStackedWidget):
+    def addTab(self, widget, _label): return self.addWidget(widget)
 
 
 class DeliveryWorkspaceView(QWidget):
@@ -11,6 +17,7 @@ class DeliveryWorkspaceView(QWidget):
     prepare_request_requested=pyqtSignal(int)
     select_documents_requested=pyqtSignal(); remove_basket_requested=pyqtSignal(int); clear_basket_requested=pyqtSignal(); send_requested=pyqtSignal(dict)
     retry_requested=pyqtSignal(int); view_requested=pyqtSignal(int); download_requested=pyqtSignal(int); add_to_ged_requested=pyqtSignal(int); acknowledge_requested=pyqtSignal(int); receipt_requested=pyqtSignal(int)
+    request_read=pyqtSignal(int); preferences_changed=pyqtSignal(bool,bool)
     configure_requested=pyqtSignal(); refresh_requested=pyqtSignal()
     def __init__(self):
         super().__init__(); self.setObjectName("deliveryWorkspace"); self._can_acknowledge=False; self._setup()
@@ -19,7 +26,17 @@ class DeliveryWorkspaceView(QWidget):
         header=QHBoxLayout(); titles=QVBoxLayout(); title=QLabel("Solicitações e Entregas"); title.setObjectName("deliveryTitle"); titles.addWidget(title); titles.addWidget(QLabel("Solicite, prepare, envie e acompanhe documentos por protocolo.")); header.addLayout(titles); header.addStretch()
         self.configure=QPushButton("Configurar LAN"); IconProvider.apply(self.configure,"provider_settings"); self.configure.clicked.connect(self.configure_requested.emit)
         refresh=QPushButton("Atualizar"); IconProvider.apply(refresh,"cloud_sync"); refresh.clicked.connect(self.refresh_requested.emit); header.addWidget(self.configure); header.addWidget(refresh); root.addLayout(header)
-        self.tabs=QTabWidget(); root.addWidget(self.tabs,1)
+        self._requests=[]; self._current_user_id=None; self._unread=set(); self._stage=0
+        self.flow=FlowStepIndicator(); root.addWidget(self.flow)
+        self.flow.step_clicked.connect(self._select_stage)
+        secondary=QHBoxLayout()
+        for text,index in (("Criadas por mim",2),("Recebidos",6),("Enviados",5),("Histórico",8)):
+            button=QPushButton(text);button.clicked.connect(lambda _checked=False,i=index:self._secondary_panel(i));secondary.addWidget(button)
+        self.sound_check=QCheckBox("Som para novas solicitações");self.animation_check=QCheckBox("Animação para novas solicitações")
+        for check in (self.sound_check,self.animation_check):
+            check.setChecked(True);check.toggled.connect(lambda:self.preferences_changed.emit(self.sound_check.isChecked(),self.animation_check.isChecked()));secondary.addWidget(check)
+        root.addLayout(secondary)
+        self.tabs=WorkspacePanels(); root.addWidget(self.tabs,1)
         self.overview_list=QListWidget(); self.tabs.addTab(self._list_panel(self.overview_list),"Caixa de entrada")
         self.tabs.addTab(self._requests_tab(),"Solicitações recebidas")
         self.created_list=QListWidget(); self.tabs.addTab(self._list_panel(self.created_list),"Criadas por mim")
@@ -29,7 +46,9 @@ class DeliveryWorkspaceView(QWidget):
         self.inbox_list=QListWidget(); self.inbox_list.currentItemChanged.connect(self._inbox_selected); self.tabs.addTab(self._inbox_tab(),"Documentos recebidos")
         self.basket_panel=self._basket_tab(); self.tabs.addTab(self.basket_panel,"Cesta de documentos")
         self.history_list=QListWidget(); self.tabs.addTab(self._list_panel(self.history_list),"Histórico")
+        self.requests_list.currentItemChanged.connect(self._request_selected)
         self.status=QLabel("Pronto"); root.addWidget(self.status)
+        self._select_stage(0)
     def _requests_tab(self):
         panel=QWidget(); layout=QHBoxLayout(panel); self.requests_list=QListWidget(); layout.addWidget(self.requests_list,2)
         form=QFormLayout(); self.request_title=QLineEdit(); self.request_description=QTextEdit(); self.request_description.setMaximumHeight(80); self.assignee=QComboBox(); self.assignee.addItem("Sem responsável",None); self.due=QLineEdit(); self.due.setPlaceholderText("AAAA-MM-DDTHH:MM (opcional)")
@@ -67,17 +86,55 @@ class DeliveryWorkspaceView(QWidget):
         user_index=self.recipient.findData(user_id); peer_index=self.peer.findData(instance_id)
         if user_index>=0:self.recipient.setCurrentIndex(user_index)
         if peer_index>=0:self.peer.setCurrentIndex(peer_index)
+        self.flow.select(2)
         self.tabs.setCurrentWidget(self.basket_panel)
+    def _secondary_panel(self,index):
+        if index in (5,6):self.flow.select(3)
+        self.tabs.setCurrentIndex(index)
+
     def set_requests(self,requests,current_user_id):
-        targets=(self.requests_list,self.created_list,self.attending_list,self.waiting_list)
-        for widget in targets: widget.clear()
+        self._requests=list(requests);self._current_user_id=current_user_id
+        for widget in (self.created_list,self.attending_list,self.waiting_list):widget.clear()
         self.overview_list.clear()
         for request in requests:
-            text=f"{request.status} · {request.title}"+(" · ATRASADA" if request.status=="OVERDUE" else ""); item=self._item(text,request.id,request.status); self.requests_list.addItem(item)
+            text=f"{request.status} · {request.title}"
             if request.requested_by_user_id==current_user_id:self.created_list.addItem(self._item(text,request.id,request.status))
-            if request.status in {"IN_PROGRESS"}:self.attending_list.addItem(self._item(text,request.id,request.status))
-            if request.status in {"ATTENDED","DELIVERING"}:self.waiting_list.addItem(self._item(text,request.id,request.status))
-            if request.assigned_to_user_id==current_user_id and request.status not in {"COMPLETED","CANCELLED"}:self.overview_list.addItem(f"Solicitação · {text}")
+            if request.status=="IN_PROGRESS":self.attending_list.addItem(self._item(text,request.id,request.status))
+            if request.status=="ATTENDED":self.waiting_list.addItem(self._item(text,request.id,request.status))
+        self._populate_stage()
+
+    def set_unread(self,unread):
+        if self._unread != set(unread):
+            self._unread=set(unread);self._populate_stage()
+
+    def _populate_stage(self):
+        selected=self.requests_list.currentItem()
+        selected_id=selected.data(Qt.ItemDataRole.UserRole) if selected else None
+        self.requests_list.blockSignals(True);self.requests_list.clear()
+        counts=[0]*5
+        for request in self._requests:
+            stage=request_stage(getattr(request,"operational_status",None) or request.status);counts[stage]+=1
+            if stage==self._stage:
+                prefix="● NOVA · " if request.id in self._unread else ""
+                self.requests_list.addItem(self._item(f"{prefix}{request.status} · {request.title}",request.id,request.status))
+        for index in range(self.requests_list.count()):
+            if self.requests_list.item(index).data(Qt.ItemDataRole.UserRole)==selected_id:self.requests_list.setCurrentRow(index)
+        self.requests_list.blockSignals(False)
+        self.flow.set_counts(counts,len(self._unread))
+
+    def _select_stage(self,index):
+        self._stage=index;self._populate_stage()
+        # All operational request actions stay available, with basket contextual to preparation.
+        self.tabs.setCurrentIndex(5 if index==3 else 1)
+        self.prepare_request_button.setVisible(index==2)
+
+    def _request_selected(self,item,*_):
+        if item:self.request_read.emit(int(item.data(Qt.ItemDataRole.UserRole)))
+
+    def set_alert_preferences(self,sound,animation):
+        for check,value in ((self.sound_check,sound),(self.animation_check,animation)):
+            check.blockSignals(True);check.setChecked(value);check.blockSignals(False)
+
     def set_basket(self,basket):
         self.basket_list.clear()
         for item in basket.items:self.basket_list.addItem(self._item(f"{item.logical_name} · {item.size/1024:.1f} KB",item.document_id,""))
@@ -108,7 +165,9 @@ class DeliveryWorkspaceView(QWidget):
     def select_tab(self,key):
         targets={"received":self.inbox_list,"sent":self.sent_list,"history":self.history_list}
         widget=targets.get(key)
-        if widget is not None:self.tabs.setCurrentWidget(widget.parentWidget())
+        if widget is not None:
+            if key in {"received","sent"}:self.flow.select(3)
+            self.tabs.setCurrentWidget(widget.parentWidget())
     def _sent_selected(self,item,*_):
         self.sent_receipt.setEnabled(bool(item and item.data(Qt.ItemDataRole.UserRole+2)))
     def _inbox_selected(self,item,*_):

@@ -9,10 +9,11 @@ from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QSpinBox,
-    QStackedWidget, QVBoxLayout, QWidget,
+    QStackedWidget, QVBoxLayout, QWidget, QScrollArea,
 )
 
 from app.models.handwritten_signature_request import HandwrittenSignatureRequest
+from app.views.widgets.signature_qr_options import SignatureQrOptions
 from app.ui.icon_provider import IconProvider
 from app.utils.file_naming import safe_output_path
 from app.views.widgets.signature_acquisition_widget import SignatureAcquisitionWidget
@@ -87,9 +88,14 @@ class HandwrittenSignatureDialog(QDialog):
         fields.addRow("Nome:", self.signer_name)
         fields.addRow("Legenda:", self.caption)
         fields.addRow("Novo PDF:", output_row)
+        self.qr_options = SignatureQrOptions(page_count)
+        fields.addRow(self.qr_options)
         back = QPushButton("Voltar ao desenho"); back.clicked.connect(lambda: self.steps.setCurrentIndex(0))
         fields.addRow(back)
-        placement_layout.addLayout(fields)
+        fields_widget = QWidget(); fields_widget.setLayout(fields)
+        fields_scroll = QScrollArea(); fields_scroll.setWidgetResizable(True); fields_scroll.setWidget(fields_widget)
+        fields_scroll.setMinimumWidth(300)
+        placement_layout.addWidget(fields_scroll)
         self.steps.addWidget(placement_page)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Save)
@@ -115,6 +121,7 @@ class HandwrittenSignatureDialog(QDialog):
             add_caption=self.caption.isChecked(),
             existing_signatures_confirmed=self.existing_signatures_confirmed,
             signature_method=self.acquisition.method,
+            **self.qr_options.values(),
         )
 
     def clear_signature(self) -> None:

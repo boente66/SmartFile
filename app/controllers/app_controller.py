@@ -264,6 +264,8 @@ class AppController:
         if self._stopped:
             return
         self._stopped = True
+        if self.capture_pdf_controller:
+            self.capture_pdf_controller.shutdown()
         if self.transport_controller is not None:
             self.transport_controller.shutdown()
         if self.transport_coordinator is not None:

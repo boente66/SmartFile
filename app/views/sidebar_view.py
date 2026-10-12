@@ -120,3 +120,8 @@ class SidebarView(QWidget):
                 feature_set.profile_code == "BUSINESS"
                 and feature_set.has("document_requests")
             )
+
+    def set_request_badge(self, count):
+        button = self._buttons.get("deliveries")
+        if button is not None:
+            button.setText("Solicitações e Entregas" + (f" · {count} nova(s)" if count else ""))

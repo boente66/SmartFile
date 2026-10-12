@@ -59,7 +59,10 @@ class CapturePdfService:
     def page_from_scan(image: Image.Image) -> CapturePdfPage:
         if image is None:
             raise ValueError("O scanner não retornou uma página válida.")
-        return CapturePdfPage(source_kind="SCAN", image=image.convert("RGB"))
+        return CapturePdfPage(source_kind="SCAN", image=image.convert("RGB"),
+            scan_dpi=image.info.get("effective_dpi") or image.info.get("requested_dpi"),
+            measurement_source="DEVICE_GEOMETRY" if image.info.get("physical_area_mm") else "SCANNER_DPI" if image.info.get("effective_dpi") else "ESTIMATED" if image.info.get("requested_dpi") else "UNKNOWN",
+            physical_area_mm=image.info.get("physical_area_mm"))
 
     @classmethod
     def render_page(
@@ -86,6 +89,7 @@ class CapturePdfService:
         try:
             if page.rotation:
                 image = image.rotate(-page.rotation, expand=True)
+            image.thumbnail((1400, 1400))
             data = image.tobytes("raw", "RGB")
             return QImage(
                 data, image.width, image.height, image.width * 3,
@@ -123,7 +127,7 @@ class CapturePdfService:
                         if page.rotation:
                             image = image.rotate(-page.rotation, expand=True)
                         writer.append_pages_from_reader(
-                            PdfReader(cls._image_pdf(image))
+                            PdfReader(cls._image_pdf(image, page))
                         )
                     finally:
                         image.close()
@@ -159,18 +163,41 @@ class CapturePdfService:
                 page.image = None
 
     @staticmethod
-    def _image_pdf(image: Image.Image):
+    def _image_pdf(image: Image.Image, page=None):
         from io import BytesIO
 
         buffer = BytesIO()
-        image.save(buffer, format="PDF")
+        from reportlab.pdfgen.canvas import Canvas
+        from reportlab.lib.utils import ImageReader
+        from reportlab.lib.units import mm
+        width, height = 210*mm, 297*mm
+        geometry = getattr(page, "geometry", None)
+        if getattr(page, "output_format", "A4_AUTO") == "DETECTED" and geometry and geometry.reliable_measurement:
+            width, height = geometry.physical_width_mm*mm, geometry.physical_height_mm*mm
+            if page.rotation in (90,270): width,height = height,width
+        canvas = Canvas(buffer, pagesize=(width,height))
+        margin = min(8*mm, width*.04, height*.04)
+        scale = min((width-2*margin)/image.width,(height-2*margin)/image.height)
+        iw,ih = image.width*scale,image.height*scale
+        canvas.drawImage(ImageReader(image),(width-iw)/2,(height-ih)/2,iw,ih)
+        canvas.showPage(); canvas.save()
         buffer.seek(0)
         return buffer
 
     @staticmethod
     def _page_image(page: CapturePdfPage) -> Image.Image:
         if page.image is not None:
-            return page.image.copy().convert("RGB")
+            image = page.image.copy().convert("RGB")
+            geometry = page.geometry
+            if geometry and geometry.detection_status != "NOT_DETECTED" and geometry.confidence >= .8:
+                from app.services.document_geometry_service import DocumentGeometryService
+                try:
+                    transformed = DocumentGeometryService.transform(image, geometry)
+                except Exception:
+                    return image
+                image.close()
+                return transformed
+            return image
         if page.source_path is not None:
             with Image.open(page.source_path) as image:
                 return image.convert("RGB")

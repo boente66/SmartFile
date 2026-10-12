@@ -24,6 +24,11 @@ class SignatureRequest:
     timestamp_url: str | None = None
     pades_profile: str = "PAdES-B-B"
 
+    qr_visible: bool = False
+    verification_url: str | None = None
+    qr_page_number: int = 1
+    qr_rect: tuple | None = None
+
     def validate(self, page_count: int | None = None) -> None:
         for path, label, suffixes in (
             (self.input_path, "PDF de entrada", {".pdf"}),

@@ -1,0 +1,3 @@
+request_alert.wav: original synthesized dual-tone notification for SmartFile.
+Copyright SmartFile contributors. Licensed under the repository LICENSE.
+No external sound recording or proprietary siren was used.

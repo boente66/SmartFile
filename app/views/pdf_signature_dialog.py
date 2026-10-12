@@ -2,11 +2,12 @@ from pathlib import Path
 
 from PyQt6.QtWidgets import (
     QCheckBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog,
-    QComboBox, QFormLayout, QHBoxLayout, QLineEdit, QPushButton, QSpinBox, QVBoxLayout,
+    QComboBox, QFormLayout, QHBoxLayout, QLineEdit, QPushButton, QSpinBox, QVBoxLayout, QScrollArea, QWidget,
 )
 from PyQt6.QtGui import QPixmap
 
 from app.models.signature_request import SignatureRequest
+from app.views.widgets.signature_qr_options import SignatureQrOptions
 from app.ui.icon_provider import IconProvider
 from app.utils.file_naming import safe_output_path
 from app.views.widgets.pdf_signature_placement_widget import PDFSignaturePlacementWidget
@@ -24,8 +25,10 @@ class PDFSignatureDialog(QDialog):
             preview or QPixmap(), page_size[0], page_size[1]
         )
         outer.addWidget(self.placement, 1)
-        form_container = QVBoxLayout()
-        outer.addLayout(form_container, 1)
+        form_widget = QWidget()
+        form_container = QVBoxLayout(form_widget)
+        form_scroll = QScrollArea(); form_scroll.setWidgetResizable(True); form_scroll.setWidget(form_widget)
+        outer.addWidget(form_scroll, 1)
         form = QFormLayout()
         self.certificate_edit = QLineEdit()
         browse = QPushButton("Selecionar…")
@@ -61,6 +64,16 @@ class PDFSignatureDialog(QDialog):
         output_row = QHBoxLayout(); output_row.addWidget(self.output_edit, 1); output_row.addWidget(output_button)
         form.addRow("Saída:", output_row)
         form_container.addLayout(form)
+        self.qr_options = SignatureQrOptions(page_count)
+        form_container.addWidget(self.qr_options)
+        govbr = QPushButton("Abrir assinador Gov.br")
+        govbr.setToolTip("Assine no portal oficial e abra o PDF baixado no SmartFile para validar. Nenhum documento é enviado automaticamente.")
+        def open_govbr():
+            from PyQt6.QtCore import QUrl
+            from PyQt6.QtGui import QDesktopServices
+            from app.services.signature_verification_service import SignatureVerificationService
+            QDesktopServices.openUrl(QUrl(SignatureVerificationService.GOVBR_SIGN_URL))
+        govbr.clicked.connect(open_govbr); form_container.addWidget(govbr)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject)
         form_container.addWidget(buttons)
@@ -86,6 +99,7 @@ class PDFSignatureDialog(QDialog):
             contact_info=self.contact_edit.text().strip() or None,
             timestamp_url=self.timestamp_edit.text().strip() or None,
             pades_profile=self.profile_combo.currentText(),
+            **self.qr_options.values(),
         )
 
     def clear_secret(self) -> None:

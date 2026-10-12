@@ -11,12 +11,16 @@ from PyQt6.QtWidgets import (
 )
 
 from app.ui.icon_provider import IconProvider
-from app.views.widgets.preview_widget import PreviewWidget
+from app.views.widgets.document_geometry_preview import DocumentGeometryPreview
 
 
 class CapturePdfView(QWidget):
     """Experiência única para capturar, organizar e gerar documentos PDF."""
 
+    geometry_changed = pyqtSignal(object)
+    detect_requested = pyqtSignal()
+    reset_geometry_requested = pyqtSignal()
+    output_format_changed = pyqtSignal(str)
     scan_requested = pyqtSignal()
     import_images_requested = pyqtSignal(list)
     open_pdf_requested = pyqtSignal(str)
@@ -114,9 +118,9 @@ class CapturePdfView(QWidget):
         self.dpi_combo = self._combo()
         for dpi in (150, 300, 600): self.dpi_combo.addItem(f"{dpi} dpi", dpi)
         self.dpi_combo.setCurrentIndex(1)
-        self.paper_combo = self._combo(); self.paper_combo.addItem("A4 (210 × 297 mm)"); self.paper_combo.setEnabled(False)
+        self.paper_combo = self._combo(); self.paper_combo.addItem("Detecção automática da folha"); self.paper_combo.setEnabled(False)
         self.source_combo = self._combo(); self.source_combo.currentIndexChanged.connect(self._update_capabilities)
-        for label, widget in (("Scanner:", self.device_combo), ("Perfil:", self.profile_combo), ("Cor:", self.color_combo), ("Resolução:", self.dpi_combo), ("Tamanho:", self.paper_combo), ("Fonte:", self.source_combo)):
+        for label, widget in (("Scanner:", self.device_combo), ("Perfil:", self.profile_combo), ("Cor:", self.color_combo), ("Resolução:", self.dpi_combo), ("Fonte:", self.source_combo)):
             layout.addWidget(QLabel(label)); layout.addWidget(widget)
         self.duplex = QCheckBox("Frente e verso (duplex)")
         self.adf = QCheckBox("Alimentador automático")
@@ -124,7 +128,14 @@ class CapturePdfView(QWidget):
         self.btn_scan = QPushButton("Iniciar Digitalização"); self.btn_scan.setObjectName("capturePdfPrimary")
         IconProvider.apply(self.btn_scan, "scan"); self.btn_scan.clicked.connect(self.scan_requested.emit)
         layout.addWidget(self.btn_scan)
-        layout.addSpacing(8); layout.addWidget(self._heading("OUTRAS OPÇÕES"))
+        self.output_combo = self._combo()
+        self.output_combo.addItem("A4 automático", "A4_AUTO")
+        self.output_combo.addItem("Manter tamanho detectado", "DETECTED")
+        self.output_combo.setToolTip("Sem medida confiável, a saída usa A4 seguro.")
+        self.output_combo.currentIndexChanged.connect(lambda: self.output_format_changed.emit(self.output_combo.currentData()))
+        layout.addSpacing(8); layout.addWidget(self._heading("SAÍDA AVANÇADA"))
+        layout.addWidget(self.output_combo)
+        layout.addWidget(self._heading("OUTRAS OPÇÕES"))
         layout.addWidget(self._wide_button("Importar Imagens", "image", self._choose_images))
         layout.addWidget(self._wide_button("Abrir PDF Existente", "pdf", self._choose_open_pdf))
         layout.addWidget(self._wide_button("Limpar Tudo", "trash", self.clear_requested.emit))
@@ -179,7 +190,12 @@ class CapturePdfView(QWidget):
         self._menu_action(more_menu, "Limpar workspace", "trash", self.clear_requested.emit)
         more.setMenu(more_menu); tools.addWidget(more); tools.addStretch()
         layout.addLayout(tools)
-        self.preview = PreviewWidget(); self.preview.setObjectName("capturePdfPreview")
+        self.geometry_label = QLabel(""); layout.addWidget(self.geometry_label)
+        geometry_tools = QHBoxLayout()
+        for text, signal in (("Detectar bordas", self.detect_requested), ("Redefinir", self.reset_geometry_requested)):
+            button = QPushButton(text); button.clicked.connect(signal.emit); geometry_tools.addWidget(button)
+        layout.addLayout(geometry_tools)
+        self.preview = DocumentGeometryPreview(); self.preview.corners_changed.connect(self.geometry_changed.emit); self.preview.setObjectName("capturePdfPreview")
         layout.addWidget(self.preview, 1)
         navigation = QHBoxLayout()
         self.btn_first = self._nav("Primeira página", "viewer_first_page", lambda: self.page_list.setCurrentRow(0))
@@ -243,7 +259,7 @@ class CapturePdfView(QWidget):
             self.page_list.addItem(item)
         self.page_list.blockSignals(False); self._building_pages = False
         if pages: self.page_list.setCurrentRow(min(max(current, 0), len(pages) - 1))
-        else: self.preview.set_pixmap(QPixmap()); self.page_indicator.setText("0 / 0")
+        else: self.preview.set_pixmap(QPixmap()); self.preview.set_geometry(None); self.geometry_label.clear(); self.page_indicator.setText("0 / 0")
 
     def set_document_state(self, name: str, count: int, busy: bool) -> None:
         self.document_label.setText(f"Documento: {name}"); self.count_label.setText(f"Páginas: {count}")

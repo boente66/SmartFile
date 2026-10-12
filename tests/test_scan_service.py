@@ -149,3 +149,43 @@ def test_windows_pytwain_scan_returns_detached_rgb_image(monkeypatch):
     assert image.size == (4, 3)
     assert source.closed is True
     image.close()
+
+
+def test_sane_effective_dpi_readback_is_different_from_requested(monkeypatch):
+    class Device(_FakeDevice):
+        @property
+        def resolution(self):return 200
+        @resolution.setter
+        def resolution(self,value):pass
+        def get_options(self):return [(0,'resolution','','',0,4,0,0,(150,300))]
+    device=Device()
+    monkeypatch.setitem(sys.modules,'sane',_fake_sane(device))
+    image=ScanService._scan_linux(ScanConfigModel('device',dpi=300,color_mode='gray'))
+    assert image.info['requested_dpi']==300
+    assert image.info['effective_dpi']==(200,200)
+    image.close()
+
+
+def test_windows_modern_applies_dpi_color_source_and_effective_metadata(monkeypatch):
+    buffer=BytesIO();Image.new('RGB',(20,30),'white').save(buffer,format='BMP')
+    calls=[]
+    class Source:
+        image_info={'XResolution':200,'YResolution':200}
+        def set_capability(self,*args):calls.append(args)
+        def request_acquire(self,**kwargs):pass
+        def modal_loop(self):pass
+        def xfer_image_natively(self):return 123,0
+        def close(self):pass
+    source=Source()
+    class Manager:
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def open_source(self,name):return source
+    twain=SimpleNamespace(SourceManager=lambda _:Manager(),dib_to_bm_file=lambda _:buffer.getvalue(),
+        ICAP_XRESOLUTION=1,ICAP_YRESOLUTION=2,ICAP_PIXELTYPE=3,CAP_FEEDERENABLED=4,
+        TWTY_FIX32=7,TWTY_UINT16=8,TWTY_BOOL=9,TWPT_GRAY=10)
+    monkeypatch.setitem(sys.modules,'twain',twain)
+    image=ScanService._scan_windows(ScanConfigModel('test',dpi=300,color_mode='gray',source_name='Flatbed'))
+    assert calls==[(1,7,300),(2,7,300),(3,8,10),(4,9,False)]
+    assert image.info['effective_dpi']==(200,200)
+    image.close()

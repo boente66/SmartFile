@@ -154,3 +154,17 @@ def test_multiple_incremental_signatures_are_detected(tmp_path: Path):
     second = service.sign(second_request)
 
     assert len(service.validate(second.output_path)) == 2
+
+
+def test_optional_qr_is_covered_by_certificate_signature(tmp_path):
+    request = _request(tmp_path)
+    request.qr_visible = True
+    request.verification_url = 'https://example.org/verify/signed.pdf'
+    request.qr_rect = (180, 300, 270, 390)
+    original = request.input_path.read_bytes()
+    result = PDFSignatureService().sign(request)
+    with fitz.open(result.output_path) as document:
+        assert document[0].get_images()
+    validation = PDFSignatureService().validate(result.output_path)
+    assert validation[0].integrity_ok
+    assert request.input_path.read_bytes() == original

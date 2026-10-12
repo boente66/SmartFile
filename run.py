@@ -46,6 +46,7 @@ def smoke_test() -> int:
                 resource_path("assets/style.qss"),
                 resource_path("assets/icons/app.svg"),
                 resource_path("app/database/schema.sql"),
+                resource_path("assets/sounds/request_alert.wav"),
             )
             if not all(path.is_file() for path in required):
                 return 2
@@ -53,6 +54,18 @@ def smoke_test() -> int:
                 return 3
             if not paths.database.is_file():
                 return 4
+            # Exercise native libraries and local assistance in the frozen bundle.
+            from PIL import Image, ImageDraw
+            from app.services.document_geometry_service import DocumentGeometryService
+            from app.services.signature_verification_service import SignatureVerificationService
+            from PyQt6.QtMultimedia import QSoundEffect
+            image = Image.new("RGB", (160, 220), "black")
+            ImageDraw.Draw(image).rectangle((20, 20, 140, 200), fill="white")
+            geometry = DocumentGeometryService.detect(image)
+            image.close()
+            if geometry.detection_status != "DETECTED": return 5
+            if not SignatureVerificationService.qr_png("https://validar.iti.gov.br/"): return 6
+            if QSoundEffect is None: return 7
             app.processEvents()
             return 0
         finally:

@@ -12,6 +12,7 @@ zeroconf>=0.147,<0.151
 # Imagens / preview
 # =========================
 Pillow>=10.0.0
+opencv-python-headless>=4.10,<6
 
 # =========================
 # PDF (preview e edição)

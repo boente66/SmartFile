@@ -15,9 +15,11 @@ logger=logging.getLogger(__name__)
 
 
 class DeliveryCoordinator(QObject):
+    request_received=pyqtSignal(int)
     notification=pyqtSignal(str,str); status_changed=pyqtSignal(str)
     def __init__(self, service, context=None, parent=None, client=None, discovery_service=None):
         super().__init__(parent); self.service=service; self.context=context; self.client=client or DeliveryHttpClient(); self.server=None; self.discovery_service=discovery_service
+        self.service.request_received_callback = self.request_received.emit
         self.service.notification_callback = self.notification.emit; self.queue_worker=None
         self._last_cycle_message: str | None = None
         self._reported_unavailable: set[tuple[str, str]] = set()

@@ -70,6 +70,9 @@ class HandwrittenSignatureService:
                     request.y + request.height,
                 )
                 page.insert_image(rectangle, stream=request.signature_image, keep_proportion=True, overlay=True)
+                if request.qr_visible:
+                    from app.services.signature_verification_service import SignatureVerificationService
+                    SignatureVerificationService.insert_qr(document, request.verification_url or "", request.qr_page_number, request.qr_rect)
                 if request.add_caption:
                     self._insert_caption(page, request)
                 document.save(temporary, garbage=0, deflate=True, encryption=fitz.PDF_ENCRYPT_KEEP)
