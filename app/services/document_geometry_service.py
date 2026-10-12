@@ -10,6 +10,7 @@ from app.models.document_geometry import DocumentGeometryResult
 
 class DocumentGeometryService:
     MAX_EDGE = 1000
+    CONTOUR_SAMPLING = "DENSE"
     SIZES = {"A4": (210, 297), "LETTER": (215.9, 279.4), "LEGAL": (215.9, 355.6),
              "A5": (148, 210), "A3": (297, 420)}
     FULL = ((0., 0.), (1., 0.), (1., 1.), (0., 1.))
@@ -199,6 +200,14 @@ class DocumentGeometryService:
                        measurement_source="ESTIMATED" if result.physical_width_mm is not None else "UNKNOWN",
                        standard_size="CUSTOM", boundary_status="INCOMPLETE", boundary_evidence=tuple(evidence))
 
+    @staticmethod
+    def _analysis_opening_kernel(size):
+        # Preserve the established 15 px footprint at the normal analysis size.
+        # Larger diagnostic previews need the same footprint in source space,
+        # otherwise ADF strips reconnect to the sheet and win as candidates.
+        value = max(15, round(15 * max(size) / 1000))
+        return value if value % 2 else value + 1
+
     @classmethod
     def detect(cls, image, *, dpi=None, measurement_source="UNKNOWN", physical_area_mm=None, cancelled=lambda:False):
         start = perf_counter()
@@ -216,10 +225,14 @@ class DocumentGeometryService:
             _, threshold = cv2.threshold(gray,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
             # ADF backing strips can join the paper contour to the acquisition frame.
             # Opening separates thin backing strips without changing the original image.
-            opened = cv2.morphologyEx(threshold,cv2.MORPH_OPEN,np.ones((15,15),np.uint8))
+            opening_size = cls._analysis_opening_kernel(size)
+            opened = cv2.morphologyEx(threshold,cv2.MORPH_OPEN,np.ones((opening_size,opening_size),np.uint8))
             for mask in (edges,threshold,255-threshold,opened):
                 if cancelled(): raise InterruptedError
-                contours,_ = cv2.findContours(mask,cv2.RETR_LIST,cv2.CHAIN_APPROX_SIMPLE)
+                # The line fitter trims endpoints; SIMPLE can leave zero samples
+                # on a straight edge. Dense boundary samples retain its support.
+                sampling = cv2.CHAIN_APPROX_NONE if cls.CONTOUR_SAMPLING == "DENSE" else cv2.CHAIN_APPROX_SIMPLE
+                contours,_ = cv2.findContours(mask,cv2.RETR_LIST,sampling)
                 for contour in contours:
                     area = cv2.contourArea(contour)/(size[0]*size[1])
                     if not .015 <= area <= .995: continue

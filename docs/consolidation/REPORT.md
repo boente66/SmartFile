@@ -1,6 +1,31 @@
 # SmartFile — consolidação Multicloud, scanner, solicitações e QR
 
-Data: 12/10/2026. Alterações locais na main, sem publicação de release.
+Data: 12/10/2026. Consolidação autorizada para commit/push na main, sem publicação de release.
+
+
+## Fechamento da etapa — aprovação provisória do scanner
+
+Por decisão do usuário, a captura física e a geração segura de PDF foram aprovadas
+para esta entrega. Não há nova aquisição nem refinamento adicional do detector
+nesta rodada. As correções já verificadas foram preservadas; geometria incerta
+continua em `PARTIAL/REVIEW`, sem forçar A4 por tolerância ou informação do usuário.
+
+```text
+Scanner físico: homologado para captura e geração correta de PDF.
+Reconhecimento automático universal do tamanho da folha:
+funcionalidade experimental/assistiva, ainda não homologada para todos os formatos.
+```
+
+O original permanece preservado, e as capturas físicas produziram PDF com MediaBox
+210 × 297 mm. Isso não homologa o reconhecimento automático universal. A investigação
+de tamanho de papel será retomada separadamente. QR Code sem dependência obrigatória
+de URL pública é o próximo item pendente, fora deste fechamento.
+
+Versão `0.9.0-beta.6` e schema **22** mantidos. O checkpoint `2997f10` preserva a
+consolidação inicial; o fechamento incorpora também a correção mínima de amostragem
+de contornos e escala da abertura morfológica descrita em
+[ADF_OFFLINE_DIAGNOSIS.md](ADF_OFFLINE_DIAGNOSIS.md). Os resultados anteriores abaixo
+são o histórico de validação; a suíte completa foi repetida para o fechamento.
 
 ## Base e auditoria
 
@@ -88,7 +113,7 @@ O [VALIDAR oficial](https://www.gov.br/pt-br/servicos/realizar-validacao-de-assi
 - **Auditoria ABI Ubuntu 22.04 reprovada neste host Ubuntu 24.04**: libmount exige GLIBC 2.38 e libicu exige GLIBCXX 3.4.30, acima de 2.35/3.4.29. Não é uma aprovação de compatibilidade Ubuntu 22.04. O build reproduzível deve passar pelo runner Ubuntu 22.04 existente. Não foi instalado/publicado um .deb deste host.
 - Windows: specs, Inno e testes de packaging verificados; execução/build nativo Windows não realizados neste Linux.
 
-## Validação final
+## Validação inicial da consolidação (histórico)
 
 - `venv/bin/python -m pytest -q`: **482 passed**, 358,98 s (5 min 58 s), com sockets locais autorizados para LAN. Execuções anteriores de regressão também passaram (474 e 480 testes).
 - Após os ajustes finais de navegação, rolagem e coleta do QR: **8 testes de navegação/picker** e **46 testes de assinaturas/packaging** passaram; não houve alterações posteriores nessas implementações.
@@ -100,7 +125,7 @@ O [VALIDAR oficial](https://www.gov.br/pt-br/servicos/realizar-validacao-de-assi
 - Binário frozen: `QT_QPA_PLATFORM=offscreen .../smartfile --smoke-test` **exit 0**, após correção do import dinâmico ReportLab. Exercita banco temporário, detector OpenCV, geração de QR e import de QtMultimedia, sem venv em runtime.
 - ABI Ubuntu 22.04: **reprovada**, conforme limitação de packaging acima; build Windows e homologações físicas restantes **não executados**.
 - MediaBox do PDF da captura física: **210,000 × 297,000 mm**.
-- HEAD final: `051dab7c24df4c50489e61f87b913c2c85fec684`, igual à base; trabalho preservado no working tree, sem commit/push nesta sessão. Versão `0.9.0-beta.6` e schema 22 mantidos.
+- Ao término da validação inicial, HEAD ainda era a base `051dab7c24df4c50489e61f87b913c2c85fec684`; posteriormente foi criado o checkpoint `2997f10` e autorizado o fechamento com commit/push. Versão `0.9.0-beta.6` e schema 22 mantidos.
 - **Nenhuma release publicada.** Não houve upload de scan ou publicação automática de documento para o QR.
 
 ## Revisão visual
@@ -109,3 +134,17 @@ Imagens de demonstração sintética, sem conteúdo do scan físico:
 
 - [Scanner com geometria A4 e quatro alças](scanner-preview.png)
 - [Solicitações com círculos, contadores e badge](requests-flow.png)
+
+
+## Validação de fechamento
+
+- Suíte completa repetida: **513 passed em 757,33 s (12 min 37 s)**, exit 0.
+  A base inicial de 482 testes foi preservada, com regressões adicionais do scanner.
+- `compileall` de app, run.py e scripts de homologação/diagnóstico: passou.
+- `pip check`: **No broken requirements found**.
+- `git diff --check`: passou.
+- Commit/push autorizado na main, incorporando o checkpoint e o fechamento; a
+  identificação final está no histórico Git. Sem tags ou publicação de release.
+- Nenhuma aquisição física adicional. Nenhum scan real incluído no Git.
+- Compatibilidade ABI Ubuntu 22.04 e build nativo Windows continuam com as
+  limitações de packaging registradas acima; esta suíte não as homologa.

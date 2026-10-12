@@ -137,3 +137,24 @@ Não foi ampliada a tolerância, aumentada a confiança ou substituída a mediç
 pela informação de que a folha inserida é A4. Não haverá nova aquisição sem
 combiná-la com o usuário. Antes de propor outro teste físico, a investigação pode
 continuar offline com estas duas capturas e seus metadados, preservando os originais.
+
+
+## Decisão de fechamento — 12/10/2026
+
+O usuário aprovou provisoriamente o scanner para esta etapa e autorizou o fechamento
+com suíte completa e commit/push, sem release. Esta decisão substitui a pendência de
+aprovação física para a entrega registrada no histórico acima; não altera os resultados
+medidos nem aprova universalmente o detector. Não executar nova aquisição ou continuar
+refinando o detector nesta rodada. Preservar `PARTIAL/REVIEW` em geometria incerta,
+as correções existentes e o original, sem forçar A4.
+
+```text
+Scanner físico: homologado para captura e geração correta de PDF.
+Reconhecimento automático universal do tamanho da folha:
+funcionalidade experimental/assistiva, ainda não homologada para todos os formatos.
+```
+
+O reconhecimento universal será uma melhoria separada. O próximo item pendente é
+QR Code funcionando sem depender obrigatoriamente de URL pública. Versão
+`0.9.0-beta.6` e schema 22 permanecem inalterados. A validação de fechamento está
+registrada em [REPORT.md](REPORT.md).
