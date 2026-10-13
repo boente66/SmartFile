@@ -27,6 +27,10 @@ class DeliveryReceiptPdfService:
             page = document[-1]
             y = self._declaration(page, y)
             self._signature(page, y, request)
+            if request.qr_payload:
+                from app.services.signature_verification_service import SignatureVerificationService
+                SignatureVerificationService.insert_qr(document, request.qr_payload,
+                    document.page_count, (395, 674, 485, 764), request.qr_human_code)
             self._footers(document, request.protocol_number)
             document.set_metadata({
                 "title": f"Comprovante de recebimento {request.protocol_number}",

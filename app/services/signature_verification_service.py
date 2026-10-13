@@ -20,8 +20,12 @@ class SignatureVerificationService:
 
     @classmethod
     def qr_png(cls, url):
-        cls.validate_url(url)
-        code = QrCodeWidget(url).qr
+        if url.startswith("smartfile:"):
+            from app.services.validation_locator_service import ValidationLocatorService
+            ValidationLocatorService.parse(url)
+        else:
+            cls.validate_url(url)
+        code = QrCodeWidget(url, barLevel="M").qr
         code.make()
         count = code.getModuleCount()
         image = Image.new("RGB",((count+8)*8,(count+8)*8),"white")
@@ -35,14 +39,28 @@ class SignatureVerificationService:
         return buffer.getvalue()
 
     @classmethod
-    def insert_qr(cls, document, url, page_number=1, rect=None):
+    def insert_qr(cls, document, url, page_number=1, rect=None, human_code=None):
         import fitz
         if not 1 <= page_number <= document.page_count:raise ValueError("Página do QR Code inválida.")
         page = document[page_number-1]
         rectangle = fitz.Rect(rect or (page.rect.width-100,20,page.rect.width-20,100))
-        if rectangle.is_empty or not page.rect.contains(rectangle) or min(rectangle.width,rectangle.height)<40:
-            raise ValueError("Posicione o QR Code dentro da página, com tamanho mínimo de 40 pontos.")
-        page.insert_image(rectangle,stream=cls.qr_png(url),keep_proportion=True)
+        if rectangle.is_empty or not page.rect.contains(rectangle) or min(rectangle.width,rectangle.height)<60:
+            raise ValueError("Posicione o QR Code dentro da página, com tamanho mínimo de 60 pontos.")
+        # Positions are visual page coordinates; convert to unrotated PDF space.
+        page.insert_image(rectangle * page.derotation_matrix, stream=cls.qr_png(url), keep_proportion=True, rotate=page.rotation)
+        if human_code:
+            from app.services.validation_locator_service import ValidationLocatorService
+            normalized = ValidationLocatorService.normalize_code(human_code)
+            code_text = "SFV-" + "-".join(normalized[i:i+4] for i in range(3, len(normalized), 4))
+            label_width = max(120, rectangle.width)
+            label_x = min(rectangle.x0, page.rect.width - label_width)
+            label = fitz.Rect(label_x, rectangle.y1 + 2, label_x + label_width, rectangle.y1 + 27)
+            if not page.rect.contains(label):
+                raise ValueError("Reserve espaço dentro da página para o código de validação abaixo do QR.")
+            remaining = page.insert_textbox(label * page.derotation_matrix, "Validar documento\n" + code_text,
+                                            fontsize=6, rotate=page.rotation, overlay=True)
+            if remaining < 0:
+                raise ValueError("Não há espaço para exibir o código de validação.")
 
     @staticmethod
     def evidence(path, results=(), kind="CERTIFICATE"):

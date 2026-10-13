@@ -118,7 +118,7 @@ def _identity_response(port: int) -> tuple[int, dict]:
 def test_current_schema_and_instance_uuid_survives_ip_change(tmp_path: Path, monkeypatch):
     database, context, _documents, _worker, _membership = _installation(tmp_path)
     version = database.connect().execute("PRAGMA user_version").fetchone()[0]
-    assert version == CURRENT_SCHEMA_VERSION == 22
+    assert version == CURRENT_SCHEMA_VERSION == 23
     service = DocumentDeliveryService(database, context)
     monkeypatch.setattr(service.instances, "current_ip", lambda: "192.168.1.10")
     first = service.instances.local(context.active_organization.id)
@@ -222,7 +222,7 @@ def test_migration_17_preserves_legacy_requests(tmp_path: Path):
     assert row["title"] == "Documento legado"
     from uuid import UUID
     assert str(UUID(row["request_uuid"])) == row["request_uuid"]
-    assert migrated.connect().execute("PRAGMA user_version").fetchone()[0] == 22
+    assert migrated.connect().execute("PRAGMA user_version").fetchone()[0] == 23
 
 
 def test_migration_19_adds_receipts_without_losing_deliveries(tmp_path: Path):
@@ -245,7 +245,7 @@ def test_migration_19_adds_receipts_without_losing_deliveries(tmp_path: Path):
 
     migrated = Database(str(tmp_path / "smartfile.db"))
 
-    assert migrated.fetch_one("PRAGMA user_version")[0] == 22
+    assert migrated.fetch_one("PRAGMA user_version")[0] == 23
     assert migrated.fetch_one(
         "SELECT protocol_number FROM document_deliveries WHERE id=?", (delivery.id,)
     )["protocol_number"] == delivery.protocol_number
@@ -307,6 +307,14 @@ def test_receipt_pdf_is_atomic_and_original_remains_unchanged(
     assert checksum in text
     assert "Responsável" in text and "Administrador" in text
     assert "Assinatura visual" in text
+    validation = service.validation.validate(delivery.organization_id, file_path=Path(receipt.pdf_path))
+    assert validation.file_integrity == "HASH_MATCH"
+    assert validation.record.artifact_type == "DELIVERY_RECEIPT"
+    assert validation.record.signature_type == "VISUAL_HANDWRITTEN"
+    assert validation.record.receipt_id == receipt.id
+    assert validation.record.document_id is None
+    assert validation.record.final_sha256 == receipt.sha256
+    assert service.validation.open_original(delivery.organization_id, validation.record.id).read_bytes() == Path(receipt.pdf_path).read_bytes()
     with pytest.raises(DeliveryValidationError):
         service.create_acknowledgement_receipt(
             delivery.id, context.current_user.id, _signature_png(), "DRAWN"

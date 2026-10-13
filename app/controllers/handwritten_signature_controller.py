@@ -22,6 +22,8 @@ class HandwrittenSignatureController:
         self.document_service = service
 
     def request_signature(self) -> None:
+        if self.viewer_controller._context.kind == "VALIDATION_ORIGINAL":
+            return
         if self._worker is not None:
             QMessageBox.warning(self.viewer_controller.view, "Assinatura manuscrita", "Já existe uma operação em andamento.")
             return
@@ -48,6 +50,13 @@ class HandwrittenSignatureController:
             (info.page_width, info.page_height), self.viewer_controller._rotation,
             confirmed, self._page_preview, self.viewer_controller.view,
         )
+        validation = self.service.validation_service
+        if validation:
+            try:
+                dialog.qr_options.set_base_url(validation.base_url(validation.active_organization_id()))
+            except Exception as exc:
+                QMessageBox.warning(self.viewer_controller.view, "Validação", str(exc))
+                return
         if dialog.exec() != QDialog.DialogCode.Accepted:
             dialog.clear_signature()
             return

@@ -45,6 +45,8 @@ class DocumentDeliveryService:
         self.users = UserRepository(database=database)
         self.receipts = DeliveryAcknowledgementReceiptRepository(database=database)
         self.receipt_pdf = DeliveryReceiptPdfService()
+        from app.services.document_validation_service import DocumentValidationService
+        self.validation = DocumentValidationService(database, context)
         self.signature_images = SignatureImageService()
         self.organizations = OrganizationService(database)
         self.features = OrganizationFeatureService(database)
@@ -183,40 +185,52 @@ class DocumentDeliveryService:
             signature_image=normalized,
             signature_method=signature_method,
         )
-        self.receipt_pdf.generate(request)
+        from app.entities.validation_record import ArtifactType, SignatureType
+        from app.services.validation_locator_service import ValidationLocatorService
+        pending = self.validation.create_pending(
+            delivery.organization_id, logical_name=output.name,
+            artifact_type=ArtifactType.DELIVERY_RECEIPT,
+            signature_type=SignatureType.VISUAL_HANDWRITTEN,
+            delivery_id=delivery.id, protocol=delivery.protocol_number)
+        request.qr_payload = ValidationLocatorService.build_payload(pending)
+        request.qr_human_code = pending.human_code
         try:
-            checksum = self._checksum(output)
-            receipt = self.receipts.create(DeliveryAcknowledgementReceiptEntity(
-                receipt_uuid=receipt_uuid,
-                delivery_id=delivery.id,
-                organization_id=delivery.organization_id,
-                signer_user_id=user_id,
-                signer_username=signer.username,
-                signature_method=signature_method,
-                direction="LOCAL",
-                pdf_path=str(output),
-                size=output.stat().st_size,
-                sha256=checksum,
-                status="QUEUED",
-                next_attempt_at=now,
-                created_at=now,
-            ))
-            self._record(
-                delivery, "ACK_RECEIPT_CREATED",
-                f"Comprovante {receipt_uuid} criado e verificado.", user_id,
-            )
-            self._record(
-                delivery, "ACK_RECEIPT_QUEUED",
-                "Comprovante adicionado à fila de retorno.", user_id,
-            )
-            self._mark_acknowledged(delivery, user_id)
-            logger.info(
-                "delivery.receipt.created protocol=%s receipt=%s method=%s size=%s",
-                delivery.protocol_number, receipt.receipt_uuid,
-                receipt.signature_method, receipt.size,
-            )
-            return receipt
+            with self.database.transaction():
+                self.receipt_pdf.generate(request)
+                checksum = self._checksum(output)
+                receipt = self.receipts.create(DeliveryAcknowledgementReceiptEntity(
+                    receipt_uuid=receipt_uuid,
+                    delivery_id=delivery.id,
+                    organization_id=delivery.organization_id,
+                    signer_user_id=user_id,
+                    signer_username=signer.username,
+                    signature_method=signature_method,
+                    direction="LOCAL",
+                    pdf_path=str(output),
+                    size=output.stat().st_size,
+                    sha256=checksum,
+                    status="QUEUED",
+                    next_attempt_at=now,
+                    created_at=now,
+                ))
+                self.validation.activate(pending, output, signed_at=now, receipt_id=receipt.id)
+                self._record(
+                    delivery, "ACK_RECEIPT_CREATED",
+                    f"Comprovante {receipt_uuid} criado e verificado.", user_id,
+                )
+                self._record(
+                    delivery, "ACK_RECEIPT_QUEUED",
+                    "Comprovante adicionado à fila de retorno.", user_id,
+                )
+                self._mark_acknowledged(delivery, user_id)
+                logger.info(
+                    "delivery.receipt.created protocol=%s receipt=%s method=%s size=%s",
+                    delivery.protocol_number, receipt.receipt_uuid,
+                    receipt.signature_method, receipt.size,
+                )
+                return receipt
         except Exception:
+            self.validation._fail_pending(pending)
             output.unlink(missing_ok=True)
             raise
 

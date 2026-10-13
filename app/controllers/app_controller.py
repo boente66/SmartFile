@@ -136,6 +136,14 @@ class AppController:
             self.document_controller.service
         )
 
+        from app.controllers.document_validation_controller import DocumentValidationController
+        self.document_validation_controller = DocumentValidationController(
+            self.pdf_viewer_controller, document_service.database, self.session_context)
+        self.organization_settings_controller.organization_changed.connect(
+            self.document_validation_controller.organization_changed)
+        self.pdf_signature_controller.service.validation_service = self.document_validation_controller.service
+        self.handwritten_signature_controller.service.validation_service = self.document_validation_controller.service
+
         # Conectar navegação
         self.main_view.sidebar.tool_selected.connect(self.on_tool_selected)
 
@@ -261,6 +269,12 @@ class AppController:
         )
 
     def shutdown(self) -> None:
+        validation = getattr(self, "document_validation_controller", None)
+        if validation:
+            validation.close()
+            for worker in list(validation._workers):
+                worker.requestInterruption()
+                worker.wait()
         if self._stopped:
             return
         self._stopped = True

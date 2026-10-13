@@ -30,10 +30,13 @@
   </categories>
   <content_rating type="oars-1.1" />
   <releases>
-    <release version="0.9.0-beta.6" date="2026-09-06" type="development">
+    <release version="0.9.0-beta.7" date="2026-10-12" type="development">
       <description>
-        <p>Configuração OAuth disponível a proprietários e administradores em todos os perfis.</p>
+        <p>Validação por QR local, originais registrados e comparação SHA-256. Consolidação Multicloud, Solicitações e captura/PDF.</p>
       </description>
+    </release>
+    <release version="0.9.0-beta.6" date="2026-09-06" type="development">
+      <description><p>Configuração OAuth disponível a proprietários e administradores em todos os perfis.</p></description>
     </release>
     <release version="0.9.0-beta.5" date="2026-08-30" type="development">
       <description>

@@ -64,6 +64,8 @@ class BackupService:
                 sources = [(snapshot, "database/smartfile.db")]
                 sources.extend(self._tree_files(self.database.storage_dir, "storage"))
                 sources.extend(self._tree_files(self.database.data_dir / "avatars", "avatars"))
+                sources.extend(self._tree_files(self.database.data_dir / "validation_artifacts", "validation_artifacts"))
+                sources.extend(self._tree_files(self.database.data_dir / "delivery_receipts", "delivery_receipts"))
                 manifest_files = self._write_zip(
                     temporary_output, sources, created_at, progress
                 )
@@ -141,7 +143,7 @@ class BackupService:
                 "smartfile_version": __version__,
                 "created_at": created_at,
                 "scope": "FULL_SYSTEM",
-                "contains": ["database", "storage", "avatars"],
+                "contains": ["database", "storage", "avatars", "validation_artifacts", "delivery_receipts"],
                 "excludes": [
                     "oauth_tokens",
                     "oauth_configuration",
@@ -195,6 +197,8 @@ class BackupService:
         for managed_directory in (
             self.database.storage_dir,
             self.database.data_dir / "avatars",
+            self.database.data_dir / "validation_artifacts",
+            self.database.data_dir / "delivery_receipts",
             self.database.temp_dir,
         ):
             managed = managed_directory.resolve()

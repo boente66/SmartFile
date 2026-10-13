@@ -23,6 +23,8 @@ class PDFSignatureController:
         self.document_service = service
 
     def request_signature(self):
+        if self.viewer_controller._context.kind == "VALIDATION_ORIGINAL":
+            return
         if self._signature_worker is not None:
             QMessageBox.warning(self.viewer_controller.view, "Assinatura", "Já existe uma assinatura em andamento.")
             return
@@ -39,6 +41,13 @@ class PDFSignatureController:
             ),
             self.viewer_controller.view,
         )
+        validation = self.service.validation_service
+        if validation:
+            try:
+                dialog.qr_options.set_base_url(validation.base_url(validation.active_organization_id()))
+            except Exception as exc:
+                QMessageBox.warning(self.viewer_controller.view, "Validação", str(exc))
+                return
         if dialog.exec() != QDialog.DialogCode.Accepted:
             dialog.clear_secret(); return
         request = dialog.build_request()

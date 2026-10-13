@@ -1,6 +1,7 @@
 from PyQt6.QtWidgets import QApplication
 import sys
 from tempfile import TemporaryDirectory
+from pathlib import Path
 
 from app.controllers.auth_controller import AuthController
 from app.database.database import Database
@@ -66,6 +67,26 @@ def smoke_test() -> int:
             if geometry.detection_status != "DETECTED": return 5
             if not SignatureVerificationService.qr_png("https://validar.iti.gov.br/"): return 6
             if QSoundEffect is None: return 7
+            # Verify the canonical domain, SQL migration and local locator in the bundle.
+            import fitz
+            from app.services.document_validation_service import DocumentValidationService
+            from app.entities.validation_record import ArtifactType, SignatureType
+            from app.services.validation_locator_service import ValidationLocatorService
+            service = DocumentValidationService(database)
+            source = paths.temp / "validation-smoke.pdf"
+            with fitz.open() as pdf:
+                pdf.new_page(); pdf.save(source)
+            org = service.active_organization_id()
+            record = service.create_pending(org, logical_name="smoke.pdf",
+                artifact_type=ArtifactType.UNSIGNED_REGISTERED_DOCUMENT, signature_type=SignatureType.NONE)
+            record = service.activate(record, source)
+            payload = ValidationLocatorService.build_payload(record)
+            if not SignatureVerificationService.qr_png(payload): return 8
+            result = service.validate(org, payload, source)
+            if result.file_integrity != "HASH_MATCH" or result.artifact_state != "AVAILABLE": return 9
+            with TemporaryDirectory(prefix="smartfile-export-smoke-") as export_dir:
+                exported = service.export_original(org, record.id, Path(export_dir) / "exported-smoke.pdf")
+                if exported.read_bytes() != source.read_bytes(): return 10
             app.processEvents()
             return 0
         finally:

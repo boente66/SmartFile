@@ -23,3 +23,5 @@ class DeliveryReceiptRequest:
     signature_image: bytes
     signature_method: str
 
+    qr_payload: str | None = None
+    qr_human_code: str | None = None

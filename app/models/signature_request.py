@@ -28,6 +28,8 @@ class SignatureRequest:
     verification_url: str | None = None
     qr_page_number: int = 1
     qr_rect: tuple | None = None
+    qr_human_code: str | None = None
+    validation_document_id: int | None = None
 
     def validate(self, page_count: int | None = None) -> None:
         for path, label, suffixes in (

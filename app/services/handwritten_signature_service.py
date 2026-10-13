@@ -22,6 +22,9 @@ logger = logging.getLogger(__name__)
 class HandwrittenSignatureService:
     """Incorpora uma marca manuscrita visual sem criar assinatura criptográfica."""
 
+    def __init__(self, validation_service=None):
+        self.validation_service = validation_service
+
     def has_digital_signatures(self, path: Path) -> bool:
         source = self._validated_pdf(path)
         try:
@@ -44,6 +47,24 @@ class HandwrittenSignatureService:
             return float(rectangle.width), float(rectangle.height)
 
     def apply(self, request: HandwrittenSignatureRequest) -> HandwrittenSignatureResult:
+        if not request.qr_visible:
+            return self._apply(request)
+        if self.validation_service is None:
+            raise SignedDocumentWriteError("O QR requer o serviço de registro canônico da organização.")
+        if self.has_digital_signatures(request.input_path):
+            raise ExistingDigitalSignatureWarning("Não é permitido inserir QR em PDF já assinado digitalmente.")
+        from app.entities.validation_record import ArtifactType, SignatureType
+        def produce(payload, code):
+            request.verification_url = payload
+            request.qr_human_code = code
+            return self._apply(request)
+        return self.validation_service.finalize(
+            produce, logical_name=request.output_path.name,
+            artifact_type=ArtifactType.VISUAL_SIGNED_DOCUMENT,
+            signature_type=SignatureType.VISUAL_HANDWRITTEN,
+            document_id=request.validation_document_id, source_path=request.input_path)
+
+    def _apply(self, request: HandwrittenSignatureRequest) -> HandwrittenSignatureResult:
         source = self._validated_pdf(request.input_path)
         had_signatures = self.has_digital_signatures(source)
         if had_signatures and not request.existing_signatures_confirmed:
@@ -72,7 +93,7 @@ class HandwrittenSignatureService:
                 page.insert_image(rectangle, stream=request.signature_image, keep_proportion=True, overlay=True)
                 if request.qr_visible:
                     from app.services.signature_verification_service import SignatureVerificationService
-                    SignatureVerificationService.insert_qr(document, request.verification_url or "", request.qr_page_number, request.qr_rect)
+                    SignatureVerificationService.insert_qr(document, request.verification_url or "", request.qr_page_number, request.qr_rect, request.qr_human_code)
                 if request.add_caption:
                     self._insert_caption(page, request)
                 document.save(temporary, garbage=0, deflate=True, encryption=fitz.PDF_ENCRYPT_KEEP)

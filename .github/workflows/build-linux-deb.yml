@@ -33,6 +33,7 @@ jobs:
             lintian \
             libegl1 \
             libgl1 \
+            libpulse0 \
             libsane-dev \
             libxkbcommon-x11-0 \
             libxcb-cursor0 \
@@ -48,7 +49,7 @@ jobs:
           path: |
             release/*.deb
             release/*.sha256
-            docs/RELEASE_NOTES_0.9.0-beta.6.md
+            docs/RELEASE_NOTES_0.9.0-beta.7.md
           if-no-files-found: error
           retention-days: 30
 
@@ -116,9 +117,13 @@ jobs:
           NOTES="$(find artifacts -name 'RELEASE_NOTES_*.md' -print -quit)"
           PACKAGE="$(find artifacts -name '*.deb' -print -quit)"
           CHECKSUM="$(find artifacts -name '*.sha256' -print -quit)"
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "Release existente preservada; artefatos deste build permanecem no workflow."
+            exit 0
+          fi
           gh release create "${GITHUB_REF_NAME}" \
             --repo "${GITHUB_REPOSITORY}" \
             --draft --prerelease \
-            --title "SmartFile 0.9.0 Beta 5" \
+            --title "SmartFile ${GITHUB_REF_NAME#v}" \
             --notes-file "$NOTES" \
             "$PACKAGE" "$CHECKSUM"

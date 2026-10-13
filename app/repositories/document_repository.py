@@ -93,6 +93,12 @@ class DocumentRepository(BaseRepository):
         row = self._fetch_one(query, params)
         return self._row_to_entity(row) if row else None
 
+    def find_by_scoped_path(self, path, organization_id):
+        row = self._fetch_one(
+            "SELECT * FROM documents WHERE organization_id=? AND (path=? OR storage_path=?) LIMIT 1",
+            (organization_id, str(path), str(path)))
+        return self._row_to_entity(row) if row else None
+
     def find_all(self, organization_id: int | None = None, folder_id: int | None = None) -> list[DocumentEntity]:
         query = "SELECT * FROM documents WHERE status = 'ACTIVE'"
         params: list[object] = []

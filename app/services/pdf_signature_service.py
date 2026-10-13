@@ -25,10 +25,29 @@ logger = logging.getLogger(__name__)
 
 
 class PDFSignatureService:
-    def __init__(self, certificate_service: CertificateService | None = None):
+    def __init__(self, certificate_service: CertificateService | None = None, validation_service=None):
         self.certificate_service = certificate_service or CertificateService()
+        self.validation_service = validation_service
 
     def sign(self, request: SignatureRequest) -> SignatureResult:
+        try:
+            if not request.qr_visible:
+                return self._sign(request)
+            if self.validation_service is None:
+                raise SignatureError("O QR requer o serviço de registro canônico da organização.")
+            from app.entities.validation_record import ArtifactType, SignatureType
+            def produce(payload, code):
+                request.verification_url = payload
+                request.qr_human_code = code
+                return self._sign(request)
+            return self.validation_service.finalize(
+                produce, logical_name=request.output_path.name,
+                artifact_type=ArtifactType.SIGNED_DOCUMENT, signature_type=SignatureType.A1_PADES,
+                document_id=request.validation_document_id, source_path=request.input_path)
+        finally:
+            request.certificate_password = ""
+
+    def _sign(self, request: SignatureRequest) -> SignatureResult:
         import fitz
         with fitz.open(request.input_path) as document:
             page_count = document.page_count
@@ -40,14 +59,13 @@ class PDFSignatureService:
         qr_source = None
         if request.qr_visible:
             from app.services.signature_verification_service import SignatureVerificationService
-            SignatureVerificationService.validate_url(request.verification_url or "")
             # Inserting marks into an already signed PDF would invalidate previous signatures.
             with request.input_path.open("rb") as stream:
                 if PdfFileReader(stream).embedded_signatures:
                     raise SignatureError("Insira o QR antes da primeira assinatura digital; preserve as assinaturas existentes.")
             from io import BytesIO
             with fitz.open(request.input_path) as document:
-                SignatureVerificationService.insert_qr(document, request.verification_url, request.qr_page_number, request.qr_rect)
+                SignatureVerificationService.insert_qr(document, request.verification_url, request.qr_page_number, request.qr_rect, request.qr_human_code)
                 qr_source = BytesIO(document.tobytes())
         signer = self.certificate_service.load_a1(
             request.certificate_path, request.certificate_password

@@ -694,3 +694,58 @@ CREATE INDEX IF NOT EXISTS idx_cloud_replicas_object
     ON cloud_replicas(organization_id,logical_object_id,replica_status);
 CREATE INDEX IF NOT EXISTS idx_multicloud_actions_plan
     ON multicloud_plan_actions(plan_id,status,risk_level);
+
+CREATE TABLE IF NOT EXISTS validation_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id),
+    document_id INTEGER REFERENCES documents(id) ON DELETE SET NULL,
+    delivery_id INTEGER REFERENCES document_deliveries(id) ON DELETE SET NULL,
+    receipt_id INTEGER REFERENCES delivery_acknowledgement_receipts(id) ON DELETE SET NULL,
+    public_token TEXT NOT NULL UNIQUE,
+    human_code TEXT NOT NULL UNIQUE,
+    artifact_type TEXT NOT NULL CHECK(artifact_type IN ('SIGNED_DOCUMENT','VISUAL_SIGNED_DOCUMENT','UNSIGNED_REGISTERED_DOCUMENT','DELIVERY_RECEIPT')),
+    signature_type TEXT NOT NULL CHECK(signature_type IN ('NONE','VISUAL_HANDWRITTEN','A1_PADES')),
+    logical_name_snapshot TEXT NOT NULL,
+    protocol_snapshot TEXT,
+    artifact_storage_ref TEXT,
+    artifact_size INTEGER,
+    final_sha256 TEXT,
+    created_at TEXT NOT NULL,
+    created_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    signed_at TEXT,
+    payload_version INTEGER NOT NULL DEFAULT 1 CHECK(payload_version=1),
+    status TEXT NOT NULL DEFAULT 'PENDING' CHECK(status IN ('PENDING','ACTIVE','FAILED','REVOKED')),
+    revoked_at TEXT,
+    revoked_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    revocation_reason TEXT,
+    publication_mode TEXT NOT NULL DEFAULT 'LOCAL_ONLY' CHECK(publication_mode IN ('LOCAL_ONLY','PUBLISHED')),
+    publication_status TEXT NOT NULL DEFAULT 'NOT_PUBLISHED',
+    locator_mode TEXT NOT NULL DEFAULT 'LOCAL' CHECK(locator_mode IN ('LOCAL','WEB')),
+    base_url_snapshot TEXT,
+    canonical_mime_type TEXT NOT NULL DEFAULT 'application/pdf' CHECK(canonical_mime_type='application/pdf'),
+    CHECK(status NOT IN ('ACTIVE','REVOKED') OR
+        (artifact_storage_ref IS NOT NULL AND artifact_size>0 AND length(final_sha256)=64 AND final_sha256 NOT GLOB '*[^0-9a-f]*')),
+    CHECK(status!='REVOKED' OR (revoked_at IS NOT NULL AND length(revocation_reason)>0))
+);
+CREATE INDEX IF NOT EXISTS idx_validation_org_status ON validation_records(organization_id,status);
+CREATE INDEX IF NOT EXISTS idx_validation_org_hash ON validation_records(organization_id,final_sha256);
+CREATE INDEX IF NOT EXISTS idx_validation_document ON validation_records(organization_id,document_id);
+CREATE TRIGGER IF NOT EXISTS validation_immutable
+BEFORE UPDATE ON validation_records WHEN OLD.status IN ('ACTIVE','REVOKED') AND (
+    NEW.public_token IS NOT OLD.public_token OR NEW.human_code IS NOT OLD.human_code OR
+    NEW.organization_id IS NOT OLD.organization_id OR NEW.final_sha256 IS NOT OLD.final_sha256 OR
+    NEW.artifact_storage_ref IS NOT OLD.artifact_storage_ref OR NEW.artifact_size IS NOT OLD.artifact_size OR
+    NEW.logical_name_snapshot IS NOT OLD.logical_name_snapshot OR NEW.protocol_snapshot IS NOT OLD.protocol_snapshot OR
+    NEW.signature_type IS NOT OLD.signature_type OR NEW.artifact_type IS NOT OLD.artifact_type OR
+    NEW.created_at IS NOT OLD.created_at OR NEW.signed_at IS NOT OLD.signed_at OR
+    NEW.locator_mode IS NOT OLD.locator_mode OR NEW.base_url_snapshot IS NOT OLD.base_url_snapshot OR
+    NEW.payload_version IS NOT OLD.payload_version OR NEW.canonical_mime_type IS NOT OLD.canonical_mime_type)
+BEGIN SELECT RAISE(ABORT,'Canonical validation metadata is immutable'); END;
+CREATE TRIGGER IF NOT EXISTS validation_status_transition
+BEFORE UPDATE OF status ON validation_records WHEN NOT (
+    NEW.status=OLD.status OR (OLD.status='PENDING' AND NEW.status IN ('ACTIVE','FAILED')) OR
+    (OLD.status='ACTIVE' AND NEW.status='REVOKED'))
+BEGIN SELECT RAISE(ABORT,'Invalid validation status transition'); END;
+CREATE TRIGGER IF NOT EXISTS validation_retain_record
+BEFORE DELETE ON validation_records
+BEGIN SELECT RAISE(ABORT,'Validation history cannot be deleted'); END;

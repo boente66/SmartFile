@@ -38,6 +38,7 @@ class PDFViewerView(QWidget):
     sign_requested = pyqtSignal()
     handwritten_sign_requested = pyqtSignal()
     validate_signatures_requested = pyqtSignal()
+    document_validation_requested = pyqtSignal()
     context_confirm_requested = pyqtSignal(int)
     context_item_requested = pyqtSignal(int)
     document_displayed = pyqtSignal(str)
@@ -199,6 +200,8 @@ class PDFViewerView(QWidget):
         self.btn_validate = button(
             "Validar assinaturas", self.validate_signatures_requested.emit, "viewer_validate"
         )
+        self.btn_document_validation = button(
+            "Validar documento por QR/código", self.document_validation_requested.emit, "viewer_validate")
         layout.addStretch()
         self._set_toolbar_compact(True)
         return toolbar
@@ -251,7 +254,13 @@ class PDFViewerView(QWidget):
         self.set_document_loaded(True)
 
     def set_context(self, context: PDFViewerContext) -> None:
-        is_contextual = context.kind in {"DELIVERY_RECEIVED", "DELIVERY_RECEIPT"}
+        self._canonical_readonly = context.kind == "VALIDATION_ORIGINAL"
+        self.btn_sign.setEnabled(not self._canonical_readonly and self.page_edit.isEnabled())
+        self.btn_handwritten_sign.setEnabled(not self._canonical_readonly and self.page_edit.isEnabled())
+        if self._canonical_readonly:
+            self.info_panel._labels["path"].setText("Armazenamento canônico gerenciado pelo SmartFile")
+            self.info_panel._labels["name"].setText(context.title or "Original registrado")
+        is_contextual = context.kind in {"DELIVERY_RECEIVED", "DELIVERY_RECEIPT", "VALIDATION_ORIGINAL"}
         self._contextual = is_contextual
         self.context_bar.setVisible(is_contextual)
         self.btn_back.setProperty("actionText", (
@@ -263,6 +272,7 @@ class PDFViewerView(QWidget):
         if not is_contextual:
             return
         self.context_title.setText(
+            "Original registrado — somente leitura" if self._canonical_readonly else
             "Documento recebido" if context.kind == "DELIVERY_RECEIVED"
             else "Comprovante de recebimento"
         )
@@ -300,13 +310,14 @@ class PDFViewerView(QWidget):
         self.loading_label.setText(message if loading else "Pronto")
 
     def set_document_loaded(self, loaded: bool) -> None:
-        always_enabled = {self.btn_back, self.btn_open}
+        always_enabled = {self.btn_back, self.btn_open, self.btn_document_validation}
         for button in self.buttons:
             button.setEnabled(loaded or button in always_enabled)
         self.page_edit.setEnabled(loaded)
         self.zoom_combo.setEnabled(loaded)
-        self.btn_sign.setEnabled(loaded)
-        self.btn_handwritten_sign.setEnabled(loaded)
+        readonly = getattr(self, "_canonical_readonly", False)
+        self.btn_sign.setEnabled(loaded and not readonly)
+        self.btn_handwritten_sign.setEnabled(loaded and not readonly)
         self.btn_validate.setEnabled(loaded)
 
     def update_search_count(self, current: int, total: int) -> None:

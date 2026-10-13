@@ -141,9 +141,9 @@ def test_plan_never_executes_before_explicit_authorization(tmp_path):
     assert not list(database.temp_dir.glob("multicloud-*.part"))
 
 
-def test_schema_21_upgrades_only_to_22_without_reapplying_cloud_migration(tmp_path):
+def test_schema_21_upgrades_without_reapplying_cloud_migration(tmp_path):
     path=tmp_path/"upgrade.db";database=Database(str(path))
     database.execute_query("PRAGMA user_version=21");database.close()
     migrated=Database(str(path))
-    assert migrated.fetch_one("PRAGMA user_version")[0]==22
+    assert migrated.fetch_one("PRAGMA user_version")[0]==23
     assert migrated.fetch_one("SELECT 1 FROM sqlite_master WHERE name='remote_mounts'")

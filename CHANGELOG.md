@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.9.0-beta.7] - 2026-10-12
+
+- Validação documental por QR/token/código sem URL pública obrigatória.
+- Originais canônicos preservados, SHA-256 dos bytes finais, comparação de cópias, revogação e retenção histórica (schema 23).
+- QR incorporado antes da assinatura A1/PAdES; marcas manuscritas permanecem visuais.
+- Consolidação Multicloud, Solicitações e Entregas com notificações e captura/PDF do scanner.
+- Backup inclui artefatos canônicos e comprovantes de entrega.
+- Instaladores Linux/Windows e notas de versão atualizados.
+- Reconhecimento universal de papel permanece experimental/assistivo.
+
 ## [0.9.0-beta.6] - 2026-09-06
 
 ### Alterado
