@@ -1,5 +1,16 @@
 # Changelog
 
+## Não publicado — correção de prévia e recorte
+
+- Captura e PDF mostra por padrão o recorte confiável de páginas digitalizadas
+  e imagens importadas, antes de salvar; alternância permite editar o original.
+- Salvar, extrair, dividir e importar ao GED aguardam a detecção de bordas.
+- Recorte aplicado não acrescenta margem artificial de 8 mm. PARTIAL, indícios
+  de corte e ausência de detecção mantêm a área original até revisão manual.
+- Original, dimensões físicas e classificação de papel permanecem preservados;
+  nenhuma alteração na heurística de reconhecimento universal nem nova aquisição.
+
+
 ## [0.9.0-beta.7] - 2026-10-12
 
 - Validação documental por QR/token/código sem URL pública obrigatória.

@@ -176,7 +176,7 @@ class CapturePdfService:
             width, height = geometry.physical_width_mm*mm, geometry.physical_height_mm*mm
             if page.rotation in (90,270): width,height = height,width
         canvas = Canvas(buffer, pagesize=(width,height))
-        margin = min(8*mm, width*.04, height*.04)
+        margin = 0 if page is not None and CapturePdfService.can_crop(page) else min(8*mm, width*.04, height*.04)
         scale = min((width-2*margin)/image.width,(height-2*margin)/image.height)
         iw,ih = image.width*scale,image.height*scale
         canvas.drawImage(ImageReader(image),(width-iw)/2,(height-ih)/2,iw,ih)
@@ -185,23 +185,34 @@ class CapturePdfService:
         return buffer
 
     @staticmethod
-    def _page_image(page: CapturePdfPage) -> Image.Image:
+    def can_crop(page: CapturePdfPage) -> bool:
+        geometry = page.geometry
+        return bool(geometry and geometry.confidence >= .8
+                    and geometry.detection_status in {"DETECTED", "MANUAL"}
+                    and (not geometry.possible_clipping or geometry.detection_status == "MANUAL"))
+
+    @staticmethod
+    def source_image(page: CapturePdfPage) -> Image.Image:
         if page.image is not None:
-            image = page.image.copy().convert("RGB")
-            geometry = page.geometry
-            if geometry and geometry.detection_status != "NOT_DETECTED" and geometry.confidence >= .8:
-                from app.services.document_geometry_service import DocumentGeometryService
-                try:
-                    transformed = DocumentGeometryService.transform(image, geometry)
-                except Exception:
-                    return image
-                image.close()
-                return transformed
-            return image
+            return page.image.copy().convert("RGB")
         if page.source_path is not None:
             with Image.open(page.source_path) as image:
                 return image.convert("RGB")
         raise ValueError("Página de imagem sem origem válida.")
+
+    @classmethod
+    def _page_image(cls, page: CapturePdfPage) -> Image.Image:
+        image = cls.source_image(page)
+        if cls.can_crop(page):
+            from app.services.document_geometry_service import DocumentGeometryService
+            geometry = page.geometry
+            try:
+                transformed = DocumentGeometryService.transform(image, geometry)
+            except Exception:
+                return image
+            image.close()
+            return transformed
+        return image
 
     @staticmethod
     def _valid_file(path: Path, extensions: set[str]) -> Path:

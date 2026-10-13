@@ -197,3 +197,83 @@ def test_geometry_results_ignore_clear_removed_page_and_old_generation(tmp_path)
     controller._scan_received(controller._scan_generation-1,old_scan)
     assert not controller.state.pages
     controller.shutdown()
+
+
+def test_crop_preview_and_saved_pdf_remove_capture_background(tmp_path):
+    from app.services.document_geometry_service import DocumentGeometryService
+    from app.models.capture_pdf_workspace import CapturePdfPage
+    image = Image.new('RGB', (400, 500), '#202020')
+    from PIL import ImageDraw
+    ImageDraw.Draw(image).rectangle((60, 50, 339, 449), fill='white')
+    original_bytes = image.tobytes()
+    geometry = DocumentGeometryService.from_corners(image.size,
+        ((.15,.1),(.85,.1),(.85,.9),(.15,.9)), detection_status='DETECTED')
+    page = CapturePdfPage(image=image, geometry=geometry)
+    preview = CapturePdfService.render_page(page)
+    assert preview.width() == 280 and preview.height() == 400
+    assert preview.pixelColor(140, 200).red() > 245
+    output = CapturePdfService.materialize([page], tmp_path/'cropped.pdf')
+    with fitz.open(output) as document:
+        rect = document[0].get_image_rects(document[0].get_images()[0][0])[0]
+        # No artificial 8 mm padding after a reliable crop.
+        assert abs(rect.y0) < .1 and abs(rect.y1-document[0].rect.height) < .1
+        pix = document[0].get_pixmap()
+        assert pix.pixel(pix.width//2, pix.height//2)[0] > 245
+    assert image.tobytes() == original_bytes
+
+
+def test_partial_even_high_confidence_does_not_crop():
+    from dataclasses import replace
+    from app.services.document_geometry_service import DocumentGeometryService
+    from app.models.capture_pdf_workspace import CapturePdfPage
+    image = Image.new('RGB',(400,500),'gray')
+    geometry = DocumentGeometryService.from_corners(image.size,
+        ((.15,.1),(.85,.1),(.85,.9),(.15,.9)))
+    for status,clipping in (('PARTIAL',False),('DETECTED',True),('NOT_DETECTED',False)):
+        page = CapturePdfPage(image=image,geometry=replace(geometry,detection_status=status,possible_clipping=clipping))
+        assert not CapturePdfService.can_crop(page)
+        assert CapturePdfService.render_page(page).size().width() == 400
+
+
+def test_controller_preview_toggle_keeps_geometry_only_for_crop(tmp_path,monkeypatch):
+    from app.services.document_geometry_service import DocumentGeometryService
+    app()
+    controller=CapturePdfController(WorkspaceView(),DocumentService(database=Database(str(tmp_path/'preview.sqlite'))))
+    page=CapturePdfService.page_from_scan(Image.new('RGB',(100,150),'white'))
+    controller.state.add_pages([page])
+    geometry=DocumentGeometryService.from_corners(page.image.size,((.1,.1),(.9,.1),(.9,.9),(.1,.9)))
+    scheduled=[]
+    monkeypatch.setattr(controller,'_schedule_render',lambda:scheduled.append(True))
+    controller._geometry_ready((controller._geometry_generation,page.id,geometry))
+    assert controller.state.dirty and scheduled
+    controller._show_geometry()
+    assert controller.view.preview.image_label.corners is None
+    controller.view.crop_preview.setChecked(False)
+    controller._show_geometry()
+    assert controller.view.preview.image_label.corners==geometry.normalized_corners
+    controller._reset_geometry()
+    assert not CapturePdfService.can_crop(page)
+    controller.shutdown()
+
+
+def test_save_waits_for_detection_including_shortcut_calls(tmp_path,monkeypatch):
+    from PyQt6.QtWidgets import QMessageBox
+    app()
+    controller=CapturePdfController(WorkspaceView(),DocumentService(database=Database(str(tmp_path/'pending.sqlite'))))
+    page=CapturePdfService.page_from_scan(Image.new('RGB',(100,150),'white'))
+    controller.state.add_pages([page])
+    pending=object()
+    controller._geometry_workers.add(pending)
+    notices=[]
+    monkeypatch.setattr(QMessageBox,'information',lambda *args:notices.append(args[2]))
+    controller._update_view_state()
+    assert not controller.view.btn_save.isEnabled()
+    target=tmp_path/'premature.pdf'
+    controller.on_save_pdf(str(target))
+    controller.on_extract_pages([0],str(target))
+    controller.on_split_pdf(str(tmp_path/'split'))
+    controller.on_add_to_ged()
+    assert len(notices)==4 and not target.exists()
+    controller._geometry_finished(pending)
+    assert controller.view.btn_save.isEnabled()
+    controller.shutdown()

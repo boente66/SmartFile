@@ -440,6 +440,21 @@ preview e persistência documental.
 
 ### Geometria da folha e saída segura
 
+**Correção posterior à beta.7, disponível na main:** a opção **Mostrar documento
+recortado** fica marcada por padrão. Quando a detecção é confiável, a prévia
+mostra somente a região da folha e o mesmo recorte é aplicado ao salvar ou
+adicionar ao GED, sem acrescentar uma margem artificial de 8 mm. Para ajustar
+as quatro alças, desmarque a opção e trabalhe sobre o original; marque novamente
+para conferir o resultado. **Redefinir** restaura a área original da saída.
+
+Aguarde o término da detecção antes de salvar. Se houver PARTIAL/REVIEW ou
+indícios de corte, o recorte automático não é aplicado; revise manualmente. O
+formato de saída continua sendo uma escolha separada: numa folha A4, um recibo
+estreito pode ocupar só parte da página. A opção de visualização não desativa o
+recorte da saída. Os instaladores da beta.7 publicados anteriormente não incluem
+esta correção posterior.
+
+
 **Detectar bordas** auxilia a revisão do documento. Confira o contorno, a
 orientação e a dimensão apresentada antes de aceitar o recorte. **Redefinir**
 permite recomeçar o ajuste. Use as opções de saída avançada para escolher o

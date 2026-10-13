@@ -54,6 +54,7 @@ class CapturePdfController:
         self.workspace.register_alias("pdf", "capture_pdf")
 
     def _connect_signals(self) -> None:
+        self.view.crop_preview.toggled.connect(lambda _checked: self._schedule_render())
         self.view.geometry_changed.connect(self._manual_geometry)
         self.view.detect_requested.connect(lambda: self._detect_page(self._current_page(), force=True))
         self.view.reset_geometry_requested.connect(self._reset_geometry)
@@ -260,18 +261,27 @@ class CapturePdfController:
             QMessageBox.warning(self.view, "Girar páginas", str(exc))
 
     def on_extract_pages(self, indexes: list[int], path: str) -> None:
+        if self._geometry_workers:
+            QMessageBox.information(self.view, "Enquadramento", "Aguarde a detecção de bordas antes de salvar.")
+            return
         pages = [self.state.pages[index] for index in indexes if 0 <= index < len(self.state.pages)]
         if not pages:
             return
         self._materialize_to(Path(path), pages, "Extrair páginas", reopen=False)
 
     def on_save_pdf(self, path: str) -> None:
+        if self._geometry_workers:
+            QMessageBox.information(self.view, "Enquadramento", "Aguarde a detecção de bordas antes de salvar.")
+            return
         if not self.state.pages:
             QMessageBox.warning(self.view, "Salvar PDF", "Nenhuma página disponível.")
             return
         self._materialize_to(Path(path), self.state.pages, "Salvar PDF", reopen=True)
 
     def on_split_pdf(self, directory: str) -> None:
+        if self._geometry_workers:
+            QMessageBox.information(self.view, "Enquadramento", "Aguarde a detecção de bordas antes de salvar.")
+            return
         if not self.state.pages:
             return
         target = Path(directory).expanduser().resolve()
@@ -331,6 +341,9 @@ class CapturePdfController:
         self._start_operation(task, succeeded, title)
 
     def on_add_to_ged(self) -> None:
+        if self._geometry_workers:
+            QMessageBox.information(self.view, "Enquadramento", "Aguarde a detecção de bordas antes de salvar.")
+            return
         if not self.state.pages:
             QMessageBox.warning(self.view, "Adicionar ao SmartFile", "Nenhuma página disponível.")
             return
@@ -434,12 +447,14 @@ class CapturePdfController:
             return
         generation = self._render_generation
         snapshot = self.state.snapshot()
+        show_crop = self.view.crop_preview.isChecked()
 
         def task(progress, cancelled):
             try:
                 progress(10, "Gerando visualização")
-                # Overlay is in source coordinates, so preview original page geometry.
-                for page in snapshot: page.geometry = None
+                # Editing overlays use source coordinates; final preview uses the saved crop.
+                if not show_crop:
+                    for page in snapshot: page.geometry = None
                 images = CapturePdfService.render_pages(snapshot, scale=0.55, cancelled=cancelled)
                 progress(100, "Visualização pronta")
                 return generation, [page.id for page in snapshot], images
@@ -501,9 +516,14 @@ class CapturePdfController:
         self._geometry_workers.add(worker)
         worker.succeeded.connect(self._geometry_ready)
         worker.failed.connect(lambda message: logger.warning("geometry.failed %s", message))
-        worker.finished.connect(lambda w=worker: self._geometry_workers.discard(w))
+        worker.finished.connect(lambda w=worker: self._geometry_finished(w))
         worker.finished.connect(worker.deleteLater)
         worker.start()
+        self._update_view_state()
+
+    def _geometry_finished(self, worker):
+        self._geometry_workers.discard(worker)
+        self._update_view_state()
 
     def _geometry_ready(self, payload):
         generation, page_id, result = payload
@@ -512,7 +532,8 @@ class CapturePdfController:
         if page is None: return
         start = perf_counter()
         page.geometry = result
-        if page is self._current_page(): self._show_geometry()
+        self.state.dirty = True
+        self._schedule_render()
         logger.info("geometry.result preview=%s detection_ms=%.2f application_ms=%.2f", result.analysis_resolution,
                     result.detection_ms, (perf_counter()-start)*1000)
 
@@ -525,8 +546,13 @@ class CapturePdfController:
             corners = geometry.normalized_corners
             for _ in range(page.rotation//90): corners = tuple((1-y,x) for x,y in corners)
             overlay = replace(geometry, normalized_corners=corners)
+        if page and self.view.crop_preview.isChecked() and CapturePdfService.can_crop(page):
+            overlay = None
         self.view.preview.set_geometry(overlay)
-        self.view.geometry_label.setText(geometry.description() if geometry else "")
+        description = geometry.description() if geometry else ""
+        if geometry:
+            description += "\nRecorte aplicado à saída." if CapturePdfService.can_crop(page) else "\nRecorte não aplicado: revise as bordas; saída preserva a área original."
+        self.view.geometry_label.setText(description)
 
     def _manual_geometry(self, corners):
         page = self._current_page()
@@ -536,20 +562,23 @@ class CapturePdfController:
             geometry = DocumentGeometryService.from_corners(page.image.size, corners,
                 dpi=page.scan_dpi, measurement_source=page.measurement_source,
                 physical_area_mm=page.physical_area_mm)
-        except ValueError: return
+        except (ValueError, OSError): return
         self._invalidate_geometry()
         page.geometry = geometry
         self.state.dirty = True
         self._show_geometry()
+        self._schedule_render()
 
     def _reset_geometry(self):
         page = self._current_page()
         if page is None: return
         self._invalidate_geometry()
+        page.geometry = None
         if page.image is not None:
             page.geometry = DocumentGeometryService.from_corners(page.image.size, DocumentGeometryService.FULL, confidence=0, detection_status="NOT_DETECTED")
         self.state.dirty = True
         self._show_geometry()
+        self._schedule_render()
 
     def _output_format(self, value):
         for page in self.state.pages: page.output_format = value
@@ -562,10 +591,10 @@ class CapturePdfController:
             if worker and worker.isRunning(): worker.requestInterruption(); worker.wait(5000)
 
     def _set_busy(self, busy: bool) -> None:
-        self.view.set_document_state(self.state.output_name, len(self.state.pages), busy)
+        self.view.set_document_state(self.state.output_name, len(self.state.pages), busy or bool(self._geometry_workers))
 
     def _update_view_state(self) -> None:
-        busy = self._operation_worker is not None or self._scan_worker is not None
+        busy = self._operation_worker is not None or self._scan_worker is not None or bool(self._geometry_workers)
         self.view.set_document_state(self.state.output_name, len(self.state.pages), busy)
 
     def _show_progress(self, value: int, message: str) -> None:

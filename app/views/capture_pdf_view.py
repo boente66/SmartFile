@@ -194,6 +194,10 @@ class CapturePdfView(QWidget):
         geometry_tools = QHBoxLayout()
         for text, signal in (("Detectar bordas", self.detect_requested), ("Redefinir", self.reset_geometry_requested)):
             button = QPushButton(text); button.clicked.connect(signal.emit); geometry_tools.addWidget(button)
+        self.crop_preview = QCheckBox("Mostrar documento recortado")
+        self.crop_preview.setChecked(True)
+        self.crop_preview.setToolTip("Desmarque para ajustar as bordas sobre o original. O original é preservado.")
+        geometry_tools.addWidget(self.crop_preview)
         layout.addLayout(geometry_tools)
         self.preview = DocumentGeometryPreview(); self.preview.corners_changed.connect(self.geometry_changed.emit); self.preview.setObjectName("capturePdfPreview")
         layout.addWidget(self.preview, 1)
