@@ -13,6 +13,10 @@ datas = [
     (str(project_root / "app" / "database" / "schema.sql"), "app/database"),
 ]
 
+# Manuais e referências públicas; relatórios locais de homologação não são empacotados.
+datas += [(str(path), "docs") for path in sorted((project_root / "docs").iterdir())
+          if path.is_file() and path.suffix.lower() in {".md", ".pdf"}]
+
 hiddenimports = [
     "google_auth_oauthlib.flow",
     "msal",

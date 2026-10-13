@@ -1,6 +1,6 @@
 # Changelog
 
-## Não publicado — correção de prévia e recorte
+## [0.9.0-beta.8] - 2026-10-13
 
 - Captura e PDF mostra por padrão o recorte confiável de páginas digitalizadas
   e imagens importadas, antes de salvar; alternância permite editar o original.
@@ -10,6 +10,9 @@
 - Original, dimensões físicas e classificação de papel permanecem preservados;
   nenhuma alteração na heurística de reconhecimento universal nem nova aquisição.
 
+
+- Instaladores Linux amd64 e Windows x64 Setup/Portable acompanham a correção
+  e incluem documentação oficial e capturas ilustrativas.
 
 ## [0.9.0-beta.7] - 2026-10-12
 

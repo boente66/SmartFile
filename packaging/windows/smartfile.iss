@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "0.9.0-beta.7"
+  #define AppVersion "0.9.0-beta.8"
 #endif
 #ifndef SourceDir
   #define SourceDir "..\..\dist\SmartFile"

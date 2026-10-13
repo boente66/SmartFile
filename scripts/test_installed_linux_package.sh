@@ -105,6 +105,13 @@ run_persistent_startup_smoke() {
 [[ -f "$DESKTOP_FILE" ]] || fail "launcher desktop ausente"
 [[ -f "$METainfo_FILE" ]] || fail "metadados AppStream ausentes"
 
+for manual in Manual_Usuario.pdf Documentacao_Tecnica.pdf; do
+    [[ -s "/usr/share/doc/smartfile/$manual" ]] || fail "manual ausente no pacote: $manual"
+    [[ -s "/opt/smartfile/_internal/docs/$manual" ]] || fail "manual ausente no bundle: $manual"
+done
+[[ -s /opt/smartfile/_internal/assets/screenshots/smartfile-beta7-captura-pdf.png ]] \
+    || fail "captura ilustrativa ausente"
+
 assert_root_owned "$WRAPPER"
 assert_root_owned "$BINARY"
 assert_root_owned "$DESKTOP_FILE"

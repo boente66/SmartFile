@@ -12,9 +12,11 @@ datas = [
     (str(project_root / "assets"), "assets"),
     (str(project_root / "app" / "database" / "schema.sql"), "app/database"),
     (str(project_root / "LICENSE"), "."),
-    (str(project_root / "docs" / "RELEASE_NOTES_0.9.0-beta.7.md"), "docs"),
-    (str(project_root / "docs" / "GUIA_TESTE_WINDOWS_BETA.md"), "docs"),
 ]
+
+# Manuais e referências públicas; relatórios locais de homologação não são empacotados.
+datas += [(str(path), "docs") for path in sorted((project_root / "docs").iterdir())
+          if path.is_file() and path.suffix.lower() in {".md", ".pdf"}]
 
 # Somente módulos carregados dinamicamente pela aplicação.
 hiddenimports = [

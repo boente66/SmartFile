@@ -1,6 +1,6 @@
 # SmartFile — Documentação Técnica Oficial
 
-Versão de referência: **0.9.0-beta.7**. Schema **23**. Atualização: **13/10/2026**.
+Versão de referência: **0.9.0-beta.8**. Schema **23**. Atualização: **13/10/2026**.
 
 ## Arquitetura
 
@@ -136,3 +136,11 @@ e no manual. Elas ilustram a interface; não substituem testes ou homologação.
 
 
 ![Dispositivos SmartFile — descoberta e instalações autorizadas](../assets/screenshots/smartfile-beta7-dispositivos-lan.png)
+
+## Distribuição beta.8
+
+A beta.8 inclui a correção de prévia/recorte e os manuais ilustrados nos bundles
+Linux e Windows. Schema 23 permanece inalterado. Instaladores e fontes são
+produzidos do mesmo commit e publicados com SHA-256, após validação nativa.
+Consulte [notas da beta.8](RELEASE_NOTES_0.9.0-beta.8.md) e
+[processo de entrega](RELEASE_PROCESS.md).
