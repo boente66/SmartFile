@@ -391,3 +391,8 @@ Selecione também a cópia recebida para comparar seus bytes com o original regi
 QR copiado não autentica outro documento; abrir/baixar o original retorna os bytes
 preservados. Uma marca manuscrita continua visual. Consulte
 [modelo de confiança e limites](docs/QR_VALIDATION_ANTIFRAUD.md).
+
+## Documentação oficial
+
+Consulte o [índice oficial](docs/README.md), o [manual do usuário](docs/Manual_Usuario.md)
+e a [documentação técnica](docs/Documentacao_Tecnica.md), atualizados para beta.7/schema 23.

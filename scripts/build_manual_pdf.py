@@ -1,4 +1,4 @@
-"""Gera o PDF distribuível a partir do Manual_Usuario.md."""
+"""Gera PDFs da documentação Markdown; por padrão, o manual do usuário."""
 
 import re
 from pathlib import Path
@@ -17,13 +17,13 @@ OUTPUT = ROOT / "docs" / "Manual_Usuario.pdf"
 IMAGE_PATTERN = re.compile(r"^!\[(?P<alt>[^]]*)\]\(<(?P<angle>[^>]+)>\)$|^!\[(?P<plain_alt>[^]]*)\]\((?P<plain>[^)]+)\)$")
 
 
-def _manual_image(line: str):
+def _manual_image(line: str, source: Path = SOURCE):
     match = IMAGE_PATTERN.match(line)
     if match is None:
         return None
     relative = match.group("angle") or match.group("plain")
     alt = match.group("alt") or match.group("plain_alt") or "Captura de tela"
-    path = (SOURCE.parent / relative).resolve()
+    path = (source.parent / relative).resolve()
     try:
         path.relative_to(ROOT)
     except ValueError:
@@ -38,7 +38,7 @@ def _manual_image(line: str):
     return picture, alt
 
 
-def build() -> None:
+def build(source: Path = SOURCE, output: Path = OUTPUT) -> None:
     styles = getSampleStyleSheet()
     styles.add(ParagraphStyle(
         "ManualCode", parent=styles["BodyText"], fontName="Courier", fontSize=8,
@@ -56,7 +56,7 @@ def build() -> None:
     story = []
     in_code = False
     code_lines: list[str] = []
-    for raw in SOURCE.read_text(encoding="utf-8").splitlines():
+    for raw in source.read_text(encoding="utf-8").splitlines():
         line = raw.rstrip()
         if line.startswith("```"):
             if in_code and code_lines:
@@ -67,7 +67,7 @@ def build() -> None:
         if in_code:
             code_lines.append(line or " ")
             continue
-        manual_image = _manual_image(line)
+        manual_image = _manual_image(line, source)
         if manual_image is not None:
             picture, alt = manual_image
             story.append(CondPageBreak(picture.drawHeight + 12 * mm))
@@ -88,13 +88,18 @@ def build() -> None:
             text = escape(line).replace("**", "").replace("`", "")
             story.append(Paragraph(text, styles["BodyText"]))
     document = SimpleDocTemplate(
-        str(OUTPUT), pagesize=A4, rightMargin=18 * mm, leftMargin=18 * mm,
+        str(output), pagesize=A4, rightMargin=18 * mm, leftMargin=18 * mm,
         topMargin=16 * mm, bottomMargin=16 * mm,
-        title="SmartFile — Manual do Usuário", author="SmartFile",
+        title=source.read_text(encoding="utf-8").splitlines()[0].lstrip("# "), author="SmartFile",
         pageCompression=1,
     )
     document.build(story)
 
 
 if __name__ == "__main__":
-    build()
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--source", type=Path, default=SOURCE)
+    parser.add_argument("--output", type=Path, default=OUTPUT)
+    args = parser.parse_args()
+    build(args.source.resolve(), args.output.resolve())

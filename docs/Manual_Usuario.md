@@ -1,6 +1,8 @@
 # SmartFile — Manual do Usuário
 
-**Versão do manual:** 1.5
+**Versão do manual:** 1.6 — SmartFile 0.9.0-beta.7
+
+**Atualizado em:** 13/10/2026
 
 **Aplicação:** SmartFile — Mini GED Local
 
@@ -424,6 +426,23 @@ preview e persistência documental.
 8. Selecione **Salvar PDF...** para exportar fora do GED ou **Adicionar ao
    SmartFile...** para cadastrar pelo fluxo oficial de armazenamento gerenciado.
 
+### Geometria da folha e saída segura
+
+**Detectar bordas** auxilia a revisão do documento. Confira o contorno, a
+orientação e a dimensão apresentada antes de aceitar o recorte. **Redefinir**
+permite recomeçar o ajuste. Use as opções de saída avançada para escolher o
+formato do PDF; em telas menores, role o painel esquerdo.
+
+Captura e dimensão de saída são conceitos diferentes: gerar um PDF A4 não
+comprova que o detector reconheceu uma folha A4. Medidas podem ser reais,
+estimadas ou desconhecidas. Estados **PARTIAL/REVIEW** exigem revisão porque a
+geometria não é confiável ou há indícios de corte. Não confirme um recorte que
+elimine conteúdo; preserve o original e use o ajuste manual ou a saída segura.
+
+Scanner físico: homologado para captura e geração correta de PDF.
+Reconhecimento automático universal do tamanho da folha: funcionalidade
+experimental/assistiva, ainda não homologada para todos os formatos.
+
 ### Abrir e combinar PDFs
 
 1. Use **Abrir PDF** para iniciar a sessão com um documento existente.
@@ -454,9 +473,25 @@ O painel **Solicitações e Entregas** atende dois casos de uso: responder a um
 pedido documental e enviar documentos diretamente para outro usuário/SmartFile.
 Ele não substitui a sincronização em nuvem nem o transporte NAS empresarial.
 
+### Etapas e atalhos do painel
+
+As etapas **Entrada**, **Atendimento**, **Preparação**, **Entrega** e
+**Finalizadas** filtram o fluxo operacional. Clique no círculo da etapa para
+consultar os itens. Os contadores representam solicitações e não o número de
+páginas ou de arquivos. **Entrega** abre a lista de envios; use **Recebidos**
+para consultar protocolos destinados a você.
+
+**Criadas por mim**, **Recebidos**, **Enviados** e **Histórico** são atalhos
+complementares. Na etapa Preparação, selecione uma solicitação atendida para
+usar **Preparar entrega da solicitação**. Marcar atendida não prova a entrega.
+
+As opções **Som para novas solicitações** e **Animação para novas solicitações**
+controlam avisos de novos pedidos. Desmarcá-las não impede o recebimento.
+Selecione **Atualizar** para consultar novamente a fila.
+
 ### Caso de uso: solicitar e receber um documento
 
-1. Abra **Solicitações e Entregas** e selecione **Solicitações recebidas**.
+1. Abra **Solicitações e Entregas** e selecione a etapa **Entrada**.
 2. Informe o documento desejado, a descrição, o responsável e o prazo opcional.
 3. Se a instalação do responsável estiver cadastrada e disponível, o SmartFile
    envia a solicitação; se estiver offline, a solicitação local é preservada e o
@@ -470,7 +505,7 @@ Ele não substitui a sincronização em nuvem nem o transporte NAS empresarial.
 7. Selecione **Enviar e gerar protocolo**. O estado **Atendida** não significa
    **Entregue**: a entrega só é confirmada depois que todos os itens chegam e o
    SHA-256 é validado.
-8. No SmartFile destinatário, abra **Documentos recebidos**, selecione o protocolo
+8. No SmartFile destinatário, selecione **Recebidos**, selecione o protocolo
    e use **Visualizar**, **Download**, **Adicionar ao SmartFile** ou **Confirmar
    recebimento**.
 9. Visualizar registra o visto real. Confirmar o recebimento encerra o protocolo
@@ -1083,14 +1118,14 @@ retorna à tela de login. Depois disso, a aplicação pode ser fechada normalmen
 Em sistemas amd64 com base Ubuntu 22.04 ou 24.04, incluindo versões compatíveis
 do Linux Mint e Zorin OS, instale o pacote
 baixado na página permanente da
-[Release 0.9.0 Beta 6](https://github.com/boente66/SmartFile/releases/tag/v0.9.0-beta.6).
+[Release 0.9.0 Beta 7](https://github.com/boente66/SmartFile/releases/tag/v0.9.0-beta.7).
 O usuário também pode abrir o `.deb` pelo gerenciador de arquivos e selecionar
 **Instalar**. Pelo terminal:
 
 ```bash
 cd ~/Downloads
-sha256sum -c smartfile_0.9.0.beta6_amd64.deb.sha256
-sudo apt install ./smartfile_0.9.0.beta6_amd64.deb
+sha256sum -c smartfile_0.9.0.beta7_amd64.deb.sha256
+sudo apt install ./smartfile_0.9.0.beta7_amd64.deb
 ```
 
 O SmartFile pode ser aberto pelo menu de aplicativos ou pelo comando
@@ -1123,6 +1158,7 @@ O backup completo inclui:
 - snapshot consistente do banco SQLite;
 - documentos do storage interno de todas as organizações;
 - avatares locais;
+- originais canônicos de validação e comprovantes de recebimento;
 - manifesto com versão, tamanho e SHA-256 de cada arquivo.
 
 Tokens, credenciais OAuth, configuração privada de provedores, logs, cache,
@@ -1137,7 +1173,7 @@ do manifesto e confirmação administrativa específica.
 
 ## 19. Visualizar e confirmar documentos recebidos
 
-Na área **Solicitações e Entregas → Documentos recebidos**, selecione um
+Na área **Solicitações e Entregas → Recebidos**, selecione um
 protocolo e clique em **Visualizar**. Arquivos PDF abrem no Visualizador interno
 do SmartFile. O estado **VIEWED** somente é registrado depois que a primeira
 página é realmente exibida. Para formatos sem visualizador interno, o SmartFile
@@ -1160,7 +1196,7 @@ automaticamente com a mesma política de backoff e limite de tentativas. Quando 
 remetente validar tamanho e SHA-256, o protocolo passa
 para **ACKNOWLEDGED** e a ação **Ver comprovante** fica disponível nos dois
 computadores.
-# Acervo remoto multicloud (Pessoal e Estudante)
+## 20. Acervo remoto multicloud (Pessoal e Estudante)
 
 O botão circular de nuvem ao lado da árvore de pastas permite montar uma
 pasta existente do OneDrive ou Google Drive como **espelho lógico**. Montar
@@ -1175,3 +1211,67 @@ são resolvidas automaticamente.
 
 Solicitações, prazos, entregas e protocolos são exclusivos do perfil
 Empresarial e não aparecem nos perfis Pessoal, Estudante ou Essencial.
+
+## 21. Validar documento por QR ou código
+
+O QR da beta.7 identifica um registro do SmartFile. Ele não autentica por sua
+aparência. Sem URL pública, a consulta depende desta instalação, da organização
+correta e de uma conta autorizada; não depende da Internet. Ler o QR apenas com
+a câmera do celular não consulta automaticamente o banco local.
+
+1. Abra a ação **Validar documento por QR/código** na barra de ferramentas PDF.
+2. Informe o código digitável SFV, o token ou a URI/URL contida no QR. Se tiver
+   uma imagem do QR, use **Ler QR de imagem…**; quando a leitura não funcionar,
+   digite o código. Não é necessário importar a cópia no GED.
+3. Para conferir o documento recebido, use **Selecionar arquivo…** e escolha
+   essa cópia. Sem arquivo, apenas o registro será localizado.
+4. Selecione **Verificar** e examine separadamente o estado administrativo,
+   a disponibilidade do artefato, a integridade e a assinatura.
+5. Use **Abrir original registrado** para consultar o PDF preservado ou
+   **Baixar original registrado…** para exportar os mesmos bytes, conforme
+   suas permissões. O visualizador do original é de consulta.
+
+**HASH_MATCH** significa que a cópia é idêntica ao original registrado.
+**HASH_MISMATCH** significa divergência de bytes: alteração, reexportação ou
+corrupção podem produzi-la; esse resultado sozinho não prova fraude. Um QR
+copiado continua apontando ao original associado, não ao conteúdo da cópia.
+**NOT_PROVIDED** significa que nenhuma cópia foi fornecida para comparação.
+Registro não encontrado também pode indicar organização ou instalação errada.
+
+**ARTIFACT_MISSING** indica original indisponível; **ARTIFACT_CORRUPTED** indica
+que o arquivo preservado diverge do hash registrado. Nessas situações o
+SmartFile não disponibiliza o arquivo como original íntegro. **REVOKED** indica
+revogação administrativa, que mantém arquivo e histórico.
+
+Assinatura A1/PAdES, confiança da cadeia e integridade são avaliações distintas.
+Assinatura manuscrita é visual e não identifica criptograficamente o signatário.
+A verificação criptográfica apresentada refere-se ao original registrado, não
+à cópia divergente. Hash não certifica identidade nem validade jurídica.
+
+O QR é inserido antes da assinatura/finalização; o hash é calculado sobre o PDF
+final. Comprovante e documento têm registros separados. A assinatura ou a
+reexportação posterior de um arquivo altera seus bytes e exige nova comparação.
+
+Administradores autorizados podem usar **Configuração de validação…** para
+informar uma base HTTPS real. A configuração não cria nem publica um serviço
+web. Sem base configurada, a emissão continua no modo local. **Revogar registro…**
+exige permissão e motivo; não apaga o original. Não compartilhe credenciais ou
+endereços locais para tentar tornar um QR acessível a terceiros.
+
+## 22. Atualização, Windows e documentação oficial
+
+Baixe os pacotes e checksums na [release beta.7](https://github.com/boente66/SmartFile/releases/tag/v0.9.0-beta.7).
+No Windows x64, escolha **Setup** para instalação ou **Portable** para extração
+em uma pasta e execução de SmartFile.exe. Confira o SHA-256, por exemplo com
+`Get-FileHash` no PowerShell, comparando com o arquivo .sha256 correspondente.
+Não execute o Portable diretamente dentro do ZIP.
+
+A beta.7 utiliza schema 23 e migra o schema 22. Faça backup antes de atualizar;
+uma versão antiga não abre o banco já migrado. O backup ZIP inclui documentos,
+comprovantes e originais canônicos, mas não credenciais externas. Não apague
+os dados locais para corrigir uma autorização de nuvem expirada: reconecte a
+conta do provedor e confira a fila de sincronização.
+
+Consulte o [índice oficial](README.md), a [documentação técnica](Documentacao_Tecnica.md)
+e as [notas da versão](RELEASE_NOTES_0.9.0-beta.7.md). Este manual descreve a beta.7;
+nomes e disponibilidade de ações dependem do perfil, permissões e seleção atual.
