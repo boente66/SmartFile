@@ -343,6 +343,24 @@ def test_a1_registration_signature_and_final_bytes(service, tmp_path):
     assert checked.record.final_sha256 == hashlib.sha256(signed.output_path.read_bytes()).hexdigest()
     assert request.input_path.read_bytes() == original
     assert service.open_original(checked.record.organization_id, checked.record.id).read_bytes() == signed.output_path.read_bytes()
+    # Complete A1 antifraud chain: changed bytes keep the same visible QR,
+    # while lookup/open/export remain bound to the canonical signed original.
+    modified = tmp_path / "modified-signed-copy.pdf"
+    modified.write_bytes(signed.output_path.read_bytes() + b"\n% external-copy-change")
+    with fitz.open(signed.output_path) as original_pdf, fitz.open(modified) as copy_pdf:
+        original_image = original_pdf.extract_image(original_pdf[0].get_images()[0][0])["image"]
+        copied_image = copy_pdf.extract_image(copy_pdf[0].get_images()[0][0])["image"]
+        assert copied_image == original_image
+    comparison = service.validate(checked.record.organization_id,
+                                  Locator.build_payload(checked.record), modified)
+    assert comparison.file_integrity == "HASH_MISMATCH"
+    assert comparison.record.id == checked.record.id
+    assert comparison.signature_status == "VALID"  # Original's signature, not the copy's.
+    assert service.open_original(checked.record.organization_id, checked.record.id).read_bytes() == signed.output_path.read_bytes()
+    exported = service.export_original(checked.record.organization_id, checked.record.id,
+                                       tmp_path / "canonical-signed-export.pdf")
+    assert exported.read_bytes() == signed.output_path.read_bytes()
+    assert hashlib.sha256(exported.read_bytes()).hexdigest() == checked.record.final_sha256
 
 
 def test_a1_failure_and_previously_signed_qr_leave_no_active(service, tmp_path):
@@ -481,3 +499,15 @@ def test_https_scheme_case_is_normalized_without_changing_token(service):
     assert payload == f"https://example.org/validation/verify/{record.public_token}"
     assert Locator.parse(payload.replace("https://", "HTTPS://", 1)) == ("TOKEN", record.public_token)
     assert record.public_token == payload.rsplit("/", 1)[1]
+
+
+def test_non_pdf_cannot_be_activated_with_pdf_mime(service, tmp_path):
+    from PIL import Image
+    record = pending(service)
+    source = tmp_path / "image-disguised.pdf"
+    with Image.new("RGB", (20, 20), "white") as image:
+        image.save(source, format="PNG")
+    with pytest.raises(ValueError, match="PDF válido"):
+        service.activate(record, source)
+    assert service.get(record.organization_id, record.id).status == "PENDING"
+    assert service.get(record.organization_id, record.id).artifact_storage_ref is None

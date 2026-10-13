@@ -182,3 +182,18 @@ o esquema e o parser aceita sua variação de case, sem alterar o token.
 de bases/payloads inválidos. O commit dessa correção terá as suítes e builds nativos
 repetidos; somente seus artefatos serão usados na release. Nenhuma release publicada
 até aqui.
+
+## Fechamento funcional definitivo
+
+A prova A1 integrada foi ampliada: mesma imagem QR na cópia com bytes alterados,
+HASH_MISMATCH, assinatura do original separada e abrir/exportar canônico com bytes
+e SHA-256 idênticos ao PDF assinado. A ativação também exige is_pdf, recusando uma
+imagem renomeada para .pdf antes de preservar/ativar o artefato. Os dois testes
+focados passaram em 13,70 s.
+
+Suíte completa após todos os ajustes: **574 passed em 426,29 s (7 min 6 s)**, exit 0.
+Os checks do commit c1a4a7451f240ade344934edeb08531648cdbe7c passaram no GitHub:
+Python 38327969912, Linux 38327969906 e Windows 38327969919. O commit deste
+fechamento será a fonte dos artefatos finais, com novos builds e suítes nativos.
+Não há alteração do scanner, da Cloud Layer, do cofre ou publicação de documentos.
+Schema 23 e versão 0.9.0-beta.7. Nenhuma release publicada nesta fase funcional.

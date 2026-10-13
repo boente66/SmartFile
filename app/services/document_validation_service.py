@@ -121,8 +121,8 @@ class DocumentValidationService:
         # A canonical artifact must be an actual readable final PDF.
         import fitz
         with fitz.open(source) as pdf:
-            if pdf.page_count < 1:
-                raise ValueError("PDF canônico sem páginas.")
+            if not pdf.is_pdf or pdf.page_count < 1:
+                raise ValueError("O artefato canônico deve ser um PDF válido com páginas.")
         artifact = self.artifacts.preserve(record.organization_id, current.public_token, source)
         with self.database.transaction():
             active = self.repository.activate(current, artifact, signed_at, receipt_id)
