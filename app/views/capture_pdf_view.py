@@ -192,8 +192,9 @@ class CapturePdfView(QWidget):
         layout.addLayout(tools)
         self.geometry_label = QLabel(""); layout.addWidget(self.geometry_label)
         geometry_tools = QHBoxLayout()
+        self.geometry_buttons = []
         for text, signal in (("Detectar bordas", self.detect_requested), ("Redefinir", self.reset_geometry_requested)):
-            button = QPushButton(text); button.clicked.connect(signal.emit); geometry_tools.addWidget(button)
+            button = QPushButton(text); button.clicked.connect(signal.emit); geometry_tools.addWidget(button); self.geometry_buttons.append(button)
         self.crop_preview = QCheckBox("Mostrar documento recortado")
         self.crop_preview.setChecked(True)
         self.crop_preview.setToolTip("Desmarque para ajustar as bordas sobre o original. O original é preservado.")
@@ -268,6 +269,8 @@ class CapturePdfView(QWidget):
     def set_document_state(self, name: str, count: int, busy: bool) -> None:
         self.document_label.setText(f"Documento: {name}"); self.count_label.setText(f"Páginas: {count}")
         self.pages_heading.setText(f"PÁGINAS ({count})")
+        self.page_list.setEnabled(not busy)
+        for button in self.geometry_buttons:button.setEnabled(count > 0 and not busy)
         for button in self.document_actions + [self.btn_save, self.btn_ged]: button.setEnabled(count > 0 and not busy)
         for button in (self.btn_import_top, self.btn_open_top, self.btn_add_top, self.btn_scan, self.btn_scan_top, self.btn_refresh): button.setEnabled(not busy and (button not in (self.btn_scan, self.btn_scan_top) or self.device_combo.isEnabled()))
         self.btn_scan.setText("Digitalizando..." if busy else "Iniciar Digitalização")

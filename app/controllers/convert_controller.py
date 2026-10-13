@@ -21,8 +21,9 @@ class ConvertController:
 
     _ALIASES = {"JPEG": "JPG", "TIF": "TIFF"}
 
-    def __init__(self, workspace, main_view):
+    def __init__(self, workspace, main_view, session_context=None):
         self.workspace = workspace
+        self.session_context = session_context
         self.main_view = main_view
         self.view = ConvertView()
         self._worker: ConvertWorker | None = None
@@ -39,6 +40,10 @@ class ConvertController:
         self.view.return_requested.connect(self.return_to_documents)
 
     def activate(self) -> None:
+        if self.session_context is not None:
+            try:self.session_context.require_permission("tools.use")
+            except RuntimeError as exc:
+                QMessageBox.warning(self.view,"Conversor",str(exc));return
         self.main_view.sidebar.show()
         self.main_view.sidebar.set_active_tool("converter")
         self.workspace.show_view("converter")
@@ -154,6 +159,7 @@ class ConvertController:
             )
 
     def _build_job(self, data: dict) -> ConvertJob:
+        if getattr(self,"session_context",None) is not None:self.session_context.require_permission("tools.use")
         input_value = str(data.get("input") or "").strip()
         output_value = str(data.get("output") or "").strip()
         target = str(data.get("target") or "").strip().upper()

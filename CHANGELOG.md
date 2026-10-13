@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.9.0-beta.9] - 2026-10-13
+
+- Permissões verificadas nos serviços e na organização de destino.
+- Saídas publicadas sem sobrescrever arquivos existentes; cancelamento preserva arquivos do usuário.
+- Operações de arquivo em workers, respostas vinculadas à organização e confirmação de saída com páginas não salvas.
+- Recepção concorrente isolada, verificação SHA-256 e transações serializadas no banco.
+- Diálogos legíveis, metadados em texto simples e arquitetura das views desacoplada dos serviços.
+- Manuais, relatório de auditoria e instaladores acompanham a versão; schema 23 permanece.
+
+
 ## [0.9.0-beta.8] - 2026-10-13
 
 - Captura e PDF mostra por padrão o recorte confiável de páginas digitalizadas

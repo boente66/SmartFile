@@ -395,4 +395,4 @@ preservados. Uma marca manuscrita continua visual. Consulte
 ## Documentação oficial
 
 Consulte o [índice oficial](docs/README.md), o [manual do usuário](docs/Manual_Usuario.md)
-e a [documentação técnica](docs/Documentacao_Tecnica.md), atualizados para beta.8/schema 23.
+e a [documentação técnica](docs/Documentacao_Tecnica.md), atualizados para beta.9/schema 23.

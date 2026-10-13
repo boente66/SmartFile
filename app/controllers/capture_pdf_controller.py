@@ -40,6 +40,7 @@ class CapturePdfController:
         self.view = CapturePdfView()
         self.state = CapturePdfWorkspace()
         self._devices_loaded = False
+        self._closing = False
         self._scan_worker: ScanWorker | None = None
         self._operation_worker: CapturePdfWorker | None = None
         self._render_worker: CapturePdfWorker | None = None
@@ -76,13 +77,21 @@ class CapturePdfController:
         self.view.current_page_changed.connect(self._set_current_page)
 
     # API pública usada pela navegação e pelo módulo Documentos.
+    def _allow_tools(self):
+        if self.session_context is not None:
+            try:self.session_context.require_permission("tools.use")
+            except RuntimeError as exc:
+                QMessageBox.warning(self.view,"Captura e PDF",str(exc));return False
+        return True
+
     def activate(self) -> None:
+        if not self._allow_tools():return False
         self.workspace.show_view("capture_pdf")
         if not self._devices_loaded:
             self._load_devices()
 
     def open_document(self, path: str) -> None:
-        self.activate()
+        if self.activate() is False:return
         self.on_open_pdf(path)
 
     def close_document(self) -> None:
@@ -100,6 +109,7 @@ class CapturePdfController:
         self.view.set_sources(ScanService.list_sources(device_name))
 
     def on_scan_requested(self) -> None:
+        if not self._allow_tools():return
         if self._scan_worker is not None or self._operation_worker is not None:
             QMessageBox.information(self.view, "Captura e PDF", "Aguarde a operação atual.")
             return
@@ -156,6 +166,7 @@ class CapturePdfController:
             self._set_busy(False)
 
     def on_import_images(self, paths: list[str]) -> None:
+        if not self._allow_tools():return
         sources = [Path(path) for path in paths]
         if not sources:
             return
@@ -181,6 +192,7 @@ class CapturePdfController:
         self._schedule_render()
 
     def on_open_pdf(self, path: str) -> None:
+        if not self._allow_tools():return
         source = Path(path)
 
         def task(progress, cancelled):
@@ -207,6 +219,7 @@ class CapturePdfController:
         self._schedule_render()
 
     def on_add_pdfs(self, paths: list[str]) -> None:
+        if not self._allow_tools():return
         sources = [Path(path) for path in paths]
         if not sources:
             return
@@ -261,8 +274,9 @@ class CapturePdfController:
             QMessageBox.warning(self.view, "Girar páginas", str(exc))
 
     def on_extract_pages(self, indexes: list[int], path: str) -> None:
-        if self._geometry_workers:
-            QMessageBox.information(self.view, "Enquadramento", "Aguarde a detecção de bordas antes de salvar.")
+        if not self._allow_tools():return
+        if self._geometry_workers or self._render_worker is not None or self._render_pending:
+            QMessageBox.information(self.view, "Enquadramento", "Aguarde a detecção de bordas e a atualização da prévia antes de salvar.")
             return
         pages = [self.state.pages[index] for index in indexes if 0 <= index < len(self.state.pages)]
         if not pages:
@@ -270,8 +284,9 @@ class CapturePdfController:
         self._materialize_to(Path(path), pages, "Extrair páginas", reopen=False)
 
     def on_save_pdf(self, path: str) -> None:
-        if self._geometry_workers:
-            QMessageBox.information(self.view, "Enquadramento", "Aguarde a detecção de bordas antes de salvar.")
+        if not self._allow_tools():return
+        if self._geometry_workers or self._render_worker is not None or self._render_pending:
+            QMessageBox.information(self.view, "Enquadramento", "Aguarde a detecção de bordas e a atualização da prévia antes de salvar.")
             return
         if not self.state.pages:
             QMessageBox.warning(self.view, "Salvar PDF", "Nenhuma página disponível.")
@@ -279,8 +294,9 @@ class CapturePdfController:
         self._materialize_to(Path(path), self.state.pages, "Salvar PDF", reopen=True)
 
     def on_split_pdf(self, directory: str) -> None:
-        if self._geometry_workers:
-            QMessageBox.information(self.view, "Enquadramento", "Aguarde a detecção de bordas antes de salvar.")
+        if not self._allow_tools():return
+        if self._geometry_workers or self._render_worker is not None or self._render_pending:
+            QMessageBox.information(self.view, "Enquadramento", "Aguarde a detecção de bordas e a atualização da prévia antes de salvar.")
             return
         if not self.state.pages:
             return
@@ -341,8 +357,9 @@ class CapturePdfController:
         self._start_operation(task, succeeded, title)
 
     def on_add_to_ged(self) -> None:
-        if self._geometry_workers:
-            QMessageBox.information(self.view, "Enquadramento", "Aguarde a detecção de bordas antes de salvar.")
+        if not self._allow_tools():return
+        if self._geometry_workers or self._render_worker is not None or self._render_pending:
+            QMessageBox.information(self.view, "Enquadramento", "Aguarde a detecção de bordas e a atualização da prévia antes de salvar.")
             return
         if not self.state.pages:
             QMessageBox.warning(self.view, "Adicionar ao SmartFile", "Nenhuma página disponível.")
@@ -350,10 +367,13 @@ class CapturePdfController:
         allowed = None
         if self.session_context and self.session_context.is_authenticated():
             allowed = [item.organization_id for item in self.session_context.memberships]
+        try:
+            organizations, folders = self.document_service.import_destinations(allowed)
+        except (RuntimeError, PermissionError) as exc:
+            QMessageBox.warning(self.view, "Adicionar ao GED", str(exc))
+            return
         dialog = ScannerImportDialog(
-            self.document_service,
-            self.view,
-            allowed_organization_ids=allowed,
+            organizations, folders, self.document_service.active_organization_id, self.view
         )
         dialog.setWindowTitle("Adicionar documento ao SmartFile")
         dialog.title.setText(self.state.output_name)
@@ -380,9 +400,10 @@ class CapturePdfController:
                 temporary.unlink(missing_ok=True)
                 CapturePdfService.close_pages(snapshot)
 
-        self._start_operation(task, self._on_ged_succeeded, "Adicionar ao SmartFile")
+        self._start_operation(task, self._on_ged_succeeded, "Adicionar ao SmartFile", organization_id=metadata["organization_id"])
 
     def _on_ged_succeeded(self, document) -> None:
+        self.state.dirty = False
         if self.imported_callback:
             self.imported_callback()
         QMessageBox.information(
@@ -416,15 +437,17 @@ class CapturePdfController:
         self._update_view_state()
         return True
 
-    def _start_operation(self, task, succeeded, title: str) -> None:
+    def _start_operation(self, task, succeeded, title: str, organization_id=None) -> None:
         if self._operation_worker is not None:
             QMessageBox.information(self.view, title, "Aguarde a operação atual.")
             return
         worker = CapturePdfWorker(task)
         self._operation_worker = worker
-        worker.progress.connect(self._show_progress)
-        worker.succeeded.connect(succeeded)
-        worker.failed.connect(lambda message: self._operation_failed(title, message))
+        worker.progress.connect(lambda value, message: self._show_progress(value,message) if not self._closing and self._operation_worker is worker else None)
+        worker.succeeded.connect(lambda result: succeeded(result) if not self._closing and self._operation_worker is worker
+                                 and (organization_id is None or self.document_service.active_organization_id == organization_id) else None)
+        worker.failed.connect(lambda message: self._operation_failed(title, message)
+                              if organization_id is None or self.document_service.active_organization_id == organization_id else None)
         worker.finished.connect(lambda worker=worker: self._cleanup_operation(worker))
         worker.finished.connect(worker.deleteLater)
         self._set_busy(True)
@@ -433,10 +456,11 @@ class CapturePdfController:
     def _cleanup_operation(self, worker: CapturePdfWorker) -> None:
         if self._operation_worker is worker:
             self._operation_worker = None
-            self._set_busy(False)
+            if not self._closing:self._set_busy(False)
 
     def _operation_failed(self, title: str, message: str) -> None:
         logger.warning("capture_pdf.operation.failed title=%s message=%s", title, message)
+        if self._closing:return
         QMessageBox.critical(self.view, title, message)
 
     def _schedule_render(self) -> None:
@@ -464,7 +488,7 @@ class CapturePdfController:
         worker = CapturePdfWorker(task)
         self._render_worker = worker
         worker.succeeded.connect(self._render_succeeded)
-        worker.failed.connect(lambda message: self._operation_failed("Visualização", message))
+        worker.failed.connect(lambda message: self._operation_failed("Visualização", message) if generation == self._render_generation else None)
         worker.finished.connect(lambda worker=worker: self._cleanup_render(worker))
         worker.finished.connect(worker.deleteLater)
         self._update_view_state()
@@ -484,8 +508,9 @@ class CapturePdfController:
             self._render_worker = None
             pending = self._render_pending
             self._render_pending = False
-            if pending and self.state.pages:
-                self._schedule_render()
+            if not self._closing:
+                if pending and self.state.pages:self._schedule_render()
+                self._update_view_state()
 
     def _set_current_page(self, index: int) -> None:
         if 0 <= index < len(self.state.pages):
@@ -500,7 +525,7 @@ class CapturePdfController:
         for worker in self._geometry_workers: worker.requestInterruption()
 
     def _detect_page(self, page, force=False):
-        if page is None or page.image is None or (page.geometry is not None and not force): return
+        if page is None or page.image is None or self._operation_worker is not None or (page.geometry is not None and not force): return
         if force: self._invalidate_geometry()
         generation = self._geometry_generation
         page_id = page.id
@@ -523,7 +548,7 @@ class CapturePdfController:
 
     def _geometry_finished(self, worker):
         self._geometry_workers.discard(worker)
-        self._update_view_state()
+        if not self._closing:self._update_view_state()
 
     def _geometry_ready(self, payload):
         generation, page_id, result = payload
@@ -556,7 +581,7 @@ class CapturePdfController:
 
     def _manual_geometry(self, corners):
         page = self._current_page()
-        if page is None or page.image is None: return
+        if page is None or page.image is None or self._operation_worker is not None: return
         for _ in range(page.rotation//90): corners = tuple((y,1-x) for x,y in corners)
         try:
             geometry = DocumentGeometryService.from_corners(page.image.size, corners,
@@ -571,7 +596,7 @@ class CapturePdfController:
 
     def _reset_geometry(self):
         page = self._current_page()
-        if page is None: return
+        if page is None or self._operation_worker is not None: return
         self._invalidate_geometry()
         page.geometry = None
         if page.image is not None:
@@ -585,16 +610,19 @@ class CapturePdfController:
         self.state.dirty = bool(self.state.pages)
 
     def shutdown(self):
+        self._closing = True
+        self._render_generation += 1
+        self._render_pending = False
         self._scan_generation += 1
         self._invalidate_geometry()
         for worker in (*self._geometry_workers, self._scan_worker, self._render_worker, self._operation_worker):
             if worker and worker.isRunning(): worker.requestInterruption(); worker.wait(5000)
 
     def _set_busy(self, busy: bool) -> None:
-        self.view.set_document_state(self.state.output_name, len(self.state.pages), busy or bool(self._geometry_workers))
+        self.view.set_document_state(self.state.output_name, len(self.state.pages), busy or bool(self._geometry_workers) or self._render_worker is not None or self._render_pending)
 
     def _update_view_state(self) -> None:
-        busy = self._operation_worker is not None or self._scan_worker is not None or bool(self._geometry_workers)
+        busy = self._operation_worker is not None or self._scan_worker is not None or bool(self._geometry_workers) or self._render_worker is not None or self._render_pending
         self.view.set_document_state(self.state.output_name, len(self.state.pages), busy)
 
     def _show_progress(self, value: int, message: str) -> None:

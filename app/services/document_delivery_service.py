@@ -4,7 +4,7 @@ import hashlib
 import logging
 import re
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from uuid import uuid4
 
 from app.entities.document_delivery_entity import DocumentDeliveryEntity, DocumentDeliveryItemEntity, DeliveryHistoryEntity
@@ -24,6 +24,7 @@ from app.services.organization_feature_service import OrganizationFeatureService
 from app.services.organization_service import OrganizationService
 from app.models.delivery_receipt_request import DeliveryReceiptDocument, DeliveryReceiptRequest
 from app.utils.file_naming import safe_output_path
+from app.utils.atomic_output import atomic_output
 from app.delivery.protocol import DELIVERY_PROTOCOL_VERSION
 
 logger = logging.getLogger(__name__)
@@ -365,7 +366,7 @@ class DocumentDeliveryService:
         ).resolve()
         root.mkdir(parents=True, exist_ok=True)
         final = root / f"comprovante-{receipt.receipt_uuid}.pdf"
-        temporary = root / f".{receipt.receipt_uuid}.part"
+        temporary = root / f".{receipt.receipt_uuid}.{uuid4().hex}.part"
         digest = hashlib.sha256()
         remaining = content_length
         try:
@@ -472,7 +473,7 @@ class DocumentDeliveryService:
         if item is None or item.delivery_id != delivery.id: raise DeliveryNotFoundError("Item da entrega não encontrado.")
         if content_length != item.size: raise DeliveryIntegrityError("Tamanho recebido difere do informado.")
         root = (self.database.paths.data_dir / "delivery_inbox" / protocol).resolve(); root.mkdir(parents=True, exist_ok=True)
-        suffix = Path(item.logical_name).suffix.lower()[:12]; final = root / f"{item.item_uuid}{suffix}"; temporary = root / f".{item.item_uuid}.part"
+        suffix = Path(item.logical_name).suffix.lower()[:12]; final = root / f"{item.item_uuid}{suffix}"; temporary = root / f".{item.item_uuid}.{uuid4().hex}.part"
         digest = hashlib.sha256(); remaining = content_length
         try:
             with temporary.open("wb") as handle:
@@ -486,31 +487,56 @@ class DocumentDeliveryService:
             temporary.replace(final); now = self._now(); self.items.update_received(item_uuid, "VERIFIED", str(final), now)
             return final
         except Exception:
-            temporary.unlink(missing_ok=True); self.items.update_received(item_uuid, "FAILED", None, None); raise
+            temporary.unlink(missing_ok=True); self.items.mark_failed_unless_verified(item_uuid); raise
 
     def complete_incoming(self, protocol: str) -> DocumentDeliveryEntity:
         delivery = self._protocol_delivery(protocol); items = self.items.list_by_delivery(delivery.id)
         if not items or any(item.transfer_status != "VERIFIED" for item in items): raise DeliveryIntegrityError("Nem todos os itens foram verificados.")
         self.mark_delivered(delivery.id); return self._delivery(delivery.id)
 
-    def download_item(self, item_id: int, output: Path) -> Path:
-        self.context.require_permission("delivery.download")
+    def _received_item(self, item_id: int, permission: str, cancelled=None):
         row = self.database.fetch_one("SELECT * FROM document_delivery_items WHERE id=?", (item_id,))
-        if row is None or not row["received_path"]: raise DeliveryNotFoundError("Arquivo recebido não encontrado.")
-        source = Path(row["received_path"]).resolve(strict=True); target = safe_output_path(output.expanduser().resolve())
-        target.parent.mkdir(parents=True, exist_ok=True)
-        with source.open("rb") as incoming, target.open("xb") as outgoing:
-            while chunk := incoming.read(self.CHUNK_SIZE): outgoing.write(chunk)
+        if row is None:
+            raise DeliveryNotFoundError("Arquivo recebido não encontrado.")
+        delivery = self._delivery(row["delivery_id"])
+        self._require(delivery.organization_id, permission)
+        if self.context is not None:
+            self._assert_recipient(delivery, self.context.current_user.id)
+        if delivery.direction != "INCOMING" or row["transfer_status"] != "VERIFIED" or not row["received_path"]:
+            raise DeliveryIntegrityError("O arquivo recebido ainda não está disponível para consulta.")
+        source = Path(row["received_path"]).resolve(strict=True)
+        root = (self.database.paths.data_dir/"delivery_inbox"/self._valid_protocol(delivery.protocol_number)).resolve()
+        if root not in source.parents or not source.is_file():
+            raise DeliveryIntegrityError("Arquivo recebido fora da área da entrega.")
+        checksum = self._checksum(source) if cancelled is None else self._checksum(source,cancelled=cancelled)
+        if source.stat().st_size != row["size"] or checksum != row["sha256"]:
+            raise DeliveryIntegrityError("O arquivo recebido não corresponde ao SHA-256 registrado.")
+        return row, source
+
+    def download_item(self, item_id: int, output: Path, cancelled=None) -> Path:
+        row, source = self._received_item(item_id, "delivery.download", cancelled)
+        target = safe_output_path(output.expanduser().absolute())
+        digest = hashlib.sha256()
+        size = 0
+        with atomic_output(target) as temporary:
+            with source.open("rb") as incoming, temporary.open("wb") as outgoing:
+                while chunk := incoming.read(self.CHUNK_SIZE):
+                    if cancelled and cancelled():raise InterruptedError("Download cancelado.")
+                    outgoing.write(chunk);digest.update(chunk);size+=len(chunk)
+            if size != row["size"] or digest.hexdigest() != row["sha256"]:
+                raise DeliveryIntegrityError("A exportação do arquivo recebido falhou na validação SHA-256.")
         return target
 
     def add_received_to_ged(self, item_id: int, **metadata):
         if self.document_service is None: raise DeliveryValidationError("Serviço documental indisponível.")
-        row = self.database.fetch_one("SELECT * FROM document_delivery_items WHERE id=?", (item_id,))
-        if row is None or not row["received_path"]: raise DeliveryNotFoundError("Arquivo recebido não encontrado.")
-        return self.document_service.import_document(row["received_path"], title=metadata.pop("title", row["logical_name"]), **metadata)
+        cancelled = metadata.get("cancelled")
+        row, source = self._received_item(item_id, "delivery.download", cancelled)
+        return self.document_service.import_document(str(source), title=metadata.pop("title", row["logical_name"]), **metadata)
 
     def metadata(self, delivery_id: int) -> dict:
-        delivery = self._delivery(delivery_id); items = self.items.list_by_delivery(delivery_id)
+        delivery = self._delivery(delivery_id)
+        self._require(delivery.organization_id, "delivery.view")
+        items = self.items.list_by_delivery(delivery_id)
         request = self.requests.find_by_id(delivery.request_id, delivery.organization_id) if delivery.request_id else None
         sender = self.users.find_by_id(delivery.sender_user_id) if delivery.sender_user_id else None
         recipient = self.users.find_by_id(delivery.recipient_user_id) if delivery.recipient_user_id else None
@@ -525,6 +551,7 @@ class DocumentDeliveryService:
         request = self.requests.find_by_id(request_id)
         if request is None:
             raise DeliveryNotFoundError("Solicitação não encontrada.")
+        self._require(request.organization_id, "document.request.view")
         requester = self.users.find_by_id(request.requested_by_user_id) if request.requested_by_user_id else None
         assignee = self.users.find_by_id(request.assigned_to_user_id) if request.assigned_to_user_id else None
         return {
@@ -705,14 +732,19 @@ class DocumentDeliveryService:
     @staticmethod
     def _safe_name(value: str) -> str:
         name = value.strip()
-        if not name or name != Path(name).name or any(char in name for char in "\0/\\"): raise DeliveryValidationError("Nome de documento inválido.")
+        if (not name or name in {".", ".."} or name != Path(name).name
+                or any(ord(char) < 32 or char in '/\\<>:"|?*' for char in name)
+                or name.endswith(".") or PureWindowsPath(name).is_reserved()):
+            raise DeliveryValidationError("Nome de documento inválido para Linux e Windows.")
         return name[:255]
 
     @staticmethod
-    def _checksum(path: Path) -> str:
+    def _checksum(path: Path, cancelled=None) -> str:
         digest = hashlib.sha256()
         with path.open("rb") as handle:
-            while chunk := handle.read(DocumentDeliveryService.CHUNK_SIZE): digest.update(chunk)
+            while chunk := handle.read(DocumentDeliveryService.CHUNK_SIZE):
+                if cancelled and cancelled():raise InterruptedError("Operação cancelada.")
+                digest.update(chunk)
         return digest.hexdigest()
 
     @staticmethod

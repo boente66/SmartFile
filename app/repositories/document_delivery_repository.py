@@ -63,6 +63,13 @@ class DocumentDeliveryItemRepository(BaseRepository):
     def update_received(self, item_uuid: str, status: str, path: str | None, received_at: str | None) -> None:
         self._write("UPDATE document_delivery_items SET transfer_status=?, received_path=?, received_at=? WHERE item_uuid=?", (status, path, received_at, item_uuid))
 
+    def mark_failed_unless_verified(self, item_uuid: str) -> None:
+        self._write(
+            "UPDATE document_delivery_items SET transfer_status='FAILED', "
+            "received_path=NULL, received_at=NULL WHERE item_uuid=? "
+            "AND transfer_status!='VERIFIED'", (item_uuid,),
+        )
+
     def update_sent(self, item_uuid: str, sent_at: str) -> None:
         self._write("UPDATE document_delivery_items SET transfer_status='VERIFIED', sent_at=? WHERE item_uuid=?", (sent_at, item_uuid))
 

@@ -45,13 +45,17 @@ def test_docx_to_pdf_dispatches_to_docx_service(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(
         DOCService,
         "convert_docx_to_pdf",
-        lambda current_job, progress: received.append(current_job),
+        lambda current_job, progress: (received.append(current_job), current_job.output_path.write_bytes(b"converted")),
     )
 
     ConvertService.execute(job)
 
     assert job.conversion_key == "DOCX->PDF"
-    assert received == [job]
+    assert len(received) == 1
+    assert received[0].input_path == job.input_path
+    assert received[0].conversion_key == job.conversion_key
+    assert received[0].output_path != job.output_path
+    assert job.output_path.read_bytes() == b"converted"
 
 
 def test_worker_emits_succeeded_without_overriding_qthread_finished(

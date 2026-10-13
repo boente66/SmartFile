@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from app.utils.atomic_output import publish_file
+from app.utils.export_destination import require_external_output
+
 import logging
 import os
 from pathlib import Path
@@ -65,6 +68,9 @@ class HandwrittenSignatureService:
             document_id=request.validation_document_id, source_path=request.input_path)
 
     def _apply(self, request: HandwrittenSignatureRequest) -> HandwrittenSignatureResult:
+        if self.validation_service is not None:
+            try:require_external_output(request.output_path, self.validation_service.database.paths)
+            except ValueError as exc:raise SignedDocumentWriteError(str(exc)) from exc
         source = self._validated_pdf(request.input_path)
         had_signatures = self.has_digital_signatures(source)
         if had_signatures and not request.existing_signatures_confirmed:
@@ -75,7 +81,7 @@ class HandwrittenSignatureService:
         request.validate(self._page_count(source), page_size)
         self._validate_image(request.signature_image)
 
-        output = request.output_path.expanduser().resolve()
+        output = request.output_path.expanduser().absolute()
         temporary = output.with_name(f".{output.stem}.{uuid4().hex}.tmp.pdf")
         logger.info(
             "Aplicando assinatura manuscrita input=%s output=%s pagina=%s",
@@ -99,7 +105,8 @@ class HandwrittenSignatureService:
                 document.save(temporary, garbage=0, deflate=True, encryption=fitz.PDF_ENCRYPT_KEEP)
             if not temporary.is_file() or temporary.stat().st_size == 0:
                 raise SignedDocumentWriteError("O PDF de saída não foi gerado corretamente.")
-            os.replace(temporary, output)
+            publish_file(temporary, output)
+            temporary.unlink(missing_ok=True)
         except ExistingDigitalSignatureWarning:
             raise
         except Exception as exc:

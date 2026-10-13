@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.views.widgets.dialog_theme import apply_import_theme
+
 from pathlib import Path
 
 from PyQt6.QtCore import Qt
@@ -17,6 +19,7 @@ class DocumentImportDialog(QDialog):
 
     def __init__(self, organization_name: str, folders, current_folder_id=None, parent=None):
         super().__init__(parent)
+        apply_import_theme(self)
         self.setWindowTitle("Adicionar documentos ao SmartFile")
         self.resize(860, 560)
         self._paths: list[Path] = []
@@ -68,9 +71,14 @@ class DocumentImportDialog(QDialog):
         file_layout.addLayout(metadata)
         splitter.addWidget(file_panel); splitter.setSizes([300, 540])
         root.addWidget(splitter, 1)
+        self.error_label = QLabel("")
+        self.error_label.setObjectName("errorLabel")
+        self.error_label.setWordWrap(True)
+        root.addWidget(self.error_label)
         self.buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Save
         )
+        self.buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("Cancelar")
         self.buttons.button(QDialogButtonBox.StandardButton.Save).setText("Adicionar ao GED")
         self.buttons.accepted.connect(self._accept_if_valid); self.buttons.rejected.connect(self.reject)
         root.addWidget(self.buttons)
@@ -98,6 +106,6 @@ class DocumentImportDialog(QDialog):
 
     def _accept_if_valid(self) -> None:
         if not self._paths:
-            self.file_list.setToolTip("Selecione pelo menos um arquivo.")
+            self.error_label.setText("Selecione pelo menos um arquivo.")
             self.file_list.setFocus(); return
         self.accept()

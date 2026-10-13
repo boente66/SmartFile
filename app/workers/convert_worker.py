@@ -30,7 +30,6 @@ class ConvertWorker(QThread):
                 )
             self.succeeded.emit()
         except ConversionCancelledError:
-            self._cleanup_cancelled_outputs()
             self.cancelled.emit()
         except Exception as e:
             logger.exception(
@@ -42,20 +41,3 @@ class ConvertWorker(QThread):
 
     def _on_progress(self, value: int, message: str):
         self.progress.emit(value, message)
-
-    def _cleanup_cancelled_outputs(self) -> None:
-        candidates = [self.job.output_path]
-        if self.job.target_format.upper() == "JPG":
-            candidates.extend(
-                self.job.output_path.parent.glob(
-                    f"{self.job.output_path.stem}_*.jpg"
-                )
-            )
-        for path in candidates:
-            try:
-                if path.is_file():
-                    path.unlink()
-            except OSError:
-                logger.warning(
-                    "conversion.cancel_cleanup_failed output=%s", path
-                )

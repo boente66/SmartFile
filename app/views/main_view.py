@@ -131,6 +131,15 @@ class MainView(QMainWindow):
 
         button.clicked.connect(show_details)
 
+    def confirm_exit(self):
+        guard = getattr(self, "_close_guard", None)
+        return True if guard is None else bool(guard())
+
+    def closeEvent(self, event):
+        if not getattr(self, "_skip_close_guard", False) and not self.confirm_exit():
+            event.ignore();return
+        super().closeEvent(event)
+
     def show_application_update(self, update) -> None:
         button = getattr(self, "application_update_button", None)
         if button is None:

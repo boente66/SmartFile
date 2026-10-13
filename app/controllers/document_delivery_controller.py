@@ -21,6 +21,7 @@ from app.views.delivery_network_dialog import DeliveryNetworkDialog
 from app.views.delivery_acknowledgement_dialog import DeliveryAcknowledgementDialog
 from app.models.pdf_viewer_context import PDFViewerContext
 from app.workers.delivery_send_worker import DeliverySendWorker
+from app.workers.file_operation_worker import FileOperationWorker
 from app.workers.request_send_worker import RequestSendWorker
 from app.workers.lan_discovery_worker import LanConnectionWorker, LanDiscoveryWorker
 from app.delivery.protocol import DELIVERY_PROTOCOL_VERSION
@@ -51,6 +52,7 @@ class DocumentDeliveryController:
             self._alert_sound.setSource(QUrl.fromLocalFile(str(resource_path("assets/sounds/request_alert.wav"))))
             self._alert_sound.setLoopCount(1);self._alert_sound.setVolume(.35)
         except ImportError:logger.warning("request.audio.unavailable")
+        self._file_worker=None;self._closing=False
         self.notification_timer=QTimer(self.view);self.notification_timer.setInterval(3000)
         self.notification_timer.timeout.connect(self._poll_requests)
         self.coordinator.request_received.connect(self._received_request)
@@ -74,6 +76,7 @@ class DocumentDeliveryController:
         except Exception as exc:self._error(exc);return
         self.workspace.show_view("deliveries"); self.refresh()
     def organization_changed(self,*_):
+        if self._file_worker is not None:self._file_worker.requestInterruption()
         self.coordinator.stop()
         self.notification_timer.stop();self.view.flow.stop_alert();self.view.set_unread(set())
         self._update_request_badge(0)
@@ -93,6 +96,9 @@ class DocumentDeliveryController:
         except OSError as exc:self.view.show_status(f"Recepção LAN indisponível: {exc}")
         except PermissionError:logger.info("delivery.coordinator.not_started profile=non_business")
     def shutdown(self):
+        self._closing=True
+        if self._file_worker is not None:
+            self._file_worker.requestInterruption();self._file_worker.wait(5000)
         self.notification_timer.stop();self.view.flow.stop_alert()
         if self.worker and self.worker.isRunning():self.worker.requestInterruption();self.worker.wait(5000)
         if self.request_worker and self.request_worker.isRunning():self.request_worker.requestInterruption();self.request_worker.wait(5000)
@@ -212,19 +218,52 @@ class DocumentDeliveryController:
             self.service.mark_viewed(delivery.protocol_number,self.context.current_user.id)
             self.refresh()
         except Exception as exc:self._error(exc)
+    def _start_file_operation(self, items, operation, message):
+        if self._file_worker is not None:
+            QMessageBox.information(self.view,"Arquivos","Aguarde a operação em andamento terminar.");return
+        organization_id=self.documents.active_organization_id
+        def task(progress,cancelled):
+            count=0
+            for index,item in enumerate(items,start=1):
+                if cancelled():raise InterruptedError()
+                progress(int((index-1)*100/len(items)),f"{message}: {index}/{len(items)}")
+                operation(item,organization_id,cancelled);count+=1
+            return count
+        worker=FileOperationWorker(task);self._file_worker=worker
+        def current():
+            return (not self._closing and self._file_worker is worker
+                    and organization_id==getattr(self.context.active_organization,"id",None))
+        worker.progress.connect(lambda _value,text:self.view.show_status(text) if current() else None)
+        def completed(count):
+            if current():
+                self.refresh();self.view.show_status(f"{message}: {count} arquivo(s) concluído(s).")
+        worker.succeeded.connect(completed)
+        worker.failed.connect(lambda text:self._error(text) if current() else None)
+        worker.finished.connect(lambda w=worker:self._cleanup_file_worker(w))
+        worker.finished.connect(worker.deleteLater);worker.start()
+
+    def _cleanup_file_worker(self,worker):
+        if self._file_worker is worker:self._file_worker=None
+
     def download(self,delivery_id):
+        try:self.service.authorized_delivery(delivery_id,"delivery.download",recipient_only=True)
+        except Exception as exc:self._error(exc);return
         items=self.service.items.list_by_delivery(delivery_id)
         if not items:return
         directory=QFileDialog.getExistingDirectory(self.view,"Salvar documentos recebidos")
         if directory:
-            try:
-                for item in items:self.service.download_item(item.id,Path(directory)/item.logical_name)
-            except Exception as exc:self._error(exc)
+            self._start_file_operation(items,
+                lambda item,_org,cancelled:self.service.download_item(item.id,Path(directory)/item.logical_name,cancelled=cancelled),
+                "Download")
+
     def add_to_ged(self,delivery_id):
-        items=self.service.items.list_by_delivery(delivery_id)
         try:
-            for item in items:self.service.add_received_to_ged(item.id,organization_id=self.documents.active_organization_id,source_type="IMPORT",sync_cloud=True)
-            self.refresh()
+            self.service.authorized_delivery(delivery_id,"delivery.download",recipient_only=True)
+            items=self.service.items.list_by_delivery(delivery_id)
+            if items:
+                self._start_file_operation(items,
+                    lambda item,org,cancelled:self.service.add_received_to_ged(item.id,organization_id=org,source_type="IMPORT",sync_cloud=True,cancelled=cancelled),
+                    "Adição ao GED")
         except Exception as exc:self._error(exc)
     def acknowledge(self,delivery_id):
         if self.receipt_worker is not None:return

@@ -1,14 +1,10 @@
+from app.models.folder_templates import FOLDER_TEMPLATES
 from app.errors.auth_exceptions import TemplateCreationError
 from app.services.folder_service import FolderService
 
 
 class FolderTemplateService:
-    TEMPLATES = {
-        "PERSONAL": ("Documentos pessoais", "Contas", "Garantias", "Saúde", "Imposto de Renda", "Comprovantes"),
-        "STUDENT": ("Disciplinas", "Trabalhos", "Projetos", "TCC", "Certificados", "Livros e materiais"),
-        "BUSINESS": ("Financeiro", "Fiscal", "Recursos Humanos", "Contratos", "Clientes", "Fornecedores", "Administrativo", "Projetos"),
-        "EMPTY": (),
-    }
+    TEMPLATES = FOLDER_TEMPLATES
 
     def __init__(self, folder_service: FolderService):
         self.folder_service = folder_service

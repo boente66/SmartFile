@@ -1,11 +1,11 @@
-# Documentação oficial — SmartFile 0.9.0-beta.8
+# Documentação oficial — SmartFile 0.9.0-beta.9
 
 Atualizada em 13/10/2026. Schema 23.
 
 ## Uso e instalação
 
 - [Manual do usuário](Manual_Usuario.md) · [PDF](Manual_Usuario.pdf).
-- [Notas da beta.8](RELEASE_NOTES_0.9.0-beta.8.md).
+- [Notas da beta.9](RELEASE_NOTES_0.9.0-beta.9.md).
 - [Instalação Linux e dependências](BETA_LINUX.md).
 - [Guia de teste Windows](GUIA_TESTE_WINDOWS_BETA.md).
 - [Teste de entrega LAN](DELIVERY_LAN_TEST.md).
@@ -21,7 +21,9 @@ Atualizada em 13/10/2026. Schema 23.
 
 O manual descreve os fluxos atuais. Relatórios de fases e notas de versões
 anteriores são registros históricos; suas versões de schema e limitações não
-substituem a referência beta.8. Captura/PDF estão homologados; reconhecimento
+substituem a referência beta.9. Captura/PDF estão homologados; reconhecimento
 universal de tamanho de papel permanece experimental/assistivo.
 
 - [Processo de entrega e atualização de instaladores](RELEASE_PROCESS.md).
+
+- [Auditoria da beta.9](https://github.com/boente66/SmartFile/blob/main/docs/AUDIT_0.9.0-beta.9.md).

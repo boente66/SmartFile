@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from app.services.organization_feature_service import OrganizationFeatureService
+from app.models.organization_features import OrganizationFeatureCatalog
 
 
 class OrganizationDialog(QDialog):
@@ -22,7 +22,7 @@ class OrganizationDialog(QDialog):
         enabled_features: set[str] | frozenset[str] | None = None,
     ):
         super().__init__(parent)
-        self.feature_policy = OrganizationFeatureService()
+        self.feature_policy = OrganizationFeatureCatalog()
         self.setWindowTitle("Configurações da organização")
         self.resize(680, 680)
         root = QVBoxLayout(self)

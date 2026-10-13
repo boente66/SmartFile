@@ -161,8 +161,13 @@ class ScanController:
         allowed = None
         if self.session_context and self.session_context.is_authenticated():
             allowed = [item.organization_id for item in self.session_context.memberships]
+        try:
+            organizations, folders = self.document_service.import_destinations(allowed)
+        except (RuntimeError, PermissionError) as exc:
+            QMessageBox.warning(self.view, "Adicionar ao GED", str(exc))
+            return
         dialog = ScannerImportDialog(
-            self.document_service, self.view, allowed_organization_ids=allowed
+            organizations, folders, self.document_service.active_organization_id, self.view
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return

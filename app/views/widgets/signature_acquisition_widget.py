@@ -7,7 +7,8 @@ from PyQt6.QtWidgets import (
     QStackedWidget, QVBoxLayout, QWidget,
 )
 
-from app.services.signature_image_service import SignatureImageService
+from app.imaging.signature_image import SignatureImageNormalizer
+from app.errors.handwritten_signature_exceptions import SignatureImageError
 from app.ui.icon_provider import IconProvider
 from app.views.widgets.signature_canvas import SignatureCanvas
 
@@ -19,7 +20,7 @@ class SignatureAcquisitionWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.normalizer = SignatureImageService()
+        self.normalizer = SignatureImageNormalizer()
         self._imported = b""
         self._method = "DRAWN"
         root = QVBoxLayout(self)
@@ -124,9 +125,9 @@ class SignatureAcquisitionWidget(QWidget):
             return
         try:
             with open(path, "rb") as handle:
-                data = handle.read(SignatureImageService.MAX_INPUT_SIZE + 1)
+                data = handle.read(SignatureImageNormalizer.MAX_INPUT_SIZE + 1)
             self._imported = self.normalizer.normalize(data)
-        except (OSError, ValueError) as exc:
+        except (OSError, ValueError, SignatureImageError) as exc:
             QMessageBox.warning(self, "Importar assinatura", str(exc))
             return
         pixmap = QPixmap()

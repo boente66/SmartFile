@@ -1,3 +1,10 @@
+from dataclasses import replace
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import os
+import re
+
+from app.utils.atomic_output import publish_file
 from app.services.pdf_service import PDFService
 from app.services.doc_service import DOCService
 from app.services.xlsx_service import XLSXService
@@ -37,6 +44,59 @@ class ConvertService:
 
     @staticmethod
     def execute(job, progress_callback=None, cancellation_callback=None):
+        job.validate()
+        output = Path(job.output_path).expanduser().absolute()
+        if os.path.lexists(output):
+            raise FileExistsError(f"O arquivo de saída já existe: {output}")
+        if cancellation_callback and cancellation_callback():
+            raise ConversionCancelledError("Conversão cancelada pelo usuário.")
+        with TemporaryDirectory(prefix="smartfile-convert-", dir=output.parent) as directory:
+            stage = Path(directory)
+            staged_job = replace(job, output_path=stage/output.name)
+            def progress(value, message):
+                if progress_callback:
+                    progress_callback(min(value, 99), "Validando e publicando saídas" if value >= 100 else message)
+            ConvertService._execute_to_staging(staged_job, progress, cancellation_callback)
+            produced = sorted(stage.iterdir())
+            if ConvertService._canonical_format(job.target_format) == "JPG" and not staged_job.output_path.exists():
+                numbered = []
+                for source in produced:
+                    match = re.fullmatch(re.escape(output.stem) + r"_page_(\d+)\.jpg", source.name, re.I)
+                    if match is None:
+                        raise RuntimeError("A conversão produziu nomes de páginas inesperados.")
+                    numbered.append((int(match.group(1)), source))
+                if [number for number, _ in sorted(numbered)] != list(range(1, len(numbered)+1)):
+                    raise RuntimeError("A conversão produziu uma sequência de páginas inválida.")
+                for number, source in sorted(numbered):
+                    source.rename(staged_job.output_path if number == 1 else stage/f"{output.stem}_{number}.jpg")
+                produced = sorted(stage.iterdir())
+            if not produced or not staged_job.output_path.is_file():
+                raise RuntimeError("A conversão terminou sem produzir o arquivo de saída.")
+            published = []
+            try:
+                for source in produced:
+                    if cancellation_callback and cancellation_callback():
+                        raise ConversionCancelledError("Conversão cancelada pelo usuário.")
+                    if not source.is_file() or source.is_symlink() or source.stat().st_size == 0:
+                        raise RuntimeError("A conversão produziu uma saída inválida.")
+                    target = output.parent/source.name
+                    identity = source.stat()
+                    publish_file(source, target)
+                    published.append((target, identity.st_dev, identity.st_ino))
+                if cancellation_callback and cancellation_callback():
+                    raise ConversionCancelledError("Conversão cancelada pelo usuário.")
+            except Exception:
+                for target, device, inode in published:
+                    if target.exists():
+                        current = target.lstat()
+                        if (current.st_dev, current.st_ino) == (device, inode):
+                            target.unlink()
+                raise
+        if progress_callback:
+            progress_callback(100, "Conversão finalizada")
+
+    @staticmethod
+    def _execute_to_staging(job, progress_callback=None, cancellation_callback=None):
         """
         Executa conversão com progresso opcional.
         """

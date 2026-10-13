@@ -58,6 +58,18 @@ class SessionContext:
         if not self.has_permission(permission):
             raise AuthenticationError("Permissão insuficiente para esta operação.")
 
+    def require_organization_permission(self, organization_id: int, permission: str) -> None:
+        if not self.is_authenticated():
+            raise AuthenticationError("Entre no SmartFile para continuar.")
+        membership = next((item for item in self.memberships
+                           if item.organization_id == organization_id and item.status == "ACTIVE"), None)
+        if membership is None:
+            raise AuthenticationError("Usuário não pertence a esta organização.")
+        permissions = ROLE_PERMISSIONS.get(membership.role, set())
+        prefix = permission.split(".", 1)[0] + ".*"
+        if not (self.is_system_admin() or "*" in permissions or permission in permissions or prefix in permissions):
+            raise AuthenticationError("Permissão insuficiente para esta operação.")
+
     def _refresh_permissions(self) -> None:
         membership = next((m for m in self.memberships if m.organization_id == getattr(self.active_organization, "id", None)), None)
         self.permissions = set(ROLE_PERMISSIONS.get(membership.role, set())) if membership else set()

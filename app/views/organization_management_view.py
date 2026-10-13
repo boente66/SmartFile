@@ -1,7 +1,7 @@
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import QDialog,QHBoxLayout,QHeaderView,QLineEdit,QPushButton,QTableWidget,QTableWidgetItem,QVBoxLayout
 
-from app.services.organization_feature_service import OrganizationFeatureService
+from app.models.organization_features import OrganizationFeatureCatalog
 
 
 class OrganizationManagementView(QDialog):
@@ -14,7 +14,7 @@ class OrganizationManagementView(QDialog):
     def set_items(self,items):
         self.table.setRowCount(0)
         for organization,membership,stats in items:
-            row=self.table.rowCount(); self.table.insertRow(row); profile=OrganizationFeatureService().for_organization(organization).profile_name; values=(organization.name,profile,membership.role,stats["documents"],stats["folders"],stats["members"],stats["cloud"],"ARQUIVADA" if organization.archived_at else organization.status,organization.created_at,stats["last_activity"] or "—",organization.description or "")
+            row=self.table.rowCount(); self.table.insertRow(row); profile=OrganizationFeatureCatalog().capabilities_for_organization(organization).profile_name; values=(organization.name,profile,membership.role,stats["documents"],stats["folders"],stats["members"],stats["cloud"],"ARQUIVADA" if organization.archived_at else organization.status,organization.created_at,stats["last_activity"] or "—",organization.description or "")
             for column,value in enumerate(values): self.table.setItem(row,column,QTableWidgetItem(str(value)))
             self.table.item(row,0).setData(256,organization.id)
     def selected_id(self):

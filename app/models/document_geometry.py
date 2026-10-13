@@ -38,7 +38,8 @@ class DocumentGeometryResult:
         if self.physical_width_mm is not None:
             prefix = "≈ " if self.measurement_source == "ESTIMATED" else ""
             size = f" · {prefix}{self.physical_width_mm:.1f} × {self.physical_height_mm:.1f} mm"
-        state = "✓ Folha detectada" if self.confidence >= .8 else "! Revisar enquadramento"
+        state = "✓ Folha detectada" if self.detection_status == "DETECTED" and self.confidence >= .8 else "! Revisar enquadramento"
+        if self.detection_status == "MANUAL": state = "Enquadramento definido manualmente"
         if self.detection_status == "NOT_DETECTED": state = "? Não foi possível determinar a folha"
         if self.possible_clipping: state = "! Possível documento cortado pelo scanner"
         return f"{name}{size} · {orientation}\n{state}"

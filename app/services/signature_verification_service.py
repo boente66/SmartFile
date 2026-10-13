@@ -1,5 +1,6 @@
 """QR access to original documents; no claim that a visual mark proves identity."""
 from io import BytesIO
+from app.models.signature_links import VALIDATOR_URL, GOVBR_SIGN_URL
 from urllib.parse import urlsplit
 
 from PIL import Image, ImageDraw
@@ -7,8 +8,8 @@ from reportlab.graphics.barcode.qr import QrCodeWidget
 
 
 class SignatureVerificationService:
-    VALIDATOR_URL = "https://validar.iti.gov.br/"
-    GOVBR_SIGN_URL = "https://assinador.iti.br/"
+    VALIDATOR_URL = VALIDATOR_URL
+    GOVBR_SIGN_URL = GOVBR_SIGN_URL
 
     @staticmethod
     def validate_url(value):

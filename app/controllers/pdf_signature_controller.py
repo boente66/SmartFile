@@ -1,3 +1,5 @@
+from app.utils.export_destination import is_internal_output
+from app.utils.file_naming import export_filename, safe_output_path
 from pathlib import Path
 
 from PyQt6.QtWidgets import QDialog, QMessageBox
@@ -23,6 +25,11 @@ class PDFSignatureController:
         self.document_service = service
 
     def request_signature(self):
+        context = getattr(self.document_service, "session_context", None)
+        if context is not None:
+            try:context.require_permission("tools.use")
+            except RuntimeError as exc:
+                QMessageBox.warning(self.viewer_controller.view, "Assinatura", str(exc));return
         if self.viewer_controller._context.kind == "VALIDATION_ORIGINAL":
             return
         if self._signature_worker is not None:
@@ -41,6 +48,11 @@ class PDFSignatureController:
             ),
             self.viewer_controller.view,
         )
+        if self.document_service and is_internal_output(self.viewer_controller._path, self.document_service.database.paths):
+            directory = Path.home()/"Documents"
+            if not directory.is_dir():directory = Path.home()
+            logical_name = self.viewer_controller._context.title or self.viewer_controller._path.name
+            dialog.output_edit.setText(str(safe_output_path(directory/export_filename(logical_name,"_assinado"))))
         validation = self.service.validation_service
         if validation:
             try:

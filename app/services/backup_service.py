@@ -21,6 +21,7 @@ from app.errors.backup_exceptions import (
 from app.models.backup_result import BackupResult
 from app.services.audit_service import AuditService
 from app.version import __version__
+from app.utils.atomic_output import publish_file
 
 logger = logging.getLogger(__name__)
 ProgressCallback = Callable[[int, str], None]
@@ -70,7 +71,8 @@ class BackupService:
                     temporary_output, sources, created_at, progress
                 )
 
-            os.replace(temporary_output, output)
+            publish_file(temporary_output, output)
+            temporary_output.unlink(missing_ok=True)
             checksum = self._sha256(output)
             result = BackupResult(
                 output_path=output,
@@ -186,14 +188,15 @@ class BackupService:
         if output.suffix.lower() != ".zip":
             raise InvalidBackupDestinationError("O backup deve possuir extensão .zip.")
         try:
-            output = output.resolve()
+            output = output.absolute()
             output.parent.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
             raise InvalidBackupDestinationError(
                 "Não foi possível acessar a pasta escolhida para o backup."
             ) from exc
-        if output.exists() and not output.is_file():
-            raise InvalidBackupDestinationError("O destino do backup não é um arquivo válido.")
+        if os.path.lexists(output):
+            raise InvalidBackupDestinationError("O arquivo de backup já existe. Escolha um novo nome.")
+        resolved = output.resolve()
         for managed_directory in (
             self.database.storage_dir,
             self.database.data_dir / "avatars",
@@ -202,7 +205,7 @@ class BackupService:
             self.database.temp_dir,
         ):
             managed = managed_directory.resolve()
-            if output == managed or managed in output.parents:
+            if resolved == managed or managed in resolved.parents:
                 raise InvalidBackupDestinationError(
                     "Escolha uma pasta fora do storage, dos avatares e dos temporários."
                 )

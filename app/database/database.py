@@ -87,6 +87,12 @@ class Database:
                         connection.execute(f"RELEASE SAVEPOINT {savepoint}")
                 raise
 
+    @contextmanager
+    def read_connection(self):
+        """Leituras não atravessam uma transação pertencente a outra thread."""
+        with self._lock:
+            yield self.connect()
+
     def execute_query(self, query: str, params: Sequence[object] = ()) -> sqlite3.Cursor:
         try:
             with self.transaction() as connection:
@@ -96,13 +102,15 @@ class Database:
 
     def fetch_all(self, query: str, params: Sequence[object] = ()) -> list[sqlite3.Row]:
         try:
-            return self.connect().execute(query, tuple(params)).fetchall()
+            with self.read_connection() as connection:
+                return connection.execute(query, tuple(params)).fetchall()
         except sqlite3.Error as exc:
             raise DatabaseError(f"Falha ao consultar dados: {exc}") from exc
 
     def fetch_one(self, query: str, params: Sequence[object] = ()) -> sqlite3.Row | None:
         try:
-            return self.connect().execute(query, tuple(params)).fetchone()
+            with self.read_connection() as connection:
+                return connection.execute(query, tuple(params)).fetchone()
         except sqlite3.Error as exc:
             raise DatabaseError(f"Falha ao consultar dado: {exc}") from exc
 

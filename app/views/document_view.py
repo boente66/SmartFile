@@ -771,6 +771,7 @@ class DocumentView(QWidget):
 
     def apply_cloud_permissions(self, context) -> None:
         self._context = context
+        self.details.apply_permissions(context)
         can_view = context is None or context.has_permission("cloud.view")
         can_connect = context is None or context.has_permission("cloud.connect")
         can_sync = context is None or context.has_permission("cloud.sync")
@@ -792,7 +793,12 @@ class DocumentView(QWidget):
         can_folder = context is None or context.has_permission("folder.create")
         can_organization = context is None or context.has_permission("organization.update")
         self.btn_import.setEnabled(can_import)
-        self.action_buttons["Excluir"].setEnabled(can_update)
+        self.action_buttons["Excluir"].setEnabled(context is None or context.has_permission("document.delete"))
+        self.action_buttons["Novo"].setEnabled(context is None or context.has_permission("document.create"))
+        self.action_buttons["Favorito"].setEnabled(can_update)
+        can_tools = context is None or context.has_permission("tools.use")
+        for name in ("Scanner", "PDF Tools", "Converter", "Assinar"):
+            self.action_buttons[name].setEnabled(can_tools)
         self.btn_new_folder.setEnabled(can_folder)
         self.btn_rename_folder.setEnabled(can_folder)
         self.btn_delete_folder.setEnabled(can_folder)

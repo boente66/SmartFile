@@ -8,13 +8,16 @@ from app.repositories.folder_repository import FolderRepository
 
 
 class FolderService:
-    def __init__(self, database: Database):
+    def __init__(self, database: Database, session_context=None):
+        self.session_context = session_context
         self.repository = FolderRepository(database=database)
 
     def list_folders(self, organization_id: int) -> list[FolderEntity]:
+        self._require(organization_id, "document.view")
         return self.repository.find_all(organization_id)
 
     def create(self, organization_id: int, name: str, parent_id: int | None = None) -> FolderEntity:
+        self._require(organization_id, "folder.create")
         clean = self._name(name)
         if parent_id is not None:
             parent = self.repository.find_by_id(parent_id, organization_id)
@@ -29,19 +32,25 @@ class FolderService:
         )
 
     def rename(self, organization_id: int, folder_id: int, name: str) -> FolderEntity:
+        self._require(organization_id, "folder.update")
         entity = self._folder(organization_id, folder_id)
         entity.name = self._name(name)
         entity.updated_at = self._now()
         return self.repository.update(entity)
 
     def move(self, organization_id: int, folder_id: int, parent_id: int | None) -> FolderEntity:
+        self._require(organization_id, "folder.update")
         entity = self._folder(organization_id, folder_id)
         if parent_id == folder_id:
             raise ValueError("Uma pasta não pode ser movida para ela mesma.")
         if parent_id is not None:
             parent = self._folder(organization_id, parent_id)
             ancestor = parent
+            visited = set()
             while ancestor.parent_id is not None:
+                if ancestor.id in visited:
+                    raise ValueError("A hierarquia de pastas contém um ciclo; corrija a estrutura antes de mover.")
+                visited.add(ancestor.id)
                 if ancestor.parent_id == folder_id:
                     raise ValueError("Não é possível mover uma pasta para uma subpasta própria.")
                 ancestor = self._folder(organization_id, ancestor.parent_id)
@@ -50,8 +59,13 @@ class FolderService:
         return self.repository.update(entity)
 
     def delete(self, organization_id: int, folder_id: int) -> bool:
+        self._require(organization_id, "folder.delete")
         self._folder(organization_id, folder_id)
         return self.repository.delete(folder_id, organization_id, self._now())
+
+    def _require(self, organization_id, permission):
+        if self.session_context is not None:
+            self.session_context.require_organization_permission(organization_id, permission)
 
     def _folder(self, organization_id: int, folder_id: int) -> FolderEntity:
         entity = self.repository.find_by_id(folder_id, organization_id)

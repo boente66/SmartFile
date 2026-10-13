@@ -8,11 +8,14 @@ class ValidationRepository(BaseRepository):
 
     def create_pending(self, values):
         columns = tuple(values)
-        cursor = self.connect().execute(
-            f"INSERT INTO validation_records ({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})",
-            tuple(values.values()),
-        )
-        return self.get_by_id(cursor.lastrowid, values["organization_id"])
+        if any(column not in self.COLUMNS for column in columns):
+            raise ValueError("Campo de validação inválido.")
+        with self.database.transaction() as connection:
+            cursor = connection.execute(
+                f"INSERT INTO validation_records ({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})",
+                tuple(values.values()),
+            )
+            return self.get_by_id(cursor.lastrowid, values["organization_id"])
 
     def get_by_id(self, record_id, organization_id):
         return self._entity(self._fetch_one(

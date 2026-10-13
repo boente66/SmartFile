@@ -150,6 +150,8 @@ class AuthController:
             view.show_welcome_notification(display_name, organization_name)
 
     def logout(self):
+        if self.session_context.is_authenticated() and self.main_view and not self.main_view.confirm_exit():return
+        if self.main_view:self.main_view._skip_close_guard=True
         if self.app_controller:
             self.app_controller.shutdown()
         self.service.logout()

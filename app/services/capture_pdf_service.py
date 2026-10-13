@@ -9,6 +9,7 @@ from PyQt6.QtGui import QImage
 from pypdf import PdfReader, PdfWriter
 
 from app.models.capture_pdf_workspace import CapturePdfPage
+from app.utils.atomic_output import atomic_output
 
 
 class CapturePdfService:
@@ -104,12 +105,10 @@ class CapturePdfService:
     ) -> Path:
         if not pages:
             raise ValueError("Nenhuma página disponível para gerar o PDF.")
-        output = Path(output).expanduser().resolve()
+        output = Path(output).expanduser().absolute()
         if output.suffix.lower() != ".pdf":
             raise ValueError("O arquivo de saída deve possuir extensão PDF.")
         output.parent.mkdir(parents=True, exist_ok=True)
-        temporary = output.with_name(f".{output.name}.part")
-        temporary.unlink(missing_ok=True)
         writer = PdfWriter()
         try:
             for page in pages:
@@ -131,13 +130,12 @@ class CapturePdfService:
                         )
                     finally:
                         image.close()
-            with temporary.open("wb") as handle:
-                writer.write(handle)
-            temporary.replace(output)
+            with atomic_output(output) as temporary:
+                with temporary.open("wb") as handle:
+                    writer.write(handle)
             return output
-        except Exception:
-            temporary.unlink(missing_ok=True)
-            raise
+        finally:
+            writer.close()
 
     @classmethod
     def render_pages(
@@ -172,7 +170,7 @@ class CapturePdfService:
         from reportlab.lib.units import mm
         width, height = 210*mm, 297*mm
         geometry = getattr(page, "geometry", None)
-        if getattr(page, "output_format", "A4_AUTO") == "DETECTED" and geometry and geometry.reliable_measurement:
+        if getattr(page, "output_format", "A4_AUTO") == "DETECTED" and geometry and geometry.reliable_measurement and CapturePdfService.can_crop(page):
             width, height = geometry.physical_width_mm*mm, geometry.physical_height_mm*mm
             if page.rotation in (90,270): width,height = height,width
         canvas = Canvas(buffer, pagesize=(width,height))
@@ -208,8 +206,9 @@ class CapturePdfService:
             geometry = page.geometry
             try:
                 transformed = DocumentGeometryService.transform(image, geometry)
-            except Exception:
-                return image
+            except Exception as exc:
+                image.close()
+                raise ValueError("Não foi possível aplicar o recorte. Revise as bordas ou use Redefinir antes de salvar.") from exc
             image.close()
             return transformed
         return image

@@ -63,8 +63,8 @@ class AppController:
         Chamado após UI estar pronta.
         """
         # Criar controllers
-        self.convert_controller = ConvertController(self.workspace, self.main_view)
-        self.pdf_viewer_controller = PDFViewerController(self.workspace)
+        self.convert_controller = ConvertController(self.workspace, self.main_view, self.session_context)
+        self.pdf_viewer_controller = PDFViewerController(self.workspace,self.session_context)
         self.pdf_signature_controller = PDFSignatureController(
             self.main_view, self.pdf_viewer_controller
         )
@@ -72,8 +72,8 @@ class AppController:
             self.main_view, self.pdf_viewer_controller
         )
         document_service = (
-            DocumentService(database=self.database)
-            if self.database else DocumentService()
+            DocumentService(database=self.database, session_context=self.session_context)
+            if self.database else DocumentService(session_context=self.session_context)
         )
         self.capture_pdf_controller = CapturePdfController(
             self.workspace,
@@ -125,6 +125,7 @@ class AppController:
             refresh_callback=self.document_controller.refresh_organization_state,
             transport_controller=self.transport_controller,
         )
+        self.main_view._close_guard = self.confirm_close
         self._connect_enterprise_layer()
         self.capture_pdf_controller.imported_callback = (
             self.document_controller.on_refresh_documents
@@ -190,6 +191,12 @@ class AppController:
         QDesktopServices.openUrl(QUrl(url))
 
     def on_tool_selected(self, tool_name: str):
+        if tool_name in {"converter", "capture_pdf", "pdf", "scanner"} and self.session_context is not None:
+            try:
+                self.session_context.require_permission("tools.use")
+            except RuntimeError as exc:
+                QMessageBox.warning(self.main_view, "Ferramentas", str(exc))
+                return
         if tool_name != "documents":
             self.main_view.sidebar.show()
         if tool_name == "converter":
@@ -231,6 +238,7 @@ class AppController:
         settings.organization_changed.connect(
             self.document_delivery_controller.organization_changed
         )
+        settings.organization_changed.connect(lambda *_: self.pdf_viewer_controller.close_document())
         settings.status_changed.connect(view.set_status)
         settings.failed.connect(
             lambda message: QMessageBox.warning(
@@ -267,6 +275,18 @@ class AppController:
         self.main_view.status.showMessage(
             f"Falha no transporte corporativo: {message}"
         )
+
+    def confirm_close(self):
+        capture = self.capture_pdf_controller
+        if capture is None:return True
+        unsaved = bool(capture.state.pages and capture.state.dirty)
+        scanning = capture._scan_worker is not None and capture._scan_worker.isRunning()
+        if not unsaved and not scanning:return True
+        answer = QMessageBox.question(self.main_view, "Páginas não salvas",
+            "Há páginas não salvas ou uma digitalização em andamento. Fechar descartará as edições não exportadas. Deseja continuar?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        return answer == QMessageBox.StandardButton.Yes
 
     def shutdown(self) -> None:
         validation = getattr(self, "document_validation_controller", None)

@@ -1,29 +1,29 @@
 from __future__ import annotations
 
+from app.views.widgets.dialog_theme import apply_import_theme
+
 from PyQt6.QtCore import QDate
 from PyQt6.QtWidgets import (
     QCheckBox, QComboBox, QDateEdit, QDialog, QDialogButtonBox, QFormLayout,
-    QLineEdit, QTextEdit, QVBoxLayout,
+    QLineEdit, QTextEdit, QVBoxLayout, QLabel,
 )
 
 
 class ScannerImportDialog(QDialog):
     """Coleta metadados; não persiste nem manipula arquivos."""
 
-    def __init__(self, document_service, parent=None, allowed_organization_ids=None):
+    def __init__(self, organizations, folders_by_organization, active_organization_id=None, parent=None):
         super().__init__(parent)
-        self.service = document_service
+        apply_import_theme(self)
+        self._folders = folders_by_organization
         self.setWindowTitle("Adicionar digitalização ao GED")
         self.resize(520, 540)
         root = QVBoxLayout(self)
         form = QFormLayout()
         self.organization = QComboBox()
-        allowed = set(allowed_organization_ids or [])
-        for item in self.service.organization_service.list_organizations():
-            if allowed and item.id not in allowed:
-                continue
+        for item in organizations:
             self.organization.addItem(item.name, item.id)
-        active_index = self.organization.findData(self.service.active_organization_id)
+        active_index = self.organization.findData(active_organization_id)
         self.organization.setCurrentIndex(max(0, active_index))
         self.organization.currentIndexChanged.connect(self._load_folders)
         self.folder = QComboBox()
@@ -49,9 +49,14 @@ class ScannerImportDialog(QDialog):
         form.addRow("Observações:", self.notes)
         form.addRow("", self.sync_cloud)
         root.addLayout(form)
+        self.error_label = QLabel("")
+        self.error_label.setObjectName("errorLabel")
+        self.error_label.setWordWrap(True)
+        root.addWidget(self.error_label)
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Save
         )
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("Cancelar")
         buttons.button(QDialogButtonBox.StandardButton.Save).setText("Adicionar ao GED")
         buttons.accepted.connect(self._accept_valid)
         buttons.rejected.connect(self.reject)
@@ -78,18 +83,23 @@ class ScannerImportDialog(QDialog):
         self.folder.addItem("Sem pasta", None)
         if organization_id is None:
             return
-        folders = self.service.folder_service.list_folders(int(organization_id))
+        folders = self._folders.get(int(organization_id), [])
         by_id = {folder.id: folder for folder in folders}
         for folder in folders:
             parts = [folder.name]
             parent = by_id.get(folder.parent_id)
-            while parent:
+            visited = {folder.id}
+            while parent and parent.id not in visited:
+                visited.add(parent.id)
                 parts.insert(0, parent.name)
                 parent = by_id.get(parent.parent_id)
             self.folder.addItem(" / ".join(parts), folder.id)
 
     def _accept_valid(self) -> None:
-        if self.title.text().strip():
+        if self.organization.currentData() is None:
+            self.error_label.setText("Selecione uma organização disponível.")
+        elif self.title.text().strip():
             self.accept()
         else:
+            self.error_label.setText("Informe o título do documento.")
             self.title.setFocus()

@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from app.errors.persistence_exceptions import StorageError
 from app.models.stored_document import StoredDocument
+from app.utils.atomic_output import atomic_output
 from app.system.app_paths import AppPaths
 
 
@@ -19,7 +20,7 @@ class DocumentStorageService:
         self.paths = paths or AppPaths()
         self.paths.ensure_directories()
 
-    def store(self, source_path: Path, checksum: str) -> StoredDocument:
+    def store(self, source_path: Path, checksum: str, cancelled=None) -> StoredDocument:
         source = self._regular_file(source_path, "Arquivo de origem inválido")
         now = datetime.now(timezone.utc)
         internal_name = f"{uuid4()}{source.suffix.lower()}"
@@ -31,16 +32,27 @@ class DocumentStorageService:
             raise StorageError("Colisão inesperada no nome interno do documento.")
 
         temporary = self.create_temp_path(source.suffix)
+        published = False
+        checksum_of = lambda path: self._checksum(path) if cancelled is None else self._checksum(path, cancelled=cancelled)
         try:
-            shutil.copy2(source, temporary)
+            if cancelled is None:
+                shutil.copy2(source, temporary)
+            else:
+                with source.open("rb") as incoming, temporary.open("xb") as outgoing:
+                    while chunk := incoming.read(1024*1024):
+                        if cancelled():raise InterruptedError("Importação cancelada.")
+                        outgoing.write(chunk)
+                source_stat = source.stat()
+                os.utime(temporary, (source_stat.st_atime, source_stat.st_mtime))
             source_size = source.stat().st_size
             if temporary.stat().st_size != source_size:
                 raise StorageError("A cópia temporária possui tamanho divergente.")
-            if self._checksum(temporary) != checksum:
+            if checksum_of(temporary) != checksum:
                 raise StorageError("A cópia temporária falhou na validação SHA-256.")
             destination.parent.mkdir(parents=True, exist_ok=True)
             os.replace(temporary, destination)
-            if self._checksum(destination) != checksum:
+            published = True
+            if checksum_of(destination) != checksum:
                 raise StorageError("O arquivo armazenado falhou na validação SHA-256.")
             return StoredDocument(
                 internal_name=internal_name,
@@ -48,6 +60,9 @@ class DocumentStorageService:
                 relative_path=str(relative),
                 size=destination.stat().st_size,
             )
+        except InterruptedError:
+            self._cleanup(temporary, *([destination] if published else []))
+            raise
         except StorageError:
             self._cleanup(temporary, destination)
             raise
@@ -63,14 +78,18 @@ class DocumentStorageService:
         source = Path(storage_path).expanduser().resolve()
         if not self.is_managed_path(source) or not source.is_file():
             raise StorageError("Arquivo interno inválido para exportação.")
-        target = Path(destination).expanduser().resolve()
+        target = Path(destination).expanduser().absolute()
         if target.exists() and target.is_dir():
             target = target / source.name
         if target.exists():
             raise StorageError(f"O destino já existe: {target}")
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, target)
+            checksum = self._checksum(source)
+            with atomic_output(target) as temporary:
+                shutil.copyfile(source, temporary)
+                if self._checksum(temporary) != checksum:
+                    raise StorageError("A exportação falhou na validação SHA-256.")
             return target
         except OSError as exc:
             raise StorageError(f"Não foi possível exportar o documento: {exc}") from exc
@@ -111,10 +130,11 @@ class DocumentStorageService:
         return resolved
 
     @staticmethod
-    def _checksum(path: Path) -> str:
+    def _checksum(path: Path, cancelled=None) -> str:
         digest = hashlib.sha256()
         with path.open("rb") as handle:
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                if cancelled and cancelled():raise InterruptedError("Operação de arquivo cancelada.")
                 digest.update(chunk)
         return digest.hexdigest()
 

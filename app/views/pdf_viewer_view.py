@@ -255,8 +255,10 @@ class PDFViewerView(QWidget):
 
     def set_context(self, context: PDFViewerContext) -> None:
         self._canonical_readonly = context.kind == "VALIDATION_ORIGINAL"
-        self.btn_sign.setEnabled(not self._canonical_readonly and self.page_edit.isEnabled())
-        self.btn_handwritten_sign.setEnabled(not self._canonical_readonly and self.page_edit.isEnabled())
+        self.btn_sign.setEnabled(not self._canonical_readonly and self.page_edit.isEnabled() and getattr(self,"_tools_permission",True))
+        self.btn_handwritten_sign.setEnabled(not self._canonical_readonly and self.page_edit.isEnabled() and getattr(self,"_tools_permission",True))
+        if context.title and context.kind == "DOCUMENT":
+            self.info_panel._labels["name"].setText(context.title)
         if self._canonical_readonly:
             self.info_panel._labels["path"].setText("Armazenamento canônico gerenciado pelo SmartFile")
             self.info_panel._labels["name"].setText(context.title or "Original registrado")
@@ -316,8 +318,8 @@ class PDFViewerView(QWidget):
         self.page_edit.setEnabled(loaded)
         self.zoom_combo.setEnabled(loaded)
         readonly = getattr(self, "_canonical_readonly", False)
-        self.btn_sign.setEnabled(loaded and not readonly)
-        self.btn_handwritten_sign.setEnabled(loaded and not readonly)
+        self.btn_sign.setEnabled(loaded and not readonly and getattr(self,"_tools_permission",True))
+        self.btn_handwritten_sign.setEnabled(loaded and not readonly and getattr(self,"_tools_permission",True))
         self.btn_validate.setEnabled(loaded)
 
     def update_search_count(self, current: int, total: int) -> None:

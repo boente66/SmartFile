@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from pathlib import Path
+from app.utils.export_destination import is_internal_output
+from app.utils.file_naming import export_filename, safe_output_path
+
 from PyQt6.QtWidgets import QDialog, QMessageBox
 from PyQt6.QtGui import QPixmap
 
@@ -22,6 +26,11 @@ class HandwrittenSignatureController:
         self.document_service = service
 
     def request_signature(self) -> None:
+        context = getattr(self.document_service, "session_context", None)
+        if context is not None:
+            try:context.require_permission("tools.use")
+            except RuntimeError as exc:
+                QMessageBox.warning(self.viewer_controller.view, "Assinatura", str(exc));return
         if self.viewer_controller._context.kind == "VALIDATION_ORIGINAL":
             return
         if self._worker is not None:
@@ -50,6 +59,11 @@ class HandwrittenSignatureController:
             (info.page_width, info.page_height), self.viewer_controller._rotation,
             confirmed, self._page_preview, self.viewer_controller.view,
         )
+        if self.document_service and is_internal_output(self.viewer_controller._path, self.document_service.database.paths):
+            directory = Path.home()/"Documents"
+            if not directory.is_dir():directory = Path.home()
+            logical_name = self.viewer_controller._context.title or self.viewer_controller._path.name
+            dialog.output_edit.setText(str(safe_output_path(directory/export_filename(logical_name,"_assinado_manualmente"))))
         validation = self.service.validation_service
         if validation:
             try:

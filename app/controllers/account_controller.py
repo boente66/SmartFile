@@ -208,6 +208,7 @@ class AccountController:
         dialog=DeleteAccountDialog(self.main_view)
         if dialog.exec()!=QDialog.DialogCode.Accepted:return
         try:
+            if not self.main_view.confirm_exit():return
             password,confirmation=dialog.values(); self.auth.delete_current_account(password,confirmation)
             QMessageBox.information(self.main_view,"Conta excluída","Sua conta foi excluída e todas as sessões foram encerradas.")
             self.logout_callback()

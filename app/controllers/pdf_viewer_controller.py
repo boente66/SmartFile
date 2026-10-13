@@ -22,8 +22,9 @@ class PDFViewerController:
     MIN_ZOOM = 0.5
     MAX_ZOOM = 2.0
 
-    def __init__(self, workspace):
+    def __init__(self, workspace, session_context=None):
         self.workspace = workspace
+        self.session_context = session_context
         self.view = PDFViewerView()
         self.service = PDFViewerService()
         self._path: Path | None = None
@@ -77,6 +78,7 @@ class PDFViewerController:
         self._page = 1
         self._zoom = 1.0
         self._rotation = 0
+        self.view._tools_permission = self.session_context is None or self.session_context.has_permission("tools.use")
         self.view.set_document(info)
         self.view.set_context(self._context)
         self.activate()
@@ -100,6 +102,13 @@ class PDFViewerController:
             self.view.set_context(self._context)
         self.service.clear_cache()
         self.view.set_document_loaded(False)
+        self.view.thumbnails.prepare(0)
+        self.view.total_label.setText("/ 0")
+        self.view.page_size_status.clear()
+        self.view.signature_status.clear()
+        self.view.search_bar.input.clear()
+        self.view.update_search_count(0, 0)
+        self.view.context_bar.hide()
         self.view.info_panel.set_info(None)
         self.view.preview.set_pixmap(QPixmap())
 
@@ -174,7 +183,7 @@ class PDFViewerController:
         worker.succeeded.connect(
             lambda completed, image, worker=worker: self._on_rendered(worker, completed, image)
         )
-        worker.failed.connect(lambda message: QMessageBox.warning(self.view, "Visualizador", message))
+        worker.failed.connect(lambda message, w=worker: self._worker_failed(w, "render", message))
         worker.finished.connect(lambda worker=worker: self._cleanup_render(worker))
         worker.finished.connect(worker.deleteLater)
         worker.start()
@@ -231,11 +240,24 @@ class PDFViewerController:
         )
         self._thumbnail_worker = worker
         self._workers.add(worker)
-        worker.thumbnail_ready.connect(self.view.set_thumbnail)
-        worker.failed.connect(lambda message: self.view.set_loading(False, message))
+        worker.thumbnail_ready.connect(lambda page, image, w=worker: self._thumbnail_ready(w, page, image))
+        worker.failed.connect(lambda message, w=worker: self._worker_failed(w, "thumbnail", message))
         worker.finished.connect(lambda worker=worker: self._cleanup_thumbnail(worker))
         worker.finished.connect(worker.deleteLater)
         worker.start()
+
+    def _thumbnail_ready(self, worker, page, image):
+        if worker is self._thumbnail_worker and self._path is not None:
+            self.view.set_thumbnail(page, image)
+
+    def _worker_failed(self, worker, kind, message):
+        current = {"render": self._render_worker, "thumbnail": self._thumbnail_worker,
+                   "search": self._search_worker}.get(kind)
+        if worker is not current or self._path is None:
+            return
+        self.view.set_loading(False, message)
+        if kind != "thumbnail":
+            QMessageBox.warning(self.view, "Pesquisa" if kind == "search" else "Visualizador", message)
 
     def _cleanup_thumbnail(self, worker):
         self._workers.discard(worker)
@@ -254,7 +276,7 @@ class PDFViewerController:
         worker.succeeded.connect(
             lambda query, results, worker=worker: self._on_search_results(worker, query, results)
         )
-        worker.failed.connect(lambda message: QMessageBox.warning(self.view, "Pesquisa", message))
+        worker.failed.connect(lambda message, w=worker: self._worker_failed(w, "search", message))
         worker.finished.connect(lambda worker=worker: self._cleanup_search(worker))
         worker.finished.connect(worker.deleteLater)
         worker.start()

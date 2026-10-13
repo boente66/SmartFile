@@ -71,8 +71,8 @@ class PDFSignatureDialog(QDialog):
         def open_govbr():
             from PyQt6.QtCore import QUrl
             from PyQt6.QtGui import QDesktopServices
-            from app.services.signature_verification_service import SignatureVerificationService
-            QDesktopServices.openUrl(QUrl(SignatureVerificationService.GOVBR_SIGN_URL))
+            from app.models.signature_links import GOVBR_SIGN_URL
+            QDesktopServices.openUrl(QUrl(GOVBR_SIGN_URL))
         govbr.clicked.connect(open_govbr); form_container.addWidget(govbr)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject)

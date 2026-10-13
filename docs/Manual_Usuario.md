@@ -1,6 +1,6 @@
 # SmartFile — Manual do Usuário
 
-**Versão do manual:** 1.7 — SmartFile 0.9.0-beta.8
+**Versão do manual:** 1.8 — SmartFile 0.9.0-beta.9
 
 **Atualizado em:** 13/10/2026
 
@@ -440,7 +440,7 @@ preview e persistência documental.
 
 ### Geometria da folha e saída segura
 
-**Disponível nos instaladores da beta.8:** a opção **Mostrar documento
+**Disponível nos instaladores da beta.9:** a opção **Mostrar documento
 recortado** fica marcada por padrão. Quando a detecção é confiável, a prévia
 mostra somente a região da folha e o mesmo recorte é aplicado ao salvar ou
 adicionar ao GED, sem acrescentar uma margem artificial de 8 mm. Para ajustar
@@ -451,7 +451,7 @@ Aguarde o término da detecção antes de salvar. Se houver PARTIAL/REVIEW ou
 indícios de corte, o recorte automático não é aplicado; revise manualmente. O
 formato de saída continua sendo uma escolha separada: numa folha A4, um recibo
 estreito pode ocupar só parte da página. A opção de visualização não desativa o
-recorte da saída. Atualize para a beta.8 para utilizar esta correção.
+recorte da saída. Atualize para a beta.9 para utilizar esta correção.
 
 
 **Detectar bordas** auxilia a revisão do documento. Confira o contorno, a
@@ -1159,14 +1159,14 @@ retorna à tela de login. Depois disso, a aplicação pode ser fechada normalmen
 Em sistemas amd64 com base Ubuntu 22.04 ou 24.04, incluindo versões compatíveis
 do Linux Mint e Zorin OS, instale o pacote
 baixado na página permanente da
-[Release 0.9.0 Beta 8](https://github.com/boente66/SmartFile/releases/tag/v0.9.0-beta.8).
+[Release 0.9.0 Beta 9](https://github.com/boente66/SmartFile/releases/tag/v0.9.0-beta.9).
 O usuário também pode abrir o `.deb` pelo gerenciador de arquivos e selecionar
 **Instalar**. Pelo terminal:
 
 ```bash
 cd ~/Downloads
-sha256sum -c smartfile_0.9.0.beta8_amd64.deb.sha256
-sudo apt install ./smartfile_0.9.0.beta8_amd64.deb
+sha256sum -c smartfile_0.9.0.beta9_amd64.deb.sha256
+sudo apt install ./smartfile_0.9.0.beta9_amd64.deb
 ```
 
 O SmartFile pode ser aberto pelo menu de aplicativos ou pelo comando
@@ -1301,7 +1301,7 @@ endereços locais para tentar tornar um QR acessível a terceiros.
 
 ## 22. Atualização, Windows e documentação oficial
 
-Baixe os pacotes e checksums na [release beta.8](https://github.com/boente66/SmartFile/releases/tag/v0.9.0-beta.8).
+Baixe os pacotes e checksums na [release beta.9](https://github.com/boente66/SmartFile/releases/tag/v0.9.0-beta.9).
 No Windows x64, escolha **Setup** para instalação ou **Portable** para extração
 em uma pasta e execução de SmartFile.exe. Confira o SHA-256, por exemplo com
 `Get-FileHash` no PowerShell, comparando com o arquivo .sha256 correspondente.
@@ -1314,9 +1314,24 @@ os dados locais para corrigir uma autorização de nuvem expirada: reconecte a
 conta do provedor e confira a fila de sincronização.
 
 Consulte o [índice oficial](README.md), a [documentação técnica](Documentacao_Tecnica.md)
-e as [notas da versão](RELEASE_NOTES_0.9.0-beta.8.md). Este manual descreve a beta.8;
+e as [notas da versão](RELEASE_NOTES_0.9.0-beta.9.md). Este manual descreve a beta.9;
 nomes e disponibilidade de ações dependem do perfil, permissões e seleção atual.
 
 As capturas da beta.7 foram fornecidas pelo usuário e ilustram uma sessão de
 exemplo. Nomes, endereços LAN, contadores e protocolos exibidos não são valores
 padrão para configuração. Uma tela vazia não representa falha do fluxo.
+
+## Correções e comportamento da beta.9
+
+Os botões e os serviços respeitam o papel de cada organização, inclusive ao
+importar para outra organização. Arquivos de saída existentes são preservados:
+escolha outro nome quando o destino já existir. Conversão e importação podem ser
+canceladas; bibliotecas externas podem concluir sua etapa atual antes do cancelamento.
+
+Ao fechar ou sair da conta com páginas não salvas, confirme se deseja descartá-las.
+Salvar aguarda a detecção e a renderização da prévia. Um enquadramento manual é
+identificado como manual; não aumenta a confiança da detecção automática.
+
+Downloads de entregas verificam tamanho e SHA-256. Uma falha não remove um arquivo
+recebido e verificado anteriormente. Assinaturas de documentos do GED sugerem um
+destino externo ao armazenamento interno.

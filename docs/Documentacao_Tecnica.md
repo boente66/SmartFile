@@ -1,6 +1,6 @@
 # SmartFile — Documentação Técnica Oficial
 
-Versão de referência: **0.9.0-beta.8**. Schema **23**. Atualização: **13/10/2026**.
+Versão de referência: **0.9.0-beta.9**. Schema **23**. Atualização: **13/10/2026**.
 
 ## Arquitetura
 
@@ -142,5 +142,16 @@ e no manual. Elas ilustram a interface; não substituem testes ou homologação.
 A beta.8 inclui a correção de prévia/recorte e os manuais ilustrados nos bundles
 Linux e Windows. Schema 23 permanece inalterado. Instaladores e fontes são
 produzidos do mesmo commit e publicados com SHA-256, após validação nativa.
-Consulte [notas da beta.8](RELEASE_NOTES_0.9.0-beta.8.md) e
+Consulte [notas da beta.8](RELEASE_NOTES_0.9.0-beta.9.md) e
 [processo de entrega](RELEASE_PROCESS.md).
+
+## Auditoria beta.9
+
+A composição injeta SessionContext nos serviços usados pela aplicação. Permissões
+são verificadas também na organização de destino. Views recebem modelos e catálogos
+puros; workers retornam somente ao contexto de origem ainda válido. Repositórios
+usam transações e leitura serializada. Saídas públicas são preparadas em temporários
+privados e publicadas sem substituir um destino existente, com limpeza limitada aos
+arquivos criados pela operação. Recepção usa temporários exclusivos por tentativa.
+
+Schema 23 permanece. Consulte o relatório de auditoria no repositório oficial.

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from app.utils.atomic_output import publish_file
+from app.utils.export_destination import require_external_output
+
 import logging
 import os
 from datetime import datetime, timezone
@@ -48,6 +51,9 @@ class PDFSignatureService:
             request.certificate_password = ""
 
     def _sign(self, request: SignatureRequest) -> SignatureResult:
+        if self.validation_service is not None:
+            try:require_external_output(request.output_path, self.validation_service.database.paths)
+            except ValueError as exc:raise SignedOutputError(str(exc)) from exc
         import fitz
         with fitz.open(request.input_path) as document:
             page_count = document.page_count
@@ -95,7 +101,7 @@ class PDFSignatureService:
             timestamper = timestamps.HTTPTimeStamper(request.timestamp_url)
             produced_profile = "PAdES-B-T"
 
-        output = request.output_path.expanduser().resolve()
+        output = request.output_path.expanduser().absolute()
         temporary = output.with_name(f".{output.stem}.{uuid4().hex}.tmp.pdf")
         try:
             with (qr_source or request.input_path.open("rb")) as source, temporary.open("wb") as target:
@@ -110,7 +116,8 @@ class PDFSignatureService:
                 pdf_signer.sign_pdf(writer, output=target)
             if not temporary.is_file() or temporary.stat().st_size == 0:
                 raise SignedOutputError("A saída assinada não foi produzida corretamente.")
-            os.replace(temporary, output)
+            publish_file(temporary, output)
+            temporary.unlink(missing_ok=True)
             logger.info("Assinatura concluída output=%s perfil=%s", output, produced_profile)
             return SignatureResult(
                 output_path=output, field_name=request.field_name,

@@ -207,7 +207,9 @@ class DeliveryDocumentPickerDialog(QDialog):
 
     def _breadcrumb_names(self, folder_id) -> list[str]:
         names = []; current = self._folders_by_id.get(folder_id)
-        while current is not None:
+        visited = set()
+        while current is not None and current.id not in visited:
+            visited.add(current.id)
             names.append(current.name); current = self._folders_by_id.get(current.parent_id)
         return [self._organization_name, *reversed(names)]
 

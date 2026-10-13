@@ -27,8 +27,8 @@ class PDFSignatureValidationDialog(QDialog):
         def open_official():
             from PyQt6.QtCore import QUrl
             from PyQt6.QtGui import QDesktopServices
-            from app.services.signature_verification_service import SignatureVerificationService
-            QDesktopServices.openUrl(QUrl(SignatureVerificationService.VALIDATOR_URL))
+            from app.models.signature_links import VALIDATOR_URL
+            QDesktopServices.openUrl(QUrl(VALIDATOR_URL))
         official.clicked.connect(open_official); layout.addWidget(official)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)

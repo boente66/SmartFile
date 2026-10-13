@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QFormLayout,
     QFrame,
@@ -27,6 +27,7 @@ class DocumentDetailsWidget(QFrame):
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
+        self._context = None
         self._document_id: int | None = None
         self.setObjectName("documentDetailsPanel")
         self._value_labels: dict[str, QLabel] = {}
@@ -121,6 +122,9 @@ class DocumentDetailsWidget(QFrame):
         self.btn_trash.clicked.connect(lambda: self._emit(self.trash_requested))
         layout.addWidget(self.btn_trash)
 
+        for label in (self.title_label,self.original_name_label,*self._value_labels.values()):
+            label.setTextFormat(Qt.TextFormat.PlainText)
+
         self._action_buttons = (
             self.btn_open,
             self.btn_favorite,
@@ -132,8 +136,7 @@ class DocumentDetailsWidget(QFrame):
     def set_document(self, document: DocumentModel | None) -> None:
         self._document_id = document.id if document and document.id else None
         enabled = self._document_id is not None
-        for button in self._action_buttons:
-            button.setEnabled(enabled)
+        self.set_actions_enabled(enabled)
 
         if document is None:
             self.title_label.setText("Detalhes do documento")
@@ -169,9 +172,16 @@ class DocumentDetailsWidget(QFrame):
         for key, value in values.items():
             self._value_labels[key].setText(str(value) if value else "—")
 
+    def apply_permissions(self, context):
+        self._context = context
+        self.set_actions_enabled(self._document_id is not None)
+
     def set_actions_enabled(self, enabled: bool) -> None:
-        for button in self._action_buttons:
-            button.setEnabled(enabled and self._document_id is not None)
+        permissions = {self.btn_open:"document.open",self.btn_favorite:"document.update",
+                       self.btn_convert:"tools.use",self.btn_pdf:"tools.use",self.btn_trash:"document.delete"}
+        for button, permission in permissions.items():
+            permitted = self._context is None or self._context.has_permission(permission)
+            button.setEnabled(enabled and self._document_id is not None and permitted)
 
     def _emit(self, signal) -> None:
         if self._document_id is not None:

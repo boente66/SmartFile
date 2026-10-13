@@ -16,6 +16,7 @@ from app.controllers.pdf_viewer_controller import PDFViewerController
 from app.services.document_service import DocumentService
 from app.views.document_view import DocumentView
 from app.workers.cloud_sync_worker import CloudSyncWorker
+from app.workers.file_operation_worker import FileOperationWorker
 from app.workers.cloud_storage_quota_worker import CloudStorageQuotaWorker
 from app.cloud.cloud_oauth_config_service import CloudOAuthConfigService
 from app.cloud.cloud_python_auth_service import CloudPythonAuthService
@@ -24,6 +25,7 @@ from app.workers.cloud_auth_worker import CloudAuthWorker
 from app.cloud.cloud_models import CloudOAuthState
 from app.errors.cloud_exceptions import CloudConfigurationMissingError, CloudPermissionError
 from app.models.document_search import DocumentSearchFilters
+from app.models.pdf_viewer_context import PDFViewerContext
 from app.services.organization_feature_service import OrganizationFeatureService
 from app.views.document_import_dialog import DocumentImportDialog
 from app.views.cloud_folder_mapping_dialog import CloudFolderMappingDialog
@@ -40,7 +42,7 @@ class DocumentController:
         self.workspace = workspace
         self.main_view = main_view
         self.view = DocumentView()
-        self.service = document_service or DocumentService()
+        self.service = document_service or DocumentService(session_context=session_context)
         self.convert_controller = convert_controller
         self.pdf_controller = pdf_controller
         self.pdf_viewer_controller = pdf_viewer_controller
@@ -65,6 +67,7 @@ class DocumentController:
         self._cloud_quota_request = 0
         self._retry_sync_after_reauthentication: tuple[str, int] | None = None
         self._copied_document_id = None
+        self._import_worker = None
         self._cloud_timer = QTimer(self.view)
         self._cloud_timer.setInterval(60_000)
         self._cloud_timer.timeout.connect(self._auto_sync)
@@ -136,6 +139,9 @@ class DocumentController:
         self.on_refresh_documents()
 
     def on_import_document(self):
+        if self._import_worker is not None:
+            QMessageBox.information(self.view, "Importar", "Aguarde a importação em andamento terminar.")
+            return
         try:
             if self.session_context:
                 self.session_context.require_permission("document.import")
@@ -148,26 +154,51 @@ class DocumentController:
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        values = dialog.values(); imported = 0; errors = []
-        for path in values["paths"]:
-            try:
-                self.service.import_document(
-                    str(path), values["folder_id"], category=values["category"],
-                    tags=values["tags"],
-                )
-                imported += 1
-            except Exception as exc:
-                errors.append(f"{path.name}: {exc}")
-        if imported:
-            self._current_folder_id = values["folder_id"]
-            self.view.set_status(f"{imported} documento(s) adicionado(s) com sucesso")
-            self._refresh_folders(); self.on_refresh_documents()
-            self._auto_sync()
-            self._notify_transport_jobs()
-        if errors:
-            QMessageBox.warning(
-                self.view, "Importação concluída com avisos", "\n".join(errors[:10]),
-            )
+        values = dialog.values()
+        organization_id = organization.id
+        paths = tuple(values["paths"])
+        if not paths:return
+        def task(progress, cancelled):
+            imported = 0;errors = []
+            for index, path in enumerate(paths, start=1):
+                if cancelled():raise InterruptedError()
+                progress(int((index-1)*100/len(paths)), f"Importando {index}/{len(paths)}: {path.name}")
+                try:
+                    self.service.import_document(str(path), values["folder_id"],
+                        organization_id=organization_id, category=values["category"],
+                        tags=values["tags"], cancelled=cancelled)
+                    imported += 1
+                except InterruptedError:raise
+                except Exception as exc:errors.append(f"{path.name}: {exc}")
+            return imported, errors
+        worker = FileOperationWorker(task)
+        self._import_worker = worker
+        def current():
+            return self._import_worker is worker and self.service.active_organization_id == organization_id
+        worker.progress.connect(lambda _value, message: self.view.set_status(message) if current() else None)
+        def completed(result):
+            if not current():return
+            imported, errors = result
+            if imported:
+                self._current_folder_id = values["folder_id"]
+                self._refresh_folders();self.on_refresh_documents()
+                self.view.set_status(f"{imported} documento(s) adicionado(s) com sucesso")
+                self._auto_sync();self._notify_transport_jobs()
+            if errors:
+                details = "\n".join(errors[:10])
+                if len(errors)>10:details += f"\nMais {len(errors)-10} falha(s)."
+                QMessageBox.warning(self.view, "Importação parcial" if imported else "Importação", details)
+        worker.succeeded.connect(completed)
+        worker.failed.connect(lambda message: QMessageBox.warning(self.view, "Importação", message) if current() else None)
+        worker.finished.connect(lambda w=worker:self._cleanup_import(w))
+        worker.finished.connect(worker.deleteLater)
+        self.view.btn_import.setEnabled(False)
+        worker.start()
+
+    def _cleanup_import(self, worker):
+        if self._import_worker is worker:
+            self._import_worker = None
+            self.view.apply_cloud_permissions(self.session_context)
 
     def on_search_documents(self, term: str):
         self._current_search = term
@@ -188,7 +219,7 @@ class DocumentController:
         try:
             document = self.service.open_document(document_id)
             if document.path.lower().endswith(".pdf") and self.pdf_viewer_controller:
-                self.pdf_viewer_controller.open_document(document.path)
+                self.pdf_viewer_controller.open_document(document.path, PDFViewerContext(title=document.name))
             else:
                 self._open_file(document.path)
             self.view.set_status(f"Documento aberto: {document.name}")
@@ -275,7 +306,7 @@ class DocumentController:
         if self.pdf_viewer_controller is None:
             QMessageBox.warning(self.view, "Assinar", "Visualizador de PDF indisponível.")
             return
-        self.pdf_viewer_controller.open_document(document.path)
+        self.pdf_viewer_controller.open_document(document.path, PDFViewerContext(title=document.name))
 
     def on_cloud_provider_changed(self, provider: str):
         try:
@@ -997,6 +1028,9 @@ class DocumentController:
             self._cloud_quota_worker = None
 
     def shutdown(self) -> None:
+        if self._import_worker is not None:
+            self._import_worker.requestInterruption()
+            self._import_worker.wait(5000)
         self._cloud_timer.stop()
         if self.remote_mount_controller is not None:
             self.remote_mount_controller.shutdown()

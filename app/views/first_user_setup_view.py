@@ -12,8 +12,8 @@ from PyQt6.QtWidgets import (
 )
 
 from app.models.registration_request import RegistrationRequest
-from app.services.folder_template_service import FolderTemplateService
-from app.services.organization_feature_service import OrganizationFeatureService
+from app.models.folder_templates import FOLDER_TEMPLATES
+from app.models.organization_features import OrganizationFeatureCatalog
 from app.ui.icon_provider import IconProvider
 
 
@@ -365,7 +365,7 @@ class FirstUserSetupView(QWidget):
         )
 
     def show_completion(self, recovery_codes: tuple[str, ...] = ()) -> None:
-        count = len(FolderTemplateService.TEMPLATES[self.request().template_code])
+        count = len(FOLDER_TEMPLATES[self.request().template_code])
         self._registration_complete = True
         self.stack.setCurrentIndex(3)
         self.summary.hide()
@@ -401,12 +401,12 @@ class FirstUserSetupView(QWidget):
         return True
 
     def _refresh_summary(self) -> None:
-        request = self.request(); folders = FolderTemplateService.TEMPLATES.get(request.template_code, ())
+        request = self.request(); folders = FOLDER_TEMPLATES.get(request.template_code, ())
         self.summary.setText(
             f"<div style='line-height:150%'><b>Usuário:</b> {request.display_name}<br>"
             f"<b>Nome de usuário:</b> {request.username}<br><b>Organização:</b> {request.organization_name}<br>"
             f"<b>Template inicial:</b> {request.template_code}<br><b>Perfil de recursos:</b> "
-            f"{OrganizationFeatureService().for_profile(request.template_code).profile_name}<br>"
+            f"{OrganizationFeatureCatalog().for_profile(request.template_code).profile_name}<br>"
             f"<b>Plano:</b> {self.storage_plan.currentText()}<br>"
             f"<b>Papel:</b> OWNER<br><b>Pastas:</b> {', '.join(folders) if folders else 'Nenhuma pasta automática'}</div>"
         )

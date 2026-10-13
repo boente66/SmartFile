@@ -1,5 +1,6 @@
 """Persistent, user/organization-scoped reading state independent of request status."""
 import json
+from app.models.request_stage import request_stage
 from app.repositories.base_repository import BaseRepository
 
 
@@ -18,12 +19,21 @@ class RequestNotificationService:
     def activate(self, organization_id, user_id, requests):
         self.scope = (organization_id,user_id)
         row = self.repository._fetch_one("SELECT value FROM app_settings WHERE key=?",(self._key(),))
-        data = json.loads(row["value"]) if row else {}
-        current = {r.id for r in requests if r.organization_id == organization_id and r.assigned_to_user_id == user_id and r.requested_by_user_id != user_id}
-        self.known = set(data.get("known",current))
-        self.unread = set(data.get("unread",current))
-        self.sound = data.get("sound",True)
-        self.animation = data.get("animation",True)
+        try:
+            data = json.loads(row["value"]) if row else {}
+        except (ValueError, TypeError):
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+        current = {r.id for r in requests if r.organization_id == organization_id and r.assigned_to_user_id == user_id and r.requested_by_user_id != user_id and r.status not in {"COMPLETED", "CANCELLED"}}
+        def identifiers(key):
+            value = data.get(key, list(current))
+            if not isinstance(value, list):return set(current)
+            return {item for item in value if isinstance(item, int) and not isinstance(item, bool)} & current
+        self.known = identifiers("known")
+        self.unread = identifiers("unread")
+        self.sound = data.get("sound",True) if isinstance(data.get("sound",True),bool) else True
+        self.animation = data.get("animation",True) if isinstance(data.get("animation",True),bool) else True
         self._save()
 
     def observe(self, organization_id, user_id, requests):
@@ -31,11 +41,12 @@ class RequestNotificationService:
             self.activate(organization_id,user_id,requests)
             return set()
         current = {r.id for r in requests if r.organization_id == organization_id
-                   and r.assigned_to_user_id == user_id and r.requested_by_user_id != user_id}
+                   and r.assigned_to_user_id == user_id and r.requested_by_user_id != user_id and r.status not in {"COMPLETED", "CANCELLED"}}
         new = current-self.known
-        self.known |= current
-        self.unread |= new
-        if new:self._save()
+        old_unread = self.unread.copy()
+        self.known = current
+        self.unread = (self.unread & current) | new
+        if new or self.unread != old_unread:self._save()
         return new
 
     def mark_read(self, request_id):
@@ -50,7 +61,3 @@ class RequestNotificationService:
         if self.scope is None:return
         self.repository._write("INSERT INTO app_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             (self._key(),json.dumps({"known":sorted(self.known),"unread":sorted(self.unread),"sound":self.sound,"animation":self.animation})))
-
-
-def request_stage(status):
-    return {"OPEN":0,"IN_PROGRESS":1,"OVERDUE":1,"ATTENDED":2,"DELIVERING":3,"DELIVERED":3,"COMPLETED":4,"CANCELLED":4}.get(status,0)

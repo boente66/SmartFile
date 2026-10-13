@@ -41,13 +41,15 @@ class DocumentService:
         *,
         database: Database | None = None,
         storage_service: DocumentStorageService | None = None,
+        session_context=None,
     ):
         if database is not None and db_path is not None:
             raise ValueError("Informe database ou db_path, não ambos.")
+        self.session_context = session_context
         self.database = database or Database(db_name=db_path)
         self.document_repository = DocumentRepository(database=self.database)
         self.organization_service = OrganizationService(self.database)
-        self.folder_service = FolderService(self.database)
+        self.folder_service = FolderService(self.database, session_context=session_context)
         self.cloud_manager = CloudManager(self.database)
         self.cloud_sync_service = CloudSyncService(self.database, self.cloud_manager)
         self.cloud_folder_mapping_service = CloudFolderMappingService(
@@ -64,11 +66,37 @@ class DocumentService:
         # Histórico básico preexistente é preservado, sem ampliar seu domínio.
         self.history_service = HistoryService(database=self.database)
 
+    def _require(self, permission: str, organization_id: int | None = None) -> None:
+        if self.session_context is not None:
+            if organization_id is None and getattr(self.session_context.active_organization, "id", None) != self.active_organization_id:
+                raise PermissionError("A organização ativa mudou; atualize a operação.")
+            self.session_context.require_organization_permission(
+                organization_id if organization_id is not None else self.active_organization_id, permission)
+
+    def import_destinations(self, allowed_organization_ids=None):
+        from app.errors.auth_exceptions import AuthenticationError
+        allowed = None if allowed_organization_ids is None else set(allowed_organization_ids)
+        organizations = []
+        folders = {}
+        for organization in self.organization_service.list_organizations():
+            if allowed is not None and organization.id not in allowed:
+                continue
+            try:
+                self._require("document.import", organization.id)
+            except AuthenticationError:
+                continue
+            organizations.append(organization)
+            folders[organization.id] = self.folder_service.list_folders(organization.id)
+        if not organizations:
+            raise PermissionError("Você não possui permissão para adicionar documentos às organizações disponíveis.")
+        return organizations, folders
+
     @property
     def active_organization_id(self) -> int:
         return self.organization_service.active_id
 
     def set_active_organization(self, organization_id: int):
+        self._require("document.view", organization_id)
         return self.organization_service.set_active(organization_id)
 
     def import_document(
@@ -85,11 +113,13 @@ class DocumentService:
         notes: str | None = None,
         source_type: str = "IMPORT",
         sync_cloud: bool = True,
+        cancelled=None,
     ) -> DocumentModel:
+        organization_id = organization_id or self.active_organization_id
+        self._require("document.import", organization_id)
         path = self._validated_path(file_path)
         extension = path.suffix.lower()
-        checksum = self._calculate_checksum(path)
-        organization_id = organization_id or self.active_organization_id
+        checksum = self._calculate_checksum(path) if cancelled is None else self._calculate_checksum(path, cancelled=cancelled)
         source_type = source_type.strip().upper()
         allowed_sources = {
             "IMPORT", "SCANNER", "CONVERTER", "PDF_TOOLS", "DIGITAL_SIGNATURE",
@@ -111,7 +141,8 @@ class DocumentService:
         committed = False
         now = self._now()
         try:
-            stored = self.storage_service.store(path, checksum)
+            stored = (self.storage_service.store(path, checksum) if cancelled is None
+                      else self.storage_service.store(path, checksum, cancelled=cancelled))
             with self.database.transaction():
                 document_name = (title or path.name).strip() or path.name
                 if not Path(document_name).suffix:
@@ -167,10 +198,12 @@ class DocumentService:
             raise
 
     def get_document(self, document_id: int) -> Optional[DocumentModel]:
+        self._require("document.view")
         entity = self.document_repository.find_by_id(document_id, self.active_organization_id)
         return DocumentModel.from_entity(entity) if entity else None
 
     def list_documents(self, folder_id: int | None = None) -> list[DocumentModel]:
+        self._require("document.view")
         return self._models(self.document_repository.find_all(self.active_organization_id, folder_id))
 
     def search_documents(
@@ -180,6 +213,7 @@ class DocumentService:
         folder_id: int | None = None,
         filters: DocumentSearchFilters | None = None,
     ) -> list[DocumentModel]:
+        self._require("document.search")
         if filters is not None:
             file_type = filters.file_type or file_type
         if not term.strip() and not (filters and filters.active):
@@ -194,6 +228,7 @@ class DocumentService:
         )
 
     def rename_document(self, document_id: int, new_name: str) -> DocumentModel:
+        self._require("document.update")
         entity = self.document_repository.find_by_id(document_id, self.active_organization_id)
         if entity is None or entity.status != "ACTIVE":
             raise InvalidDocumentError("Documento não encontrado.")
@@ -220,6 +255,7 @@ class DocumentService:
         return DocumentModel.from_entity(updated)
 
     def filter_by_type(self, file_type: str, folder_id: int | None = None) -> list[DocumentModel]:
+        self._require("document.view")
         if not file_type or file_type.lower() == "todos":
             return self.list_documents(folder_id)
         return self._models(
@@ -229,15 +265,19 @@ class DocumentService:
         )
 
     def get_recent_documents(self) -> list[DocumentModel]:
+        self._require("document.view")
         return self._models(self.document_repository.find_recent(10, self.active_organization_id))
 
     def get_favorite_documents(self) -> list[DocumentModel]:
+        self._require("document.view")
         return self._models(self.document_repository.find_favorites(self.active_organization_id))
 
     def get_trashed_documents(self) -> list[DocumentModel]:
+        self._require("document.view")
         return self._models(self.document_repository.find_trashed(self.active_organization_id))
 
     def toggle_favorite(self, document_id: int) -> DocumentModel:
+        self._require("document.update")
         updated = self.document_repository.toggle_favorite(document_id, self.active_organization_id)
         if updated is None:
             raise InvalidDocumentError("Documento não encontrado.")
@@ -245,6 +285,7 @@ class DocumentService:
         return DocumentModel.from_entity(updated)
 
     def delete_document(self, document_id: int) -> bool:
+        self._require("document.delete")
         entity = self.document_repository.find_by_id(document_id, self.active_organization_id)
         if entity is None:
             return False
@@ -254,6 +295,7 @@ class DocumentService:
         return changed
 
     def restore_document(self, document_id: int) -> DocumentModel:
+        self._require("document.update")
         if not self.document_repository.restore(document_id, self.active_organization_id):
             raise InvalidDocumentError("Documento não encontrado.")
         restored = self.document_repository.find_by_id(document_id, self.active_organization_id)
@@ -263,6 +305,7 @@ class DocumentService:
         return DocumentModel.from_entity(restored)
 
     def copy_document(self, document_id: int, folder_id: int | None = None) -> DocumentModel:
+        self._require("document.create")
         source=self.document_repository.find_by_id(document_id,self.active_organization_id)
         if source is None: raise InvalidDocumentError("Documento não encontrado.")
         path=Path(source.storage_path or source.path).expanduser().resolve()
@@ -289,6 +332,7 @@ class DocumentService:
             raise
 
     def open_document(self, document_id: int) -> DocumentModel:
+        self._require("document.open")
         entity = self.document_repository.find_by_id(document_id, self.active_organization_id)
         if entity is None:
             raise InvalidDocumentError("Documento não encontrado.")
@@ -310,6 +354,7 @@ class DocumentService:
 
     def permanently_delete_document(self, document_id: int) -> bool:
         """Remove registro e arquivo gerenciado; ainda não exposto pela interface."""
+        self._require("document.delete")
         entity = self.document_repository.find_by_id(document_id, self.active_organization_id)
         if entity is None or entity.status != "TRASHED":
             return False
@@ -352,6 +397,7 @@ class DocumentService:
         return deleted
 
     def empty_trash(self) -> int:
+        self._require("document.delete")
         documents = self.document_repository.find_trashed(self.active_organization_id)
         count = 0
         for document in documents:
@@ -360,17 +406,21 @@ class DocumentService:
         return count
 
     def get_storage_usage(self):
+        self._require("document.view")
         return self.storage_quota_service.get_usage_summary(self.active_organization_id)
 
     def recalculate_storage_usage(self):
+        self._require("document.update")
         return self.storage_quota_service.recalculate_usage(self.active_organization_id)
 
     def get_largest_documents(self, limit: int = 10) -> list[DocumentModel]:
+        self._require("document.view")
         return self._models(
             self.document_repository.find_largest(self.active_organization_id, limit)
         )
 
     def move_document(self, document_id: int, folder_id: int | None) -> DocumentModel:
+        self._require("document.update")
         if folder_id is not None:
             folder = self.folder_service.repository.find_by_id(folder_id, self.active_organization_id)
             if folder is None or folder.status != "ACTIVE":
@@ -390,6 +440,7 @@ class DocumentService:
         return document
 
     def delete_folder(self, folder_id: int) -> bool:
+        self._require("folder.delete")
         affected = self.document_repository.find_in_folder_tree(
             self.active_organization_id, folder_id
         )
@@ -437,10 +488,11 @@ class DocumentService:
         return [DocumentModel.from_entity(entity) for entity in entities]
 
     @staticmethod
-    def _calculate_checksum(path: Path) -> str:
+    def _calculate_checksum(path: Path, cancelled=None) -> str:
         digest = hashlib.sha256()
         with path.open("rb") as handle:
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                if cancelled and cancelled():raise InterruptedError("Importação cancelada.")
                 digest.update(chunk)
         return digest.hexdigest()
 

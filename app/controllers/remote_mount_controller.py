@@ -20,6 +20,11 @@ class RemoteMountController:
         self.dialog=None;self.browse_worker=None;self.scan_worker=None;self.plan_worker=None;self._request=0
         self._browse_org_id=None;self._scan_org_id=None
         self._browse_workers=set()
+        self._scan_workers=set()
+        self._plan_workers=set()
+        self._last_org=getattr(context.active_organization,"id",None)
+        self._scan_request=0
+        self._plan_request=0
         self._pending_browse={}
 
     def open(self):
@@ -64,6 +69,9 @@ class RemoteMountController:
 
     def _reconcile(self,organization_id,collection_key):
         try:
+            if any(worker.isRunning() for worker in self._plan_workers):
+                QMessageBox.information(self.parent,"Plano multicloud","Aguarde o plano em execução terminar.")
+                return
             plan,actions=self.reconciliation.build_plan(organization_id,collection_key)
             if not actions:
                 QMessageBox.information(self.parent,"Plano multicloud","Nenhuma readequação segura foi proposta.");return
@@ -78,12 +86,16 @@ class RemoteMountController:
             worker=MulticloudReconciliationWorker(
                 self.reconciliation,organization_id,plan.id,self.parent
             );self.plan_worker=worker
-            worker.succeeded.connect(lambda status,org=organization_id:self._plan_done(org,status))
-            worker.failed.connect(lambda message:self._scan_failed(message))
+            self._plan_request+=1; request=self._plan_request
+            self._plan_workers.add(worker)
+            worker.succeeded.connect(lambda status,org=organization_id,req=request:self._plan_done(org,status,req))
+            worker.failed.connect(lambda message,org=organization_id,req=request:self._scan_failed(message,org,req,"plan"))
+            worker.finished.connect(lambda w=worker:self._plan_workers.discard(w))
             worker.finished.connect(worker.deleteLater);worker.start()
         except Exception as exc:QMessageBox.warning(self.parent,"Plano multicloud",str(exc))
 
-    def _plan_done(self,organization_id,status):
+    def _plan_done(self,organization_id,status,request):
+        if request!=self._plan_request:return
         if organization_id!=getattr(self.context.active_organization,"id",None):return
         QMessageBox.information(self.parent,"Plano multicloud",f"Execução concluída: {status}.")
         self.refresh()
@@ -129,20 +141,30 @@ class RemoteMountController:
         dialog.progress.hide()
         # Keep accepted values readable until mount() has consumed them.
     def _scan(self,mount_id,organization_id):
+        if organization_id!=getattr(self.context.active_organization,"id",None):return
         self._scan_org_id=organization_id
+        self._scan_request+=1;request=self._scan_request
         self.view.set_remote_inventory_status("SCANNING","Atualizando espelho…")
         worker=RemoteInventoryWorker(self.service,organization_id,mount_id,self.parent);self.scan_worker=worker
-        worker.succeeded.connect(lambda _count,org=organization_id:self._scan_done(org))
-        worker.failed.connect(lambda message:self._scan_failed(message))
+        self._scan_workers.add(worker)
+        worker.succeeded.connect(lambda _count,org=organization_id,req=request:self._scan_done(org,req))
+        worker.failed.connect(lambda message,org=organization_id,req=request:self._scan_failed(message,org,req))
+        worker.finished.connect(lambda w=worker:self._scan_workers.discard(w))
         worker.finished.connect(worker.deleteLater);worker.start()
-    def _scan_done(self,organization_id):
-        if organization_id==getattr(self.context.active_organization,"id",None):self.refresh()
-    def _scan_failed(self,message):
+    def _scan_done(self,organization_id,request):
+        if request==self._scan_request and organization_id==getattr(self.context.active_organization,"id",None):self.refresh()
+    def _scan_failed(self,message,organization_id,request,kind="scan"):
+        current=self._plan_request if kind=="plan" else self._scan_request
+        if request!=current or organization_id!=getattr(self.context.active_organization,"id",None):return
         self.view.set_remote_inventory_status("ERROR",message)
         QMessageBox.warning(self.parent,"Acervo remoto",message)
     def refresh(self):
         try:
             org_id=self.context.active_organization.id
+            if org_id!=self._last_org:
+                self._last_org=org_id
+                self._scan_request+=1;self._plan_request+=1
+                for worker in (*self._scan_workers,*self._plan_workers):worker.requestInterruption()
             if self.dialog and self._browse_org_id is not None and self._browse_org_id!=org_id:
                 self._close_browse(self.dialog);self.dialog.reject()
             mounts=self.service.list_mounts(org_id)
@@ -152,5 +174,5 @@ class RemoteMountController:
         except PermissionError:self.view.set_remote_mounts([],{});self.view.set_remote_inventory_status("HIDDEN","")
 
     def shutdown(self):
-        for worker in (*self._browse_workers,self.scan_worker,self.plan_worker):
+        for worker in (*self._browse_workers,*self._scan_workers,*self._plan_workers):
             if worker is not None and worker.isRunning():worker.requestInterruption();worker.wait(5000)

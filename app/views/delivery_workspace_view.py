@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (QComboBox,QFormLayout,QFrame,QHBoxLayout,QLabel,QLi
 
 from app.ui.icon_provider import IconProvider
 from app.views.widgets.flow_step_indicator import FlowStepIndicator
-from app.services.request_notification_service import request_stage
+from app.models.request_stage import request_stage
 
 
 class WorkspacePanels(QStackedWidget):
