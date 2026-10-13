@@ -471,3 +471,13 @@ def test_fail_is_scoped_to_active_org(service):
     with pytest.raises(PermissionError):
         scoped.fail(record)
     assert service.get(record.organization_id, record.id).status == "PENDING"
+
+
+def test_https_scheme_case_is_normalized_without_changing_token(service):
+    org = service.active_organization_id()
+    service.configure(org, "HTTPS://example.org/validation/")
+    record = pending(service)
+    payload = Locator.build_payload(record)
+    assert payload == f"https://example.org/validation/verify/{record.public_token}"
+    assert Locator.parse(payload.replace("https://", "HTTPS://", 1)) == ("TOKEN", record.public_token)
+    assert record.public_token == payload.rsplit("/", 1)[1]

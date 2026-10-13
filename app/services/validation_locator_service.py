@@ -48,7 +48,7 @@ class ValidationLocatorService:
             raise ValueError("Porta da base inválida.") from exc
         if any(part in {".", ".."} for part in url.path.split("/")) or "%" in url.netloc:
             raise ValueError("Base de validação inválida.")
-        return value.rstrip("/")
+        return url._replace(scheme="https").geturl().rstrip("/")
 
     @classmethod
     def build_payload(cls, record):
@@ -63,7 +63,7 @@ class ValidationLocatorService:
             if not value.startswith(cls.PREFIX):
                 raise ValueError("UNSUPPORTED_PAYLOAD: versão ou formato do QR não suportado.")
             return "TOKEN", cls.validate_token(value[len(cls.PREFIX):])
-        if value.startswith("https://"):
+        if urlsplit(value).scheme == "https":
             url = urlsplit(value)
             if url.query or url.fragment:
                 raise ValueError("Payload de validação inválido.")

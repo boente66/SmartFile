@@ -167,3 +167,18 @@ incluindo domínio canônico e exportação byte a byte. A suíte completa final
 - Versão 0.9.0-beta.7, schema 23. Nenhuma alteração no detector/scanner nesta tarefa.
 - Nenhuma release publicada até este commit funcional. A publicação subsequente
   está autorizada pelo pedido atual do usuário e será registrada no fechamento.
+
+## Validação nativa do primeiro commit e correção final de URI
+
+Commit funcional inicial: 517c45c945e8a54ed897a76dd70627ae0099db6b, enviado à main.
+GitHub Python tests: run 38326884728, sucesso. Windows Setup/Portable: run
+38326884703, sucesso. Linux .deb: run 38326884744, sucesso, com auditoria ABI,
+instalação/reinstalação e preservação de dados na remoção em Ubuntu 22.04 e 24.04.
+
+Na revisão de compatibilidade, a configuração aceitava esquema HTTPS em maiúsculas,
+mas o parser reconhecia somente o prefixo minúsculo. A base agora normaliza somente
+o esquema e o parser aceita sua variação de case, sem alterar o token.
+**25 testes específicos passaram em 131,19 s**, incluindo URL snapshot e rejeições
+de bases/payloads inválidos. O commit dessa correção terá as suítes e builds nativos
+repetidos; somente seus artefatos serão usados na release. Nenhuma release publicada
+até aqui.
