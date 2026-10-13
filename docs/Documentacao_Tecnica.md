@@ -123,3 +123,16 @@ A release beta.7 aponta ao commit d047836aae1afba94f42a0f57cd8b842d52b097a,
 com 574 testes locais aprovados e checks CI Linux/Windows/Python aprovados.
 Hashes SHA-256 acompanham os instaladores. O banco migra de 22 para 23; downgrade
 exige dados compatíveis anteriores. Consulte as [notas](RELEASE_NOTES_0.9.0-beta.7.md).
+
+## Referência visual da interface
+
+As nove capturas da beta.7 fornecidas pelo usuário estão em assets/screenshots
+e no manual. Elas ilustram a interface; não substituem testes ou homologação.
+
+![Captura e PDF — aquisição, páginas e saída avançada](../assets/screenshots/smartfile-beta7-captura-pdf.png)
+
+
+![Solicitações — Preparação de uma solicitação atendida](../assets/screenshots/smartfile-beta7-solicitacoes-preparacao.png)
+
+
+![Dispositivos SmartFile — descoberta e instalações autorizadas](../assets/screenshots/smartfile-beta7-dispositivos-lan.png)

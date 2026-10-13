@@ -232,6 +232,9 @@ perfil não apaga pastas nem documentos.
 
 ## 6. Documentos
 
+![Documentos — pastas lógicas, filtros e painel de detalhes](../assets/screenshots/smartfile-beta7-documentos.png)
+
+
 ### Importar
 
 1. Abra o módulo **Documentos**.
@@ -243,6 +246,9 @@ perfil não apaga pastas nem documentos.
 O SmartFile calcula o checksum SHA-256, cria um nome interno seguro e registra o
 documento no SQLite. O arquivo de origem não deve ser editado diretamente dentro
 do storage gerenciado.
+
+
+![Importação — seleção de arquivos e pasta lógica de destino](../assets/screenshots/smartfile-beta7-importar-documentos.png)
 
 ### Pesquisar e filtrar
 
@@ -354,6 +360,9 @@ ultrapassarem o novo limite.
 
 ## 6A. Conversor de arquivos
 
+![Conversor — entrada, formato de saída e progresso](../assets/screenshots/smartfile-beta7-conversor.png)
+
+
 O módulo **Converter** aceita arquivos selecionados diretamente no computador ou
 enviados pela ação **Converter** do módulo Documentos. Quando a origem pertence ao
 storage gerenciado, a saída é sugerida na pasta Documentos do usuário para evitar
@@ -410,6 +419,9 @@ visualizador não executa OCR automaticamente.
 **Captura e PDF** reúne a experiência de Scanner e PDF Tools em um único
 workspace, mantendo internamente separados os serviços de aquisição, composição,
 preview e persistência documental.
+
+
+![Captura e PDF — aquisição, páginas e saída avançada](../assets/screenshots/smartfile-beta7-captura-pdf.png)
 
 ### Digitalizar e organizar
 
@@ -475,6 +487,9 @@ Ele não substitui a sincronização em nuvem nem o transporte NAS empresarial.
 
 ### Etapas e atalhos do painel
 
+![Solicitações — Entrada e preferências de avisos](../assets/screenshots/smartfile-beta7-solicitacoes-entrada.png)
+
+
 As etapas **Entrada**, **Atendimento**, **Preparação**, **Entrega** e
 **Finalizadas** filtram o fluxo operacional. Clique no círculo da etapa para
 consultar os itens. Os contadores representam solicitações e não o número de
@@ -511,6 +526,9 @@ Selecione **Atualizar** para consultar novamente a fila.
 9. Visualizar registra o visto real. Confirmar o recebimento encerra o protocolo
    e conclui a solicitação associada.
 
+
+![Solicitações — Preparação de uma solicitação atendida](../assets/screenshots/smartfile-beta7-solicitacoes-preparacao.png)
+
 ### Caso de uso: envio direto
 
 1. Abra a aba **Cesta de documentos**.
@@ -535,7 +553,16 @@ Erros esperados como **Não há rota para o host** aparecem como indisponibilida
 temporária, sem traceback na interface. O primeiro evento é registrado para
 diagnóstico e repetições equivalentes são agregadas para não poluir o log.
 
+
+![Entregas — protocolos e ação Tentar novamente](../assets/screenshots/smartfile-beta7-solicitacoes-entrega.png)
+
+
+![Solicitações — filtro Finalizadas sem itens](../assets/screenshots/smartfile-beta7-solicitacoes-finalizadas.png)
+
 ### Configuração LAN
+
+![Dispositivos SmartFile — descoberta e instalações autorizadas](../assets/screenshots/smartfile-beta7-dispositivos-lan.png)
+
 
 OWNER ou ADMIN pode usar **Configurar LAN** para definir o endereço atual e a
 porta de recepção. Cada instalação possui um UUID permanente; a mudança de IP
@@ -1275,3 +1302,7 @@ conta do provedor e confira a fila de sincronização.
 Consulte o [índice oficial](README.md), a [documentação técnica](Documentacao_Tecnica.md)
 e as [notas da versão](RELEASE_NOTES_0.9.0-beta.7.md). Este manual descreve a beta.7;
 nomes e disponibilidade de ações dependem do perfil, permissões e seleção atual.
+
+As capturas da beta.7 foram fornecidas pelo usuário e ilustram uma sessão de
+exemplo. Nomes, endereços LAN, contadores e protocolos exibidos não são valores
+padrão para configuração. Uma tela vazia não representa falha do fluxo.
