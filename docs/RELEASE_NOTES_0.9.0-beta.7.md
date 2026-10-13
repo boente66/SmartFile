@@ -34,7 +34,7 @@ Schema **23**, com migração 22 → 23 e retenção de registros de validação
 administrativo antes de atualizar. Uma instalação antiga com schema 22 não abre um
 banco já migrado para 23; restauração deve utilizar backup anterior compatível.
 
-Instaladores previstos: Linux amd64 (.deb), Windows x64 Setup e Portable.
+Instaladores disponíveis: Linux amd64 (.deb), Windows x64 Setup e Portable.
 Os artefatos publicados são produzidos pelos respectivos runners nativos e têm
 checksums. Nenhum documento, scan ou credencial é incluído nos instaladores.
 

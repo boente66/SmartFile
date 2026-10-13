@@ -197,3 +197,41 @@ Python 38327969912, Linux 38327969906 e Windows 38327969919. O commit deste
 fechamento será a fonte dos artefatos finais, com novos builds e suítes nativos.
 Não há alteração do scanner, da Cloud Layer, do cofre ou publicação de documentos.
 Schema 23 e versão 0.9.0-beta.7. Nenhuma release publicada nesta fase funcional.
+
+## Publicação final — 12/10/2026
+
+Implementação final enviada à main: `d047836aae1afba94f42a0f57cd8b842d52b097a`.
+Versão **0.9.0-beta.7**, schema **23**. Suíte local definitiva: **574 testes
+aprovados em 426,29 s**. Sem nova aquisição física ou refinamento do detector.
+
+Todos os checks nativos do mesmo commit foram aprovados:
+
+- [Python tests](https://github.com/boente66/SmartFile/actions/runs/38331316729).
+- [Linux build/ABI/instalação](https://github.com/boente66/SmartFile/actions/runs/38331316743), incluindo instalação/reinstalação e preservação dos dados na remoção em Ubuntu 22.04 e 24.04.
+- [Windows tests/Setup/Portable/smoke](https://github.com/boente66/SmartFile/actions/runs/38331318734).
+
+A pedido do usuário, a [release beta.7](https://github.com/boente66/SmartFile/releases/tag/v0.9.0-beta.7)
+foi publicada como pré-release, com anúncio, Linux amd64, Windows x64 Setup e
+Portable, e respectivos checksums. A tag aponta ao commit funcional acima.
+Os seis assets foram conferidos como uploaded; os digests SHA-256 dos três
+pacotes retornados pelo GitHub correspondem aos arquivos recuperados do CI.
+O nome público Debian usa `.beta7`; sua versão interna permanece `0.9.0~beta7`.
+Nenhum documento, scan, banco ou credencial foi incluído nos instaladores.
+
+| Instalador | Bytes | SHA-256 |
+| --- | ---: | --- |
+| smartfile_0.9.0.beta7_amd64.deb | 256807172 | `1494ad7c6b894f5e4a39340ab813d2fd15baca7da10627b32b0e4b3e73656ee9` |
+| SmartFile-0.9.0-beta.7-Windows-x64-Setup.exe | 119775581 | `42abba2ca5c906769d892710555ccac39f47838797da6df50ed41cd758abc27c` |
+| SmartFile-0.9.0-beta.7-Windows-x64-Portable.zip | 171556123 | `0ae6094f755a0301fe551ca138a044804d738f9179b21938ee75a0ee892dc4ec` |
+
+Scanner físico: homologado para captura e geração correta de PDF.
+Reconhecimento automático universal do tamanho da folha:
+funcionalidade experimental/assistiva, ainda não homologada para todos os formatos.
+Estados PARTIAL/REVIEW são preservados quando a geometria não é confiável.
+
+QR local funciona na instalação e organização autorizadas sem URL pública
+obrigatória. O QR localiza o registro, e a comparação verifica os bytes do original
+canônico. Base HTTPS continua opcional, sem servidor público ou publicação
+automática de documentos. Multicloud, Solicitações e notificações permanecem
+consolidados. Este fechamento altera somente documentação; os instaladores
+publicados usam exatamente o commit funcional testado.
