@@ -118,7 +118,7 @@ def _identity_response(port: int) -> tuple[int, dict]:
 def test_current_schema_and_instance_uuid_survives_ip_change(tmp_path: Path, monkeypatch):
     database, context, _documents, _worker, _membership = _installation(tmp_path)
     version = database.connect().execute("PRAGMA user_version").fetchone()[0]
-    assert version == CURRENT_SCHEMA_VERSION == 23
+    assert version == CURRENT_SCHEMA_VERSION == 24
     service = DocumentDeliveryService(database, context)
     monkeypatch.setattr(service.instances, "current_ip", lambda: "192.168.1.10")
     first = service.instances.local(context.active_organization.id)
@@ -200,6 +200,9 @@ def test_migration_17_preserves_legacy_requests(tmp_path: Path):
         context.active_organization.id, "Documento legado", assigned_to_user_id=worker.id,
     )
     connection = database.connect()
+    # This fixture deliberately reconstructs an older schema, which did not have v24 triggers.
+    for trigger in ('validation_links_immutable','validation_revocation_immutable','audit_log_no_update','audit_log_no_delete','document_uuid_immutable'):
+        connection.execute(f'DROP TRIGGER IF EXISTS {trigger}')
     connection.execute("PRAGMA foreign_keys=OFF")
     for table in ("delivery_history", "document_delivery_items", "document_deliveries", "document_request_documents", "smartfile_instances"):
         connection.execute(f"DROP TABLE {table}")
@@ -222,7 +225,7 @@ def test_migration_17_preserves_legacy_requests(tmp_path: Path):
     assert row["title"] == "Documento legado"
     from uuid import UUID
     assert str(UUID(row["request_uuid"])) == row["request_uuid"]
-    assert migrated.connect().execute("PRAGMA user_version").fetchone()[0] == 23
+    assert migrated.connect().execute("PRAGMA user_version").fetchone()[0] == 24
 
 
 def test_migration_19_adds_receipts_without_losing_deliveries(tmp_path: Path):
@@ -245,7 +248,7 @@ def test_migration_19_adds_receipts_without_losing_deliveries(tmp_path: Path):
 
     migrated = Database(str(tmp_path / "smartfile.db"))
 
-    assert migrated.fetch_one("PRAGMA user_version")[0] == 23
+    assert migrated.fetch_one("PRAGMA user_version")[0] == 24
     assert migrated.fetch_one(
         "SELECT protocol_number FROM document_deliveries WHERE id=?", (delivery.id,)
     )["protocol_number"] == delivery.protocol_number
@@ -369,7 +372,7 @@ def test_received_pdf_uses_internal_viewer_and_marks_viewed_only_after_display(t
         status="DELIVERED", sender_user_id=2, recipient_user_id=1,
     )
     item = SimpleNamespace(
-        logical_name="received.pdf", received_path=str(path),
+        id=1, logical_name="received.pdf", received_path=str(path),
     )
     marked = []
 
@@ -387,6 +390,8 @@ def test_received_pdf_uses_internal_viewer_and_marks_viewed_only_after_display(t
         has_permission=lambda permission: permission == "delivery.acknowledge",
     )
     controller.service = SimpleNamespace(
+        authorized_delivery=lambda *args,**kwargs:delivery,
+        _received_item=lambda *args,**kwargs:(item,path),
         deliveries=SimpleNamespace(find_by_id=lambda _id: delivery),
         items=SimpleNamespace(list_by_delivery=lambda _id: [item]),
         users=SimpleNamespace(
@@ -498,8 +503,6 @@ def test_receive_streams_in_bounded_chunks(tmp_path: Path):
 def test_two_instances_request_delivery_view_and_acknowledge(tmp_path: Path):
     db_a, context_a, documents_a, worker_a, _member_a = _installation(tmp_path / "a")
     db_b, context_b, documents_b, worker_b, member_b = _installation(tmp_path / "b")
-    _as_worker(context_b, worker_b, member_b)
-
     service_a = DocumentDeliveryService(db_a, context_a, documents_a)
     service_b = DocumentDeliveryService(db_b, context_b, documents_b)
     coordinator_a = DeliveryCoordinator(service_a, context_a)
@@ -511,6 +514,7 @@ def test_two_instances_request_delivery_view_and_acknowledge(tmp_path: Path):
         local_b = service_b.instances.local(context_b.active_organization.id)
         service_a.instances.register_peer(context_a.active_organization.id, local_b.instance_id, "Zorin", "127.0.0.1", port_b, worker_a.id)
         service_b.instances.register_peer(context_b.active_organization.id, local_a.instance_id, "Mint", "127.0.0.1", port_a, context_b.memberships[0].user_id)
+        _as_worker(context_b, worker_b, member_b)
 
         requests_a = DocumentRequestService(db_a, context_a)
         request_a = requests_a.create(context_a.active_organization.id, "Nota fiscal", assigned_to_user_id=worker_a.id)
@@ -552,8 +556,6 @@ def test_two_instances_request_delivery_view_and_acknowledge(tmp_path: Path):
 def test_offline_delivery_remains_queued_then_retries(tmp_path: Path):
     db_a, context_a, documents_a, worker_a, member_a = _installation(tmp_path / "a")
     db_b, context_b, documents_b, worker_b, member_b = _installation(tmp_path / "b")
-    _as_worker(context_a, worker_a, member_a)
-    _as_worker(context_b, worker_b, member_b)
     service_a = DocumentDeliveryService(db_a, context_a, documents_a)
     service_b = DocumentDeliveryService(db_b, context_b, documents_b)
     port_b = _free_port()
@@ -561,6 +563,8 @@ def test_offline_delivery_remains_queued_then_retries(tmp_path: Path):
     local_b = service_b.instances.local(context_b.active_organization.id, port_b)
     peer_b = service_a.instances.register_peer(context_a.active_organization.id, local_b.instance_id, "Offline", "127.0.0.1", port_b, worker_a.id)
     service_b.instances.register_peer(context_b.active_organization.id, local_a.instance_id, "Origem", "127.0.0.1", _free_port(), worker_b.id)
+    _as_worker(context_a, worker_a, member_a)
+    _as_worker(context_b, worker_b, member_b)
     document = documents_a.import_document(str(_source(tmp_path / "a", "offline.pdf", b"offline-data")), sync_cloud=False)
     basket = DeliveryBasketService(documents_a, context_a); basket.begin(recipient_user_id=worker_a.id); basket.add_document(document.id)
     delivery = service_a.create(context_a.active_organization.id, basket.basket, peer_b.instance_id)

@@ -287,7 +287,7 @@ def test_migration_22_to_23_idempotent_and_new_database(service):
     database.execute_query("DROP TABLE validation_records")
     database.execute_query("PRAGMA user_version=22")
     database.create_tables(); database.create_tables()
-    assert database.fetch_one("PRAGMA user_version")[0] == 23
+    assert database.fetch_one("PRAGMA user_version")[0] == 24
     assert database.fetch_all("PRAGMA foreign_key_check") == []
     assert pending(service).status == "PENDING"
 

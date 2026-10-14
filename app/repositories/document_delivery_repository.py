@@ -3,7 +3,7 @@ from app.repositories.base_repository import BaseRepository
 
 
 class DocumentDeliveryRepository(BaseRepository):
-    COLUMNS = ("delivery_uuid","protocol_number","organization_id","request_id","sender_user_id","recipient_user_id","sender_instance_id","recipient_instance_id","recipient_host","recipient_port","direction","message","status","attempts","next_attempt_at","last_error","created_at","queued_at","sent_at","delivered_at","viewed_at","viewed_by_user_id","acknowledged_at","completed_at","cancelled_at")
+    COLUMNS = ("audit_actor_json","delivery_uuid","protocol_number","organization_id","request_id","sender_user_id","recipient_user_id","sender_instance_id","recipient_instance_id","recipient_host","recipient_port","direction","message","status","attempts","next_attempt_at","last_error","created_at","queued_at","sent_at","delivered_at","viewed_at","viewed_by_user_id","acknowledged_at","completed_at","cancelled_at")
 
     def create(self, entity: DocumentDeliveryEntity) -> DocumentDeliveryEntity:
         values = tuple(getattr(entity, name) for name in self.COLUMNS)
@@ -33,7 +33,7 @@ class DocumentDeliveryRepository(BaseRepository):
         )]
 
     def update(self, delivery_id: int, **values) -> None:
-        allowed = set(self.COLUMNS) - {"delivery_uuid", "protocol_number", "organization_id", "direction", "created_at"}
+        allowed = set(self.COLUMNS) - {"delivery_uuid", "protocol_number", "organization_id", "direction", "created_at", "audit_actor_json"}
         clean = {key: value for key, value in values.items() if key in allowed}
         if not clean: return
         self._write(f"UPDATE document_deliveries SET {','.join(f'{key}=?' for key in clean)} WHERE id=?", (*clean.values(), delivery_id))
@@ -47,10 +47,10 @@ class DocumentDeliveryItemRepository(BaseRepository):
     def create(self, entity: DocumentDeliveryItemEntity) -> DocumentDeliveryItemEntity:
         cursor = self._write(
             """INSERT INTO document_delivery_items
-            (item_uuid,delivery_id,document_id,logical_name,size,sha256,transfer_status,received_path,sent_at,received_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (item_uuid,delivery_id,document_id,logical_name,size,sha256,transfer_status,received_path,sent_at,received_at,source_document_uuid)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (entity.item_uuid, entity.delivery_id, entity.document_id, entity.logical_name, entity.size,
-             entity.sha256, entity.transfer_status, entity.received_path, entity.sent_at, entity.received_at),
+             entity.sha256, entity.transfer_status, entity.received_path, entity.sent_at, entity.received_at, entity.source_document_uuid),
         ); entity.id = cursor.lastrowid; return entity
 
     def list_by_delivery(self, delivery_id: int) -> list[DocumentDeliveryItemEntity]:
@@ -75,4 +75,4 @@ class DocumentDeliveryItemRepository(BaseRepository):
 
     @staticmethod
     def _entity(row) -> DocumentDeliveryItemEntity:
-        return DocumentDeliveryItemEntity(**{key: row[key] for key in ("id","item_uuid","delivery_id","document_id","logical_name","size","sha256","transfer_status","received_path","sent_at","received_at")})
+        return DocumentDeliveryItemEntity(**{key: row[key] for key in ("source_document_uuid","id","item_uuid","delivery_id","document_id","logical_name","size","sha256","transfer_status","received_path","sent_at","received_at")})

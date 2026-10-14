@@ -395,4 +395,8 @@ preservados. Uma marca manuscrita continua visual. Consulte
 ## Documentação oficial
 
 Consulte o [índice oficial](docs/README.md), o [manual do usuário](docs/Manual_Usuario.md)
-e a [documentação técnica](docs/Documentacao_Tecnica.md), atualizados para beta.9/schema 23.
+e a [documentação técnica](docs/Documentacao_Tecnica.md), atualizados para beta.10/schema 24.
+
+A beta.10 acrescenta rastreabilidade por usuário/instalação, auditoria contextual,
+identidade corporativa BUSINESS e proteção do histórico QR. Consulte o
+[relatório empresarial](docs/AUDITORIA_EMPRESARIAL_0.9.0-beta.10.md).

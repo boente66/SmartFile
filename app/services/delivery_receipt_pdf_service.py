@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import base64
 from pathlib import Path
 from uuid import uuid4
 
@@ -25,7 +26,10 @@ class DeliveryReceiptPdfService:
             y = self._header(page, request)
             y = self._documents(document, page, y, request)
             page = document[-1]
-            y = self._declaration(page, y)
+            if y > 570:
+                page = document.new_page(width=self.PAGE.width,height=self.PAGE.height)
+                y = 54
+            y = self._declaration(page, y, request)
             self._signature(page, y, request)
             if request.qr_payload:
                 from app.services.signature_verification_service import SignatureVerificationService
@@ -60,24 +64,43 @@ class DeliveryReceiptPdfService:
 
     @staticmethod
     def _header(page: fitz.Page, request: DeliveryReceiptRequest) -> float:
-        page.insert_text((48, 52), "SMARTFILE", fontsize=17, color=(0.05, 0.25, 0.14))
-        page.insert_text((48, 82), "COMPROVANTE DE RECEBIMENTO", fontsize=16)
-        values = (
-            ("Protocolo", request.protocol_number),
-            ("Organização", request.organization_name),
-            ("Remetente", request.sender_name),
-            ("Destinatário", request.recipient_name),
-            ("Recebido em", request.received_at),
-            ("Confirmado em", request.confirmed_at),
-            ("Identificador", request.receipt_uuid),
-        )
-        y = 112.0
-        for label, value in values:
-            page.insert_text((48, y), f"{label}:", fontsize=9, color=(0.25, 0.3, 0.38))
-            page.insert_text((145, y), str(value or "—"), fontsize=9)
-            y += 18
-        page.draw_line((48, y), (547, y), color=(0.75, 0.8, 0.84), width=0.7)
-        return y + 26
+        identity=request.corporate_identity
+        start_y=52
+        if identity and identity.authority_instance_id:
+            color=tuple(int(identity.header_color[i:i+2],16)/255 for i in (1,3,5))
+            text=identity.foreground(identity.header_color)
+            foreground=tuple(int(text[i:i+2],16)/255 for i in (1,3,5))
+            page.draw_rect(fitz.Rect(48,26,547,98),color=color,fill=color)
+            if identity.logo:page.insert_image(fitz.Rect(55,32,101,78),stream=base64.b64decode(identity.logo),keep_proportion=True)
+            x=109 if identity.logo else 55
+            title=identity.title(request.organization_name)+'\n'+identity.unit
+            for size in (10,9,8,7):
+                if page.insert_textbox(fitz.Rect(x,32,538,82),title,fontsize=size,color=foreground)>=0:break
+            page.insert_text((55,92),'Gerado pelo SmartFile',fontsize=8,color=foreground)
+            start_y=126
+        else:
+            page.insert_text((48,start_y),'SMARTFILE',fontsize=17,color=(.05,.25,.14))
+            start_y+=30
+        page.insert_text((48,start_y),'COMPROVANTE DE ENVIO' if request.receipt_kind=='SENT' else 'COMPROVANTE DE RECEBIMENTO',fontsize=14)
+        values=[('Protocolo',request.protocol_number),('Organização de origem',request.organization_name),
+            ('Organização de destino',request.organization_name),('Remetente',request.sender_name),
+            ('Destinatário',request.recipient_name),('Usuário SmartFile',request.signer_username or request.recipient_name),
+            ('Instalação remetente',request.sender_instance_id or 'Não informada (legado)'),
+            ('Instalação destinatária',request.recipient_instance_id or 'Não informada (legado)'),
+            ('Enviado/preparado em' if request.receipt_kind=='SENT' else 'Recebido em',request.received_at),('Confirmado em',request.confirmed_at),
+            ('Status',request.status),('Identificador',request.receipt_uuid)]
+        if identity and identity.show_legal_details_on_receipts:
+            values.extend((label,value) for label,value in [('Razão social',identity.legal_name),('CNPJ',identity.cnpj),('Endereço',identity.address)] if value)
+        y=start_y+20
+        for label,value in values:
+            line=f'{label}: {value or "—"}'
+            # Technical fields use flexible height and are never covered by the branding.
+            for height in (22,36,54):
+                if page.insert_textbox(fitz.Rect(48,y,547,y+height),line,fontsize=8.5)>=0:
+                    y+=height;break
+            else:raise DeliveryIntegrityError('Campo do comprovante excede o espaço disponível.')
+        page.draw_line((48,y),(547,y),color=(.75,.8,.84),width=.7)
+        return y+24
 
     def _documents(
         self, document: fitz.Document, page: fitz.Page, y: float,
@@ -102,8 +125,14 @@ class DeliveryReceiptPdfService:
         return y
 
     @staticmethod
-    def _declaration(page: fitz.Page, y: float) -> float:
+    def _declaration(page: fitz.Page, y: float, request=None) -> float:
         y = min(max(y + 12, 430), 610)
+        if request is not None and request.receipt_kind=='SENT':
+            page.insert_text((48,y),'REGISTRO DO ENVIO',fontsize=11)
+            page.insert_textbox(fitz.Rect(48,y+18,547,y+65),
+                'Este comprovante registra o protocolo e o estado do envio no momento de sua geração. '
+                'Não constitui confirmação de recebimento pelo destinatário. Consulte o status e o comprovante de recebimento.',fontsize=9)
+            return y+82
         page.insert_text((48, y), "DECLARAÇÃO", fontsize=11)
         y += 20
         page.insert_textbox(
@@ -115,6 +144,9 @@ class DeliveryReceiptPdfService:
 
     @staticmethod
     def _signature(page: fitz.Page, y: float, request: DeliveryReceiptRequest) -> None:
+        if not request.signature_image:
+            page.insert_text((48,min(y,760)),'Comprovante gerado pelo SmartFile; não constitui assinatura visual.',fontsize=8)
+            return
         area = fitz.Rect(48, y, 265, min(y + 82, 744))
         page.insert_image(area, stream=request.signature_image, keep_proportion=True)
         label_y = min(area.y1 + 14, 770)

@@ -75,6 +75,7 @@ class AppController:
             DocumentService(database=self.database, session_context=self.session_context)
             if self.database else DocumentService(session_context=self.session_context)
         )
+        self.convert_controller.document_service = document_service
         self.capture_pdf_controller = CapturePdfController(
             self.workspace,
             document_service,
@@ -230,6 +231,7 @@ class AppController:
             settings.open_infrastructure_settings
         )
         view.audit_history_requested.connect(settings.open_security_history)
+        view.corporate_design_requested.connect(settings.open_corporate_design)
         view.document_requests_requested.connect(
             self.document_delivery_controller.activate
         )
@@ -289,6 +291,9 @@ class AppController:
         return answer == QMessageBox.StandardButton.Yes
 
     def shutdown(self) -> None:
+        settings=getattr(self,"organization_settings_controller",None)
+        if settings:
+            settings.shutdown()
         validation = getattr(self, "document_validation_controller", None)
         if validation:
             validation.close()

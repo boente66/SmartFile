@@ -12,6 +12,7 @@ class DocumentValidationResult:
     record: ValidationRecord | None = None
     signatures: tuple = ()
     message: str = ""
+    matching_records: tuple[ValidationRecord, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

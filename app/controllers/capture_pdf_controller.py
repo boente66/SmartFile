@@ -212,6 +212,7 @@ class CapturePdfController:
     def _replace_with_pdf(self, source: Path, pages) -> None:
         self._invalidate_geometry()
         CapturePdfService.close_pages(self.state.clear())
+        self.state.public_uuid=str(uuid4())
         self.state.add_pages(pages)
         self.state.source = "PDF"
         self.state.output_name = source.stem
@@ -302,6 +303,8 @@ class CapturePdfController:
             return
         target = Path(directory).expanduser().resolve()
         snapshot = self.state.snapshot()
+        output_name=self.state.output_name
+        source_type='SCANNER' if self.state.source=='SCANNER' else 'PDF_TOOLS'
 
         def task(progress, cancelled):
             outputs = []
@@ -315,9 +318,12 @@ class CapturePdfController:
                         f"Gerando página {index} de {len(snapshot)}",
                     )
                     output = safe_output_path(
-                        target / f"{self.state.output_name}_pagina_{index}.pdf"
+                        target / f"{output_name}_pagina_{index}.pdf"
                     )
-                    outputs.append(CapturePdfService.materialize([page], output))
+                    result=CapturePdfService.materialize([page], output)
+                    self.document_service.record_output(result,(page.source_path,) if page.source_path else (),
+                        action='PDF_SPLIT',public_uuid=page.id,source_type=source_type)
+                    outputs.append(result)
                 return outputs
             finally:
                 CapturePdfService.close_pages(snapshot)
@@ -335,6 +341,9 @@ class CapturePdfController:
     def _materialize_to(self, requested: Path, pages, title: str, *, reopen: bool) -> None:
         output = safe_output_path(requested.expanduser())
         snapshot = CapturePdfWorkspace(pages=list(pages)).snapshot()
+        document_uuid=self.state.public_uuid
+        source_type='SCANNER' if self.state.source=='SCANNER' else 'PDF_TOOLS'
+        source_paths=tuple(page.source_path for page in snapshot if page.source_path)
 
         def task(progress, cancelled):
             try:
@@ -342,6 +351,9 @@ class CapturePdfController:
                 if cancelled():
                     raise InterruptedError
                 result = CapturePdfService.materialize(snapshot, output)
+                self.document_service.record_output(result,source_paths,
+                    action='SCAN' if source_type=='SCANNER' else 'CREATE',
+                    public_uuid=document_uuid,source_type=source_type)
                 progress(100, "PDF gerado")
                 return result
             finally:
@@ -441,7 +453,7 @@ class CapturePdfController:
         if self._operation_worker is not None:
             QMessageBox.information(self.view, title, "Aguarde a operação atual.")
             return
-        worker = CapturePdfWorker(task)
+        worker = CapturePdfWorker(task, audit_actor=self.document_service.audit.capture(organization_id or self.document_service.active_organization_id))
         self._operation_worker = worker
         worker.progress.connect(lambda value, message: self._show_progress(value,message) if not self._closing and self._operation_worker is worker else None)
         worker.succeeded.connect(lambda result: succeeded(result) if not self._closing and self._operation_worker is worker

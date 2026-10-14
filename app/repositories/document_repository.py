@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import uuid4
+
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -23,17 +25,18 @@ class DocumentRepository(BaseRepository):
         super().__init__(db_path, database=database)
 
     def create(self, entity: DocumentEntity) -> DocumentEntity:
+        entity.public_uuid = entity.public_uuid or str(uuid4())
         cursor = self._write(
             """
             INSERT INTO documents (
-                organization_id, folder_id, name, original_name, path, source_path, storage_path, internal_name,
+                public_uuid, organization_id, folder_id, name, original_name, path, source_path, storage_path, internal_name,
                 managed, extension, file_type, size, checksum,
                 category, description, favorite, status, created_at, updated_at,
                 last_accessed_at, cloud_status, cloud_provider, remote_id,
                 remote_version, last_synced_at, source_type, tags, document_date, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            self._values(entity),
+            (entity.public_uuid, *self._values(entity)),
         )
         entity.id = cursor.lastrowid
         return entity
@@ -91,6 +94,10 @@ class DocumentRepository(BaseRepository):
             query += " AND organization_id = ?"
             params += (organization_id,)
         row = self._fetch_one(query, params)
+        return self._row_to_entity(row) if row else None
+
+    def find_by_public_uuid(self, public_uuid):
+        row = self._fetch_one('SELECT * FROM documents WHERE public_uuid=?', (public_uuid,))
         return self._row_to_entity(row) if row else None
 
     def find_by_scoped_path(self, path, organization_id):
@@ -391,6 +398,7 @@ class DocumentRepository(BaseRepository):
     @staticmethod
     def _row_to_entity(row) -> DocumentEntity:
         return DocumentEntity(
+            public_uuid=row["public_uuid"],
             id=row["id"], organization_id=int(row["organization_id"] or 0), folder_id=row["folder_id"],
             name=row["name"], original_name=row["original_name"],
             path=row["path"], source_path=row["source_path"],

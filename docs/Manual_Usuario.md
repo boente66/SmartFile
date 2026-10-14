@@ -1,6 +1,6 @@
 # SmartFile — Manual do Usuário
 
-**Versão do manual:** 1.8 — SmartFile 0.9.0-beta.9
+**Versão do manual:** 1.9 — SmartFile 0.9.0-beta.10
 
 **Atualizado em:** 13/10/2026
 
@@ -1159,14 +1159,14 @@ retorna à tela de login. Depois disso, a aplicação pode ser fechada normalmen
 Em sistemas amd64 com base Ubuntu 22.04 ou 24.04, incluindo versões compatíveis
 do Linux Mint e Zorin OS, instale o pacote
 baixado na página permanente da
-[Release 0.9.0 Beta 9](https://github.com/boente66/SmartFile/releases/tag/v0.9.0-beta.9).
+[Release 0.9.0 Beta 10](https://github.com/boente66/SmartFile/releases/tag/v0.9.0-beta.10).
 O usuário também pode abrir o `.deb` pelo gerenciador de arquivos e selecionar
 **Instalar**. Pelo terminal:
 
 ```bash
 cd ~/Downloads
-sha256sum -c smartfile_0.9.0.beta9_amd64.deb.sha256
-sudo apt install ./smartfile_0.9.0.beta9_amd64.deb
+sha256sum -c smartfile_0.9.0.beta10_amd64.deb.sha256
+sudo apt install ./smartfile_0.9.0.beta10_amd64.deb
 ```
 
 O SmartFile pode ser aberto pelo menu de aplicativos ou pelo comando
@@ -1301,20 +1301,20 @@ endereços locais para tentar tornar um QR acessível a terceiros.
 
 ## 22. Atualização, Windows e documentação oficial
 
-Baixe os pacotes e checksums na [release beta.9](https://github.com/boente66/SmartFile/releases/tag/v0.9.0-beta.9).
+Baixe os pacotes e checksums na [release beta.10](https://github.com/boente66/SmartFile/releases/tag/v0.9.0-beta.10).
 No Windows x64, escolha **Setup** para instalação ou **Portable** para extração
 em uma pasta e execução de SmartFile.exe. Confira o SHA-256, por exemplo com
 `Get-FileHash` no PowerShell, comparando com o arquivo .sha256 correspondente.
 Não execute o Portable diretamente dentro do ZIP.
 
-A beta.7 utiliza schema 23 e migra o schema 22. Faça backup antes de atualizar;
+A beta.10 utiliza schema 24 e migra os bancos anteriores, incluindo schema 23. Faça backup antes de atualizar;
 uma versão antiga não abre o banco já migrado. O backup ZIP inclui documentos,
 comprovantes e originais canônicos, mas não credenciais externas. Não apague
 os dados locais para corrigir uma autorização de nuvem expirada: reconecte a
 conta do provedor e confira a fila de sincronização.
 
 Consulte o [índice oficial](README.md), a [documentação técnica](Documentacao_Tecnica.md)
-e as [notas da versão](RELEASE_NOTES_0.9.0-beta.9.md). Este manual descreve a beta.9;
+e as [notas da versão](RELEASE_NOTES_0.9.0-beta.10.md). Este manual descreve a beta.10;
 nomes e disponibilidade de ações dependem do perfil, permissões e seleção atual.
 
 As capturas da beta.7 foram fornecidas pelo usuário e ilustram uma sessão de
@@ -1335,3 +1335,69 @@ identificado como manual; não aumenta a confiança da detecção automática.
 Downloads de entregas verificam tamanho e SHA-256. Uma falha não remove um arquivo
 recebido e verificado anteriormente. Assinaturas de documentos do GED sugerem um
 destino externo ao armazenamento interno.
+
+## Rastreabilidade empresarial — beta.10
+
+Em Documentos, selecione um documento e abra **Mais → Documento → Histórico/Auditoria**
+(ou o menu contextual). O histórico informa usuário SmartFile, ação, organização,
+instalação, origem, horário UTC e evidências. Renomear, mover e editar metadados não
+significa modificar os bytes. Quando o conteúdo mudar, são registrados os hashes
+anterior e novo. O menu contextual também oferece **Exportar cópia**, com verificação de hash e
+registro de auditoria. Uma alteração externa observada tem autor externo desconhecido;
+o usuário que abriu o arquivo é identificado como observador.
+
+Na organização BUSINESS, OWNER/ADMIN podem consultar a auditoria administrativa
+com filtros de usuário, documento, ação, período e instalação, e exportar CSV/PDF.
+O histórico consolidado é somente para leitura e permanece após exclusão permanente.
+A identidade da conta OneDrive não substitui o login individual no SmartFile.
+
+## Modo Design Corporativo
+
+Na organização BUSINESS, abra **Mais → Recursos empresariais → Modo Design Corporativo** com um login
+OWNER/ADMIN. Configure nome institucional, setor/unidade, logo, imagem opcional e
+cores. Use **Atualizar prévia** antes de **Salvar**. O SmartFile escolhe texto claro
+ou escuro para manter contraste; não aceita estilos ou scripts fornecidos pela empresa.
+**Restaurar padrão SmartFile** restaura a apresentação visual e preserva o cadastro
+institucional. A identificação do produto SmartFile continua visível.
+
+Razão social, CNPJ numérico ou alfanumérico, endereço e canal/aviso de privacidade
+são dados declarados pela organização. Validar os dígitos do CNPJ não verifica sua
+titularidade. A inclusão de dados cadastrais nos comprovantes é opcional; protocolo,
+usuários, instalações, status, horários e hashes continuam obrigatórios.
+
+Para compartilhar a configuração entre instalações da mesma organização, autorize
+os dispositivos pelo fluxo LAN existente e selecione a instalação administrativa em
+**Fonte compartilhada**. Confirme que é a mesma organização. As demais instalações
+recebem sua identidade institucional e ficam com a edição visual local desabilitada.
+Sem conexão, permanece a última configuração válida. Contas OneDrive compartilhadas
+não configuram essa associação automaticamente. O histórico é mantido por instalação;
+essa sincronização de identidade visual não consolida automaticamente todos os logs.
+
+## Validação, comprovantes e armazenamento
+
+Quando houver vários registros QR com o mesmo SHA-256, a consulta mostra todos os
+registros correspondentes; escolha o código específico para examinar seu status.
+Uma revogação mantém imutáveis seu horário, responsável e motivo.
+
+O comprovante de envio identifica o envio e seu status, sem declarar recebimento
+antes da confirmação. Comprovantes corporativos preservam as evidências técnicas e
+não alteram os documentos entregues.
+
+A informação de armazenamento separa GED, artefatos históricos de validação,
+comprovantes e área de recebimento. O total físico informado abrange os diretórios
+gerenciados, inclusive arquivos órfãos, e não muda as regras de quota do GED.
+
+Scanner físico: homologado para captura e geração correta de PDF.
+Reconhecimento automático universal do tamanho da folha: funcionalidade
+experimental/assistiva, ainda não homologada para todos os formatos.
+
+Consulte também [Privacidade empresarial](PRIVACIDADE_EMPRESARIAL.md) e o
+[relatório da auditoria](AUDITORIA_EMPRESARIAL_0.9.0-beta.10.md).
+
+### Telas empresariais da beta.10
+
+Capturas da interface real com dados demonstrativos.
+
+![Modo Design Corporativo — prévia antes de salvar](../assets/screenshots/smartfile-beta10-modo-design.png)
+
+![Auditoria empresarial — filtros e identificação por usuário e instalação](../assets/screenshots/smartfile-beta10-auditoria.png)

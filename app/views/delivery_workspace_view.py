@@ -169,7 +169,7 @@ class DeliveryWorkspaceView(QWidget):
             if key in {"received","sent"}:self.flow.select(3)
             self.tabs.setCurrentWidget(widget.parentWidget())
     def _sent_selected(self,item,*_):
-        self.sent_receipt.setEnabled(bool(item and item.data(Qt.ItemDataRole.UserRole+2)))
+        self.sent_receipt.setEnabled(bool(item))
     def _inbox_selected(self,item,*_):
         status=str(item.data(Qt.ItemDataRole.UserRole+1)) if item else "";has_receipt=bool(item and item.data(Qt.ItemDataRole.UserRole+2))
         self.confirm_receipt.setEnabled(bool(item and self._can_acknowledge and status in {"DELIVERED","VIEWED"} and not has_receipt));self.inbox_receipt.setEnabled(has_receipt)

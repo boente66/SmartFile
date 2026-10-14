@@ -4,6 +4,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app.ui.icon_provider import IconProvider
+from app.views.widgets.corporate_header import CorporateHeader
 
 
 class LoginView(QWidget):
@@ -19,6 +20,7 @@ class LoginView(QWidget):
 
     def _brand_panel(self):
         panel=QWidget(); panel.setObjectName("authBrandPanel"); layout=QVBoxLayout(panel); layout.setContentsMargins(55,70,55,55)
+        self.corporate_header=CorporateHeader(show_image=True);layout.addWidget(self.corporate_header)
         logo=QLabel("☁  SmartFile"); logo.setObjectName("authBrandLogo"); layout.addWidget(logo)
         subtitle=QLabel("Seu gerenciamento de documentos\ninteligente e seguro."); subtitle.setObjectName("authBrandSubtitle"); subtitle.setWordWrap(True); layout.addWidget(subtitle)
         layout.addStretch();

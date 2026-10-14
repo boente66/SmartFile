@@ -34,7 +34,7 @@ class DocumentRequestService:
         self.users = UserRepository(database=database)
         self.organizations = OrganizationService(database)
         self.features = OrganizationFeatureService(database)
-        self.audit = AuditService(database)
+        self.audit = AuditService(database, context)
         self.history = DeliveryHistoryRepository(database=database)
 
     def list_requests(self, organization_id: int) -> list[DocumentRequestEntity]:

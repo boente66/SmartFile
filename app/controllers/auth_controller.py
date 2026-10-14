@@ -28,6 +28,9 @@ class AuthController:
 
     def _show_login(self):
         view=LoginView(self.allow_local_registration); view.login_requested.connect(self._login)
+        from app.services.organization_identity_service import OrganizationIdentityService
+        identity=OrganizationIdentityService(self.database).get(self.service.organizations.active_id)
+        view.corporate_header.apply_identity(identity)
         view.recovery_requested.connect(self._recover_password)
         if self.allow_local_registration:
             view.create_account_requested.connect(self._show_registration)

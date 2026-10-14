@@ -44,7 +44,7 @@ class SessionContext:
         self.memberships.clear(); self.permissions.clear(); self.login_at = None; self.last_activity_at = None
 
     def set_active_organization(self, organization: OrganizationEntity) -> None:
-        if not any(m.organization_id == organization.id and m.status == "ACTIVE" for m in self.memberships):
+        if not any(m.organization_id == organization.id and m.user_id == getattr(self.current_user, "id", None) and m.status == "ACTIVE" for m in self.memberships):
             raise AuthenticationError("Usuário não pertence a esta organização.")
         self.active_organization = organization; self._refresh_permissions()
 
@@ -62,7 +62,7 @@ class SessionContext:
         if not self.is_authenticated():
             raise AuthenticationError("Entre no SmartFile para continuar.")
         membership = next((item for item in self.memberships
-                           if item.organization_id == organization_id and item.status == "ACTIVE"), None)
+                           if item.organization_id == organization_id and item.user_id == getattr(self.current_user, "id", None) and item.status == "ACTIVE"), None)
         if membership is None:
             raise AuthenticationError("Usuário não pertence a esta organização.")
         permissions = ROLE_PERMISSIONS.get(membership.role, set())
@@ -71,7 +71,7 @@ class SessionContext:
             raise AuthenticationError("Permissão insuficiente para esta operação.")
 
     def _refresh_permissions(self) -> None:
-        membership = next((m for m in self.memberships if m.organization_id == getattr(self.active_organization, "id", None)), None)
+        membership = next((m for m in self.memberships if m.organization_id == getattr(self.active_organization, "id", None) and m.user_id == getattr(self.current_user, "id", None) and m.status == "ACTIVE"), None)
         self.permissions = set(ROLE_PERMISSIONS.get(membership.role, set())) if membership else set()
         if getattr(self.current_user, "is_superuser", False):
             self.permissions.add("*")

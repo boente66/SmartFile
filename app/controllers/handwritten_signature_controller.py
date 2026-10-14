@@ -79,8 +79,8 @@ class HandwrittenSignatureController:
         worker = HandwrittenSignatureWorker(self.service, request)
         self._worker = worker
         worker.progress.connect(lambda value, message: self.main_view.progress.update(value, message))
-        worker.succeeded.connect(self._on_succeeded)
-        worker.failed.connect(self._on_failed)
+        worker.succeeded.connect(lambda result:self._on_succeeded(result) if self._signature_scope_current(worker.audit_actor) else self.main_view.progress.finish("PDF salvo na organização de origem"))
+        worker.failed.connect(lambda message:self._on_failed(message) if self._signature_scope_current(worker.audit_actor) else None)
         worker.finished.connect(lambda worker=worker: self._cleanup(worker))
         worker.finished.connect(worker.deleteLater)
         self.main_view.progress.start("Aplicando assinatura manuscrita")
@@ -100,6 +100,12 @@ class HandwrittenSignatureController:
         image = self.viewer_controller.service.render_page(request)
         size = self.service.page_size(path, page_number)
         return QPixmap.fromImage(image), size
+
+    def _signature_scope_current(self,actor):
+        context=getattr(self.document_service,'session_context',None)
+        if context is None:return True
+        return bool(actor and context.is_authenticated() and actor.username==getattr(context.current_user,'username',None)
+            and actor.organization_id==getattr(context.active_organization,'id',None))
 
     def _on_succeeded(self, result) -> None:
         self.main_view.progress.finish("PDF com assinatura manuscrita salvo")

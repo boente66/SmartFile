@@ -4,13 +4,14 @@ from datetime import datetime, timezone
 
 from app.cloud.cloud_models import CloudJobStatus, CloudOperation, SyncJob
 from app.database.database import Database
+from app.services.audit_service import AuditService
 
 
 class CloudJobQueue:
     def __init__(self, database: Database):
         self.database = database
 
-    def enqueue(self, document_id: int, operation: str, provider: str) -> SyncJob:
+    def enqueue(self, document_id: int, operation: str, provider: str, *, actor=None) -> SyncJob:
         existing = self.database.fetch_one(
             """
             SELECT * FROM sync_jobs WHERE document_id = ? AND operation = ?
@@ -24,10 +25,10 @@ class CloudJobQueue:
         cursor = self.database.execute_query(
             """
             INSERT INTO sync_jobs (
-                document_id, operation, provider, status, attempts, created_at, updated_at
-            ) VALUES (?, ?, ?, 'PENDING', 0, ?, ?)
+                document_id, operation, provider, status, attempts, created_at, updated_at, actor_json
+            ) VALUES (?, ?, ?, 'PENDING', 0, ?, ?, ?)
             """,
-            (document_id, operation, provider, now, now),
+            (document_id, operation, provider, now, now, AuditService.serialize_actor(actor)),
         )
         return self.get(cursor.lastrowid)
 

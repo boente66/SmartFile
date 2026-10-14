@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.9.0-beta.10 — 2026-10-13
+
+- Auditoria empresarial por usuário, organização e instalação, com histórico
+  contextual, filtros administrativos e hashes anterior/novo de conteúdo.
+- Identidade corporativa BUSINESS controlada, prévia, cadastro institucional,
+  comprovantes e configuração compartilhada pela LAN existente.
+- Schema 24: UUID públicos, snapshots de atores, histórico consolidado protegido,
+  QR por hash plural e revogação/FKs imutáveis.
+- Corrigidas permissões por usuário em memberships e isolamento de workers.
+- Documentação oficial e instaladores atualizados em conjunto.
+
+
 ## [0.9.0-beta.9] - 2026-10-13
 
 - Permissões verificadas nos serviços e na organização de destino.

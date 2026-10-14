@@ -94,7 +94,7 @@ class ConvertController:
                 )
                 return
             job = self._build_job(data)
-            worker = ConvertWorker(job)
+            worker = ConvertWorker(job, document_service=getattr(self,"document_service",None))
             self._worker = worker
             self.view.set_busy(True, self._display_name or str(job.input_path))
             self.main_view.progress.start("Convertendo")

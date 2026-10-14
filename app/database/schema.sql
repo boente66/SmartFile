@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS organizations (
     name TEXT NOT NULL,
     description TEXT,
     slug TEXT NOT NULL UNIQUE,
+    public_uuid TEXT UNIQUE DEFAULT (lower(hex(randomblob(16)))),
     icon TEXT,
     color TEXT,
     created_at TEXT NOT NULL,
@@ -120,6 +121,18 @@ CREATE TABLE IF NOT EXISTS audit_log (
     target_id INTEGER,
     description TEXT,
     created_at TEXT NOT NULL,
+    event_uuid TEXT UNIQUE,
+    actor_username TEXT,
+    actor_name TEXT,
+    organization_name TEXT,
+    organization_uuid TEXT,
+    instance_id TEXT,
+    document_uuid TEXT,
+    document_name TEXT,
+    source_type TEXT,
+    sha256_before TEXT,
+    sha256_after TEXT,
+    details_json TEXT,
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (organization_id) REFERENCES organizations(id)
 );
@@ -240,6 +253,7 @@ CREATE TABLE IF NOT EXISTS document_request_documents (
 );
 
 CREATE TABLE IF NOT EXISTS document_deliveries (
+    audit_actor_json TEXT,
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     delivery_uuid TEXT NOT NULL UNIQUE,
     protocol_number TEXT NOT NULL UNIQUE,
@@ -273,6 +287,7 @@ CREATE TABLE IF NOT EXISTS document_deliveries (
 );
 
 CREATE TABLE IF NOT EXISTS document_delivery_items (
+    source_document_uuid TEXT,
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     item_uuid TEXT NOT NULL UNIQUE,
     delivery_id INTEGER NOT NULL,
@@ -378,7 +393,7 @@ SELECT 'active_organization_id', CAST(id AS TEXT)
 FROM organizations WHERE is_default = 1 ORDER BY id LIMIT 1;
 
 CREATE TABLE IF NOT EXISTS documents (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    public_uuid TEXT UNIQUE DEFAULT (lower(hex(randomblob(16)))),    id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     original_name TEXT NOT NULL,
     path TEXT NOT NULL UNIQUE,
@@ -460,7 +475,7 @@ SELECT o.id, p.id, p.quota_bytes, 0, 0, datetime('now'), datetime('now')
 FROM organizations o JOIN storage_plans p ON p.code='PERSONAL_10GB';
 
 CREATE TABLE IF NOT EXISTS sync_jobs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    actor_json TEXT,    id INTEGER PRIMARY KEY AUTOINCREMENT,
     document_id INTEGER NOT NULL,
     operation TEXT NOT NULL,
     provider TEXT NOT NULL,
@@ -749,3 +764,26 @@ BEGIN SELECT RAISE(ABORT,'Invalid validation status transition'); END;
 CREATE TRIGGER IF NOT EXISTS validation_retain_record
 BEFORE DELETE ON validation_records
 BEGIN SELECT RAISE(ABORT,'Validation history cannot be deleted'); END;
+
+
+-- Consolidated audit events retain snapshots independently from live documents.
+CREATE INDEX IF NOT EXISTS idx_audit_document ON audit_log(organization_id, document_uuid, created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_instance ON audit_log(organization_id, instance_id, created_at);
+CREATE TRIGGER IF NOT EXISTS audit_log_no_update BEFORE UPDATE ON audit_log
+BEGIN SELECT RAISE(ABORT,'Consolidated audit events are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS audit_log_no_delete BEFORE DELETE ON audit_log
+BEGIN SELECT RAISE(ABORT,'Consolidated audit events cannot be deleted'); END;
+CREATE TRIGGER IF NOT EXISTS document_uuid_immutable BEFORE UPDATE OF public_uuid ON documents
+WHEN NEW.public_uuid IS NOT OLD.public_uuid
+BEGIN SELECT RAISE(ABORT,'Document identity is immutable'); END;
+CREATE TRIGGER IF NOT EXISTS validation_links_immutable BEFORE UPDATE ON validation_records
+WHEN OLD.status IN ('ACTIVE','REVOKED') AND (
+ (NEW.document_id IS NOT OLD.document_id AND NOT (NEW.document_id IS NULL AND OLD.document_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM documents WHERE id=OLD.document_id))) OR
+ (NEW.delivery_id IS NOT OLD.delivery_id AND NOT (NEW.delivery_id IS NULL AND OLD.delivery_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM document_deliveries WHERE id=OLD.delivery_id))) OR
+ (NEW.receipt_id IS NOT OLD.receipt_id AND NOT (NEW.receipt_id IS NULL AND OLD.receipt_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM delivery_acknowledgement_receipts WHERE id=OLD.receipt_id))) OR
+ (NEW.created_by_user_id IS NOT OLD.created_by_user_id AND NOT (NEW.created_by_user_id IS NULL AND OLD.created_by_user_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM users WHERE id=OLD.created_by_user_id))))
+BEGIN SELECT RAISE(ABORT,'Historical validation links cannot be reassigned'); END;
+CREATE TRIGGER IF NOT EXISTS validation_revocation_immutable BEFORE UPDATE ON validation_records
+WHEN OLD.status='REVOKED' AND (NEW.revoked_at IS NOT OLD.revoked_at OR
+ NEW.revoked_by_user_id IS NOT OLD.revoked_by_user_id OR NEW.revocation_reason IS NOT OLD.revocation_reason)
+BEGIN SELECT RAISE(ABORT,'Revocation evidence is immutable'); END;

@@ -1,6 +1,7 @@
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QHBoxLayout,
+    QVBoxLayout,
     QMainWindow,
     QMessageBox,
     QStatusBar,
@@ -14,6 +15,7 @@ from app.ui.progress_manager import ProgressManager
 from app.ui.icon_provider import IconProvider
 from app.ui.toast_notification import ToastNotification
 from app.version import __version__
+from app.views.widgets.corporate_header import CorporateHeader
 
 
 class MainView(QMainWindow):
@@ -48,7 +50,13 @@ class MainView(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
 
-        layout = QHBoxLayout(central)
+        outer = QVBoxLayout(central)
+        outer.setContentsMargins(0,0,0,0)
+        self.corporate_header = CorporateHeader()
+        outer.addWidget(self.corporate_header)
+        content = QWidget()
+        outer.addWidget(content,1)
+        layout = QHBoxLayout(content)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 

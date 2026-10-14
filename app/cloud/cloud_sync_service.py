@@ -28,14 +28,16 @@ from app.repositories.document_repository import DocumentRepository
 from app.repositories.folder_repository import FolderRepository
 from app.repositories.organization_repository import OrganizationRepository
 from app.services.storage_quota_service import StorageQuotaService
+from app.services.audit_service import AuditService
 
 logger = logging.getLogger(__name__)
 ProgressCallback = Callable[[int, str], None]
 
 
 class CloudSyncService:
-    def __init__(self, database: Database, manager: CloudManager | None = None):
+    def __init__(self, database: Database, manager: CloudManager | None = None, context=None):
         self.database = database
+        self.audit = AuditService(database, context)
         self.manager = manager or CloudManager(database)
         self.queue = CloudJobQueue(database)
         self.documents = DocumentRepository(database=database)
@@ -53,7 +55,7 @@ class CloudSyncService:
             self.documents.update_cloud_state(document_id, CloudSyncState.LOCAL_ONLY)
             return None
         self.documents.update_cloud_state(document_id, CloudSyncState.PENDING_UPLOAD, settings.sync_mode)
-        return self.queue.enqueue(document_id, CloudOperation.UPLOAD, settings.sync_mode)
+        return self.queue.enqueue(document_id, CloudOperation.UPLOAD, settings.sync_mode, actor=self.audit.capture(organization_id))
 
     def enqueue_move(self, document_id: int, organization_id: int) -> SyncJob | None:
         settings = self.manager.settings(organization_id)
@@ -64,7 +66,7 @@ class CloudSyncService:
             return None
         if not document.remote_id:
             return self.enqueue_upload(document_id, organization_id)
-        return self.queue.enqueue(document_id, CloudOperation.MOVE, settings.sync_mode)
+        return self.queue.enqueue(document_id, CloudOperation.MOVE, settings.sync_mode, actor=self.audit.capture(organization_id))
 
     def enqueue_rename(self, document_id: int, organization_id: int) -> SyncJob | None:
         settings = self.manager.settings(organization_id)
@@ -75,7 +77,7 @@ class CloudSyncService:
             return None
         if not document.remote_id:
             return self.enqueue_upload(document_id, organization_id)
-        return self.queue.enqueue(document_id, CloudOperation.RENAME, settings.sync_mode)
+        return self.queue.enqueue(document_id, CloudOperation.RENAME, settings.sync_mode, actor=self.audit.capture(organization_id))
 
     def process_next(self, organization_id: int) -> SyncJob | None:
         job = self.queue.next_pending(organization_id)
@@ -127,7 +129,7 @@ class CloudSyncService:
                     metadata.version, self._now(),
                 )
             elif job.operation == CloudOperation.DOWNLOAD:
-                self._download(provider, document)
+                self._download(provider, document, actor=self._job_actor(job.id, organization_id))
             elif job.operation == CloudOperation.MOVE:
                 if not document.remote_id:
                     raise ValueError("Documento remoto ausente para movimentação.")
@@ -156,6 +158,10 @@ class CloudSyncService:
                 raise ValueError(
                     f"Operação de sincronização não suportada: {job.operation}."
                 )
+            self.audit.record('CLOUD_' + str(job.operation), organization_id=organization_id,
+                actor=self._job_actor(job.id, organization_id), target_type='document',
+                target_id=document.id, document=document, details={'provider': str(job.provider)},
+                sha256_after=document.checksum if document.checksum else None)
             self.queue.complete(job.id)
             logger.info(
                 "cloud.sync.job.done job_id=%s document_id=%s operation=%s",
@@ -220,6 +226,7 @@ class CloudSyncService:
         organization_id: int,
         progress: ProgressCallback | None = None,
     ) -> int:
+        self.audit.record('CLOUD_SYNC_STARTED',organization_id=organization_id,target_type='organization',target_id=organization_id)
         logger.info("cloud.sync.delta.start organization_id=%s", organization_id)
         provider = self.manager.provider_for(organization_id)
         if provider is None:
@@ -249,6 +256,7 @@ class CloudSyncService:
             "cloud.sync.delta.done organization_id=%s changes=%s cursor_updated=%s",
             organization_id, len(changes), cursor != settings.delta_token,
         )
+        self.audit.record("CLOUD_SYNC_COMPLETED",organization_id=organization_id,target_type="organization",target_id=organization_id,details={"changes":len(changes)})
         return len(changes)
 
     def mark_pending_documents_failed(
@@ -520,10 +528,19 @@ class CloudSyncService:
         if callback is not None:
             callback(value, message)
 
-    def _download(self, provider, document) -> None:
+    def _job_actor(self, job_id, organization_id):
+        row = self.database.fetch_one('SELECT actor_json FROM sync_jobs WHERE id=?', (job_id,))
+        actor = self.audit.deserialize_actor(row[0]) if row and row[0] else self.audit.capture(organization_id, user_id=None)
+        if actor.organization_id != organization_id:
+            raise PermissionError('O ator do job pertence a outra organização.')
+        return actor
+
+    def _download(self, provider, document, *, actor=None) -> None:
         if not document.remote_id:
             raise ValueError("Documento sem identificador remoto.")
+        actor = actor or self.audit.capture(document.organization_id)
         destination = Path(document.storage_path or document.path).resolve()
+        previous_hash = self._checksum(destination) if destination.is_file() else None
         temporary = destination.with_name(f".{destination.name}.{uuid4().hex}.cloud.tmp")
         backup = destination.with_name(f".{destination.name}.{uuid4().hex}.cloud.bak")
         operation_id = None
@@ -544,6 +561,12 @@ class CloudSyncService:
                     document.cloud_status = CloudSyncState.SYNCED
                     document.last_synced_at = self._now()
                     self.documents.update(document)
+                    if previous_hash != document.checksum:
+                        self.audit.record('CONTENT_CHANGED', organization_id=document.organization_id,
+                            actor=actor, target_type='document', target_id=document.id, document=document,
+                            sha256_before=previous_hash or None, sha256_after=document.checksum,
+                            details={'origin': 'CLOUD_DOWNLOAD', 'remote_editor': 'UNKNOWN'},
+                            description='Bytes recebidos da nuvem; editor externo não identificado pelo SmartFile')
                     if operation_id:
                         self.quota.commit_reservation(operation_id)
                     elif delta < 0:

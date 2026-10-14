@@ -36,9 +36,16 @@ class BackupService:
     def __init__(self, database, session_context):
         self.database = database
         self.context = session_context
-        self.audit = AuditService(database)
+        self.audit = AuditService(database, session_context)
 
-    def create_full_backup(
+    def create_full_backup(self,destination,progress=None):
+        actor=self.audit.current_actor() or self.audit.capture()
+        if self.context and actor.username not in {'SYSTEM',getattr(self.context.current_user,'username',None)}:
+            raise BackupPermissionError('A sessão que iniciou o backup não está mais ativa.')
+        with self.audit.bind(actor):
+            return self._create_full_backup(destination,progress)
+
+    def _create_full_backup(
         self,
         destination: Path | str,
         progress: ProgressCallback | None = None,
@@ -52,6 +59,7 @@ class BackupService:
             "BACKUP_STARTED",
             user_id=user_id,
             target_type="system_backup",
+            details={"scope":"FULL_INSTALLATION"},
             description=f"Backup administrativo iniciado: {output.name}",
         )
         self._progress(progress, 5, "Preparando snapshot do banco")
@@ -67,6 +75,7 @@ class BackupService:
                 sources.extend(self._tree_files(self.database.data_dir / "avatars", "avatars"))
                 sources.extend(self._tree_files(self.database.data_dir / "validation_artifacts", "validation_artifacts"))
                 sources.extend(self._tree_files(self.database.data_dir / "delivery_receipts", "delivery_receipts"))
+                sources.extend(self._tree_files(self.database.data_dir / "delivery_inbox", "delivery_inbox"))
                 manifest_files = self._write_zip(
                     temporary_output, sources, created_at, progress
                 )

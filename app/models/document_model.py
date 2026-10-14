@@ -8,6 +8,7 @@ from app.entities.document_entity import DocumentEntity
 
 @dataclass
 class DocumentModel:
+    public_uuid: str | None = None
     id: Optional[int] = None
     organization_id: int = 1
     folder_id: Optional[int] = None
@@ -42,6 +43,7 @@ class DocumentModel:
     @classmethod
     def from_entity(cls, entity: DocumentEntity) -> "DocumentModel":
         return cls(
+            public_uuid=entity.public_uuid,
             id=entity.id,
             organization_id=entity.organization_id,
             folder_id=entity.folder_id,
@@ -76,6 +78,7 @@ class DocumentModel:
 
     def to_entity(self) -> DocumentEntity:
         return DocumentEntity(
+            public_uuid=self.public_uuid,
             id=self.id,
             organization_id=self.organization_id,
             folder_id=self.folder_id,

@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 @dataclass(slots=True)
 class DocumentDeliveryEntity:
+    audit_actor_json: str | None = None
     id: int | None = None
     delivery_uuid: str = ""
     protocol_number: str = ""
@@ -33,6 +34,7 @@ class DocumentDeliveryEntity:
 
 @dataclass(slots=True)
 class DocumentDeliveryItemEntity:
+    source_document_uuid: str | None = None
     id: int | None = None
     item_uuid: str = ""
     delivery_id: int = 0

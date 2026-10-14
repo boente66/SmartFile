@@ -12,3 +12,11 @@ Nomes e valores de sessão são exemplos, não configuração padrão.
 - [Solicitações — filtro Finalizadas sem itens](smartfile-beta7-solicitacoes-finalizadas.png)
 - [Dispositivos SmartFile — descoberta e instalações autorizadas](smartfile-beta7-dispositivos-lan.png)
 - [Importação — seleção de arquivos e pasta lógica de destino](smartfile-beta7-importar-documentos.png)
+
+## Telas empresariais beta.10
+
+Capturas da interface real geradas com dados demonstrativos para a documentação.
+Não representam uma organização ou instalação real.
+
+- [Modo Design Corporativo — prévia e cadastro institucional](smartfile-beta10-modo-design.png)
+- [Auditoria — filtros, usuários e instalações](smartfile-beta10-auditoria.png)

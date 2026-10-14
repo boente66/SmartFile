@@ -6,7 +6,7 @@ on:
       version:
         description: Versão pública dos artefatos
         required: true
-        default: 0.9.0-beta.9
+        default: 0.9.0-beta.10
         type: string
       generate_setup:
         description: Gerar instalador Inno Setup
@@ -37,7 +37,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 60
     env:
-      SMARTFILE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '0.9.0-beta.9' }}
+      SMARTFILE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '0.9.0-beta.10' }}
       QT_QPA_PLATFORM: offscreen
       PYTHONUTF8: '1'
 
@@ -116,7 +116,7 @@ jobs:
         shell: pwsh
         run: |
           python scripts/audit_windows_bundle.py dist/SmartFile
-          foreach ($file in @("Manual_Usuario.pdf", "Documentacao_Tecnica.pdf", "RELEASE_NOTES_0.9.0-beta.9.md")) {
+          foreach ($file in @("Manual_Usuario.pdf", "Documentacao_Tecnica.pdf", "RELEASE_NOTES_0.9.0-beta.10.md")) {
             if (-not (Test-Path "dist/SmartFile/_internal/docs/$file")) {
               throw "Documentação obrigatória ausente no bundle: $file"
             }
@@ -193,7 +193,7 @@ jobs:
           path: |
             release/windows/*
             CHANGELOG.md
-            docs/RELEASE_NOTES_0.9.0-beta.9.md
+            docs/RELEASE_NOTES_0.9.0-beta.10.md
             docs/GUIA_TESTE_WINDOWS_BETA.md
           if-no-files-found: error
           retention-days: 30

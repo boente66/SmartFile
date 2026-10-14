@@ -1,4 +1,5 @@
 from PyQt6.QtCore import QThread, pyqtSignal
+from app.services.audit_service import AuditService
 
 
 class DeliveryReceiptWorker(QThread):
@@ -13,8 +14,14 @@ class DeliveryReceiptWorker(QThread):
         self.user_id = user_id
         self.signature_image = signature_image
         self.method = method
+        delivery = service.deliveries.find_by_id(delivery_id)
+        self.audit_actor = service.audit.capture(delivery.organization_id, user_id=user_id) if delivery else None
 
     def run(self):
+        with AuditService.bind(self.audit_actor):
+            self._run_operation()
+
+    def _run_operation(self):
         try:
             self.progress.emit(15, "Validando assinatura visual")
             receipt = self.service.create_acknowledgement_receipt(

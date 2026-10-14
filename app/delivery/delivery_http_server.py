@@ -31,6 +31,15 @@ class DeliveryHttpServer:
                 except Exception:
                     logger.exception("delivery.http.server.failed"); self._json(500, {"error":"Falha interna ao processar entrega."})
             def do_GET(self):
+                if urlparse(self.path).path == '/api/v1/organization/identity':
+                    try:
+                        from app.services.organization_identity_service import OrganizationIdentityService
+                        identity=OrganizationIdentityService(service.database,service.context)
+                        self._json(200,identity.package_for_peer(self.headers.get('X-SmartFile-Instance','')))
+                    except (PermissionError,ValueError):self._json(403,{'error':'Identidade institucional indisponível para esta instalação.'})
+                    except Exception:
+                        logger.exception('corporate.identity.http.failed');self._json(500,{'error':'Falha ao consultar identidade institucional.'})
+                    return
                 if urlparse(self.path).path == "/api/v1/identity":
                     try:
                         self._json(200, service.identity_payload())

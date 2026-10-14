@@ -145,5 +145,5 @@ def test_schema_21_upgrades_without_reapplying_cloud_migration(tmp_path):
     path=tmp_path/"upgrade.db";database=Database(str(path))
     database.execute_query("PRAGMA user_version=21");database.close()
     migrated=Database(str(path))
-    assert migrated.fetch_one("PRAGMA user_version")[0]==23
+    assert migrated.fetch_one("PRAGMA user_version")[0]==24
     assert migrated.fetch_one("SELECT 1 FROM sqlite_master WHERE name='remote_mounts'")

@@ -23,5 +23,11 @@ class DeliveryReceiptRequest:
     signature_image: bytes
     signature_method: str
 
+    corporate_identity: object | None = None
+    sender_instance_id: str = ''
+    recipient_instance_id: str = ''
+    signer_username: str = ''
+    status: str = 'ACKNOWLEDGED'
+    receipt_kind: str = 'RECEIVED'
     qr_payload: str | None = None
     qr_human_code: str | None = None

@@ -1,19 +1,22 @@
 from __future__ import annotations
 
+from uuid import uuid4
+
 from app.entities.organization_entity import OrganizationEntity
 from app.repositories.base_repository import BaseRepository
 
 
 class OrganizationRepository(BaseRepository):
     def create(self, entity: OrganizationEntity) -> OrganizationEntity:
+        entity.public_uuid = entity.public_uuid or str(uuid4())
         cursor = self._write(
             """
             INSERT INTO organizations (
-                name, description, slug, icon, color, created_at, updated_at, archived_at,
+                public_uuid, name, description, slug, icon, color, created_at, updated_at, archived_at,
                 template_code, profile_code, storage_plan_code, is_default, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            self._values(entity),
+            (entity.public_uuid, *self._values(entity)),
         )
         entity.id = cursor.lastrowid
         return entity
@@ -139,6 +142,7 @@ class OrganizationRepository(BaseRepository):
     @staticmethod
     def _entity(row) -> OrganizationEntity:
         return OrganizationEntity(
+            public_uuid=row["public_uuid"],
             id=row["id"], name=row["name"], description=row["description"],
             slug=row["slug"], icon=row["icon"], color=row["color"],
             created_at=row["created_at"], updated_at=row["updated_at"],

@@ -1,6 +1,6 @@
 # SmartFile — Documentação Técnica Oficial
 
-Versão de referência: **0.9.0-beta.9**. Schema **23**. Atualização: **13/10/2026**.
+Versão de referência: **0.9.0-beta.10**. Schema **24**. Atualização: **13/10/2026**.
 
 ## Arquitetura
 
@@ -142,7 +142,7 @@ e no manual. Elas ilustram a interface; não substituem testes ou homologação.
 A beta.8 inclui a correção de prévia/recorte e os manuais ilustrados nos bundles
 Linux e Windows. Schema 23 permanece inalterado. Instaladores e fontes são
 produzidos do mesmo commit e publicados com SHA-256, após validação nativa.
-Consulte [notas da beta.8](RELEASE_NOTES_0.9.0-beta.9.md) e
+Consulte [notas da beta.8](RELEASE_NOTES_0.9.0-beta.8.md) e
 [processo de entrega](RELEASE_PROCESS.md).
 
 ## Auditoria beta.9
@@ -155,3 +155,48 @@ privados e publicadas sem substituir um destino existente, com limpeza limitada 
 arquivos criados pela operação. Recepção usa temporários exclusivos por tentativa.
 
 Schema 23 permanece. Consulte o relatório de auditoria no repositório oficial.
+
+## Auditoria empresarial e schema 24
+
+O caminho View → Controller → Service → Repository/Database permanece obrigatório.
+AuditService amplia o audit_log existente com snapshots de ator, organização e
+instalação, UUID público estável de documento, origem e SHA-256 anterior/novo.
+AuditActor é capturado antes do worker e vinculado por ContextVar ao processamento;
+o escopo iniciado na organização A não migra para B quando a interface troca de
+organização. Memberships são selecionados pelo usuário autenticado e status ACTIVE.
+
+Eventos consolidados são protegidos por triggers contra UPDATE/DELETE. A auditoria
+não depende de FK para o documento excluído; UUID e snapshots sobrevivem à exclusão.
+A migração 23 → 24 é transacional, reverte alterações se falhar, preserva history,
+importa evidências antigas disponíveis e marca
+como LEGACY_UNKNOWN os atores que não podem ser comprovados. Não infere instalações
+ou autoria externa desconhecida. Metadados não geram hashes de conteúdo diferentes.
+A alteração externa é CONTENT_CHANGED_OBSERVED e mantém o hash catalogado como referência.
+
+A fila Cloud e entregas persistem snapshots do ator. O usuário SmartFile mantém sua
+identidade mesmo quando compartilha OneDrive. Documentos entregues por LAN transportam
+UUID público; auditoria permanece local, sem replicação automática global de eventos.
+
+ValidationRepository permite consulta plural por hash. Triggers impedem reassociação
+de FK nula em registros ACTIVE/REVOKED, aceitando somente ON DELETE SET NULL legítimo.
+Uma vez REVOKED, revoked_at, revoked_by_user_id e revocation_reason são imutáveis.
+
+OrganizationIdentityService reutiliza app_settings e a identidade de instalação
+existente. Valida campos, CNPJ alfanumérico, cores e imagens raster normalizadas,
+com limites de tamanho; não recebe QSS, CSS ou código. Foreground preto/branco é
+selecionado para contraste mínimo 4,5:1. OWNER/ADMIN BUSINESS são os únicos editores.
+A distribuição da identidade usa pares LAN já autorizados e uma fonte explícita da
+mesma organização, com UUID, autoridade e revisão verificados. Mantém a última
+configuração válida offline e bloqueia regressão de revisão ou mudança de conteúdo
+na mesma revisão. A confiança depende do transporte LAN existente; essa funcionalidade
+não constitui autenticação criptográfica adicional nem sincronização por OneDrive.
+
+AuditReportService exporta CSV protegido contra fórmulas e PDF institucional. Headers
+corporativos e comprovantes preservam o produto SmartFile e todas as evidências.
+PhysicalStorageService distingue GED, validações, receipts, inbox e total físico
+nos diretórios gerenciados, sem alterar quota; banco, logs e backups externos não
+estão incluídos nesse total.
+
+Novas regressões: tests/test_enterprise_traceability.py. A fixture schema_v23.sql
+reproduz o schema anterior para verificar upgrade real e PRAGMA foreign_key_check.
+Política normativa e público empresarial adulto: PRIVACIDADE_EMPRESARIAL.md.

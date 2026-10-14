@@ -67,8 +67,8 @@ class PDFSignatureController:
         worker = PDFSignatureWorker(self.service, request)
         self._signature_worker = worker
         worker.progress.connect(lambda value, message: self.main_view.progress.update(value, message))
-        worker.succeeded.connect(self._on_signed)
-        worker.failed.connect(self._on_signature_failed)
+        worker.succeeded.connect(lambda result:self._on_signed(result) if self._signature_scope_current(worker.audit_actor) else self.main_view.progress.finish("PDF salvo na organização de origem"))
+        worker.failed.connect(lambda message:self._on_signature_failed(message) if self._signature_scope_current(worker.audit_actor) else None)
         worker.finished.connect(lambda worker=worker: self._cleanup_signature(worker))
         worker.finished.connect(worker.deleteLater)
         self.main_view.progress.start("Assinando PDF")
@@ -93,6 +93,12 @@ class PDFSignatureController:
         view.validate_signatures_requested.connect(self.request_validation)
         view.btn_sign.setEnabled(False)
         view.btn_validate.setEnabled(False)
+
+    def _signature_scope_current(self,actor):
+        context=getattr(self.document_service,'session_context',None)
+        if context is None:return True
+        return bool(actor and context.is_authenticated() and actor.username==getattr(context.current_user,'username',None)
+            and actor.organization_id==getattr(context.active_organization,'id',None))
 
     def _on_signed(self, result):
         self.main_view.progress.finish("PDF assinado")

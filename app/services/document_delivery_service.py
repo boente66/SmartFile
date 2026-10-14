@@ -5,7 +5,7 @@ import logging
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PureWindowsPath
-from uuid import uuid4
+from uuid import uuid4, UUID
 
 from app.entities.document_delivery_entity import DocumentDeliveryEntity, DocumentDeliveryItemEntity, DeliveryHistoryEntity
 from app.entities.document_request_entity import DocumentRequestEntity
@@ -18,6 +18,8 @@ from app.repositories.delivery_receipt_repository import DeliveryAcknowledgement
 from app.repositories.organization_member_repository import OrganizationMemberRepository
 from app.repositories.user_repository import UserRepository
 from app.services.smartfile_instance_service import SmartFileInstanceService
+from app.services.audit_service import AuditService
+from types import SimpleNamespace
 from app.services.delivery_receipt_pdf_service import DeliveryReceiptPdfService
 from app.services.signature_image_service import SignatureImageService
 from app.services.organization_feature_service import OrganizationFeatureService
@@ -40,6 +42,7 @@ class DocumentDeliveryService:
         self.deliveries = DocumentDeliveryRepository(database=database)
         self.items = DocumentDeliveryItemRepository(database=database)
         self.history = DeliveryHistoryRepository(database=database)
+        self.audit = AuditService(database, context)
         self.instances = SmartFileInstanceService(database, context)
         self.requests = DocumentRequestRepository(database=database)
         self.members = OrganizationMemberRepository(database=database)
@@ -80,6 +83,7 @@ class DocumentDeliveryService:
         now = self._now()
         with self.database.transaction():
             delivery = self.deliveries.create(DocumentDeliveryEntity(
+                audit_actor_json=self.audit.serialize_actor(self.audit.capture(organization_id)),
                 delivery_uuid=str(uuid4()), protocol_number=self._protocol(now), organization_id=organization_id,
                 request_id=basket.request_id, sender_user_id=self.context.current_user.id,
                 recipient_user_id=basket.recipient_user_id, sender_instance_id=local.instance_id,
@@ -90,6 +94,7 @@ class DocumentDeliveryService:
             for document, _path, size, checksum in item_snapshots:
                 self.items.create(DocumentDeliveryItemEntity(
                     item_uuid=str(uuid4()), delivery_id=delivery.id, document_id=document.id,
+                    source_document_uuid=document.public_uuid,
                     logical_name=self._safe_name(document.name), size=size,
                     sha256=checksum,
                 ))
@@ -137,6 +142,83 @@ class DocumentDeliveryService:
             )
         self._mark_acknowledged(delivery, user_id)
 
+    def _corporate_identity(self, organization_id):
+        from app.services.organization_identity_service import OrganizationIdentityService
+        return OrganizationIdentityService(self.database,self.context).get(organization_id)
+
+    def authorized_delivery(self, delivery_id, permission='delivery.view', *, recipient_only=False):
+        delivery=self._delivery(delivery_id)
+        self._require(delivery.organization_id,permission)
+        if self.context is not None:
+            user_id=self.context.current_user.id
+            if recipient_only:
+                self._assert_recipient(delivery,user_id)
+            elif user_id not in {delivery.sender_user_id,delivery.recipient_user_id} and not self.context.has_permission('audit.view'):
+                raise PermissionError('A entrega pertence a outros usuários.')
+        return delivery
+
+    def retry_delivery(self,delivery_id):
+        delivery=self.authorized_delivery(delivery_id,'delivery.send')
+        if delivery.direction!='OUTGOING' or delivery.status not in {'FAILED','QUEUED'}:
+            raise DeliveryValidationError('Esta entrega não está disponível para nova tentativa.')
+        with self.database.transaction():
+            self.deliveries.update(delivery_id,status='QUEUED',next_attempt_at=self._now())
+            self._record(delivery,'DELIVERY_RETRY_REQUESTED','Nova tentativa solicitada.',getattr(self.context.current_user,'id',None) if self.context else None)
+
+    def open_receipt(self, delivery_id):
+        delivery=self.authorized_delivery(delivery_id)
+        receipt=self.receipts.find_by_delivery(delivery_id)
+        if receipt is None or not receipt.pdf_path:
+            if delivery.direction=='OUTGOING':return self.submission_receipt(delivery_id)
+            raise DeliveryNotFoundError('Comprovante não disponível.')
+        path=Path(receipt.pdf_path).resolve(strict=True)
+        root=(self.database.paths.data_dir/'delivery_receipts').resolve()
+        if root not in path.parents or path.stat().st_size!=receipt.size or self._checksum(path)!=receipt.sha256:
+            raise DeliveryIntegrityError('O comprovante não corresponde à evidência registrada.')
+        self.audit.record('RECEIPT_OPENED',organization_id=delivery.organization_id,
+            target_type='delivery_receipt',target_id=receipt.id,sha256_after=receipt.sha256,
+            details={'protocol':delivery.protocol_number})
+        return receipt
+
+    def submission_receipt(self,delivery_id):
+        delivery=self.authorized_delivery(delivery_id)
+        from app.entities.validation_record import ArtifactType,SignatureType
+        from app.services.validation_locator_service import ValidationLocatorService
+        identity=self._corporate_identity(delivery.organization_id)
+        key=f'send_receipt:{delivery.delivery_uuid}:{delivery.status}:{identity.revision}'
+        cached=self.database.fetch_one('SELECT value FROM app_settings WHERE key=?',(key,))
+        if cached:
+            record=self.validation.get(delivery.organization_id,int(cached[0]))
+            path=self.validation.open_original(delivery.organization_id,record.id)
+            return SimpleNamespace(id=record.id,pdf_path=str(path),sha256=record.final_sha256,kind='SENT')
+        sender=self.users.find_by_id(delivery.sender_user_id)
+        recipient=self.users.find_by_id(delivery.recipient_user_id)
+        if sender is None or recipient is None:raise DeliveryNotFoundError('Participantes do envio não estão disponíveis.')
+        organization=self.organizations.repository.find_by_id(delivery.organization_id)
+        uuid=str(uuid4());output=self.database.paths.temp/f'envio-{uuid}.pdf'
+        pending=self.validation.create_pending(delivery.organization_id,logical_name=output.name,
+            artifact_type=ArtifactType.UNSIGNED_REGISTERED_DOCUMENT,signature_type=SignatureType.NONE,
+            delivery_id=delivery.id,protocol=delivery.protocol_number)
+        request=DeliveryReceiptRequest(output_path=output,receipt_uuid=uuid,protocol_number=delivery.protocol_number,
+            organization_name=organization.name,sender_name=sender.display_name,recipient_name=recipient.display_name,
+            received_at=delivery.sent_at or delivery.queued_at or delivery.created_at,
+            confirmed_at=delivery.acknowledged_at or '',signature_image=b'',signature_method='NONE',
+            documents=[DeliveryReceiptDocument(i.logical_name,i.size,i.sha256) for i in self.items.list_by_delivery(delivery.id)],
+            corporate_identity=identity,sender_instance_id=delivery.sender_instance_id,recipient_instance_id=delivery.recipient_instance_id,
+            signer_username=sender.username,status=delivery.status,receipt_kind='SENT',
+            qr_payload=ValidationLocatorService.build_payload(pending),qr_human_code=pending.human_code)
+        try:
+            self.receipt_pdf.generate(request)
+            with self.database.transaction():
+                record=self.validation.activate(pending,output)
+                self.database.execute_query('INSERT INTO app_settings(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',(key,str(record.id)))
+                self._record(delivery,'SEND_RECEIPT_CREATED','Comprovante de envio registrado; estado preservado como snapshot.')
+            path=self.validation.artifacts.checked_path(record)
+            return SimpleNamespace(id=record.id,pdf_path=str(path),sha256=record.final_sha256,kind='SENT')
+        except Exception:
+            self.validation._fail_pending(pending);raise
+        finally:output.unlink(missing_ok=True)
+
     def create_acknowledgement_receipt(
         self, delivery_id: int, user_id: int, signature_image: bytes,
         signature_method: str,
@@ -175,6 +257,10 @@ class DocumentDeliveryService:
             receipt_uuid=receipt_uuid,
             protocol_number=delivery.protocol_number,
             organization_name=str(organization["name"]),
+            corporate_identity=self._corporate_identity(delivery.organization_id),
+            sender_instance_id=delivery.sender_instance_id,
+            recipient_instance_id=delivery.recipient_instance_id,
+            signer_username=signer.username,
             sender_name=sender.display_name,
             recipient_name=signer.display_name,
             received_at=delivery.delivered_at or now,
@@ -441,7 +527,11 @@ class DocumentDeliveryService:
             if not re.fullmatch(r"[0-9a-f]{64}", checksum): raise DeliveryValidationError("Checksum inválido.")
             item_uuid = str(value["item_uuid"])
             if not re.fullmatch(r"[A-Za-z0-9-]{1,80}", item_uuid): raise DeliveryValidationError("Identidade do item inválida.")
-            validated_items.append((item_uuid, self._safe_name(str(value["logical_name"])), size, checksum))
+            source_uuid = value.get('source_document_uuid')
+            if source_uuid is not None:
+                try: source_uuid = str(UUID(source_uuid))
+                except (ValueError, TypeError) as exc: raise DeliveryValidationError('Identidade documental inválida.') from exc
+            validated_items.append((item_uuid, self._safe_name(str(value["logical_name"])), size, checksum, source_uuid))
         request_uuid = str(payload.get("request_uuid") or "").strip()
         request = self.requests.find_by_uuid(request_uuid) if request_uuid else None
         if request_uuid and request is None:
@@ -457,8 +547,9 @@ class DocumentDeliveryService:
                 message=(str(payload["message"]).strip() or None) if payload["message"] else None,
                 status="SENDING", created_at=now, sent_at=now,
             ))
-            for item_uuid, logical_name, size, checksum in validated_items:
+            for item_uuid, logical_name, size, checksum, source_uuid in validated_items:
                 self.items.create(DocumentDeliveryItemEntity(item_uuid=item_uuid, delivery_id=delivery.id,
+                    source_document_uuid=source_uuid,
                     logical_name=logical_name, size=size, sha256=checksum, transfer_status="PENDING"))
         self._record(delivery, "DELIVERY_RECEIVED_METADATA", "Metadados da entrega recebidos.")
         if self.notification_callback:
@@ -485,6 +576,9 @@ class DocumentDeliveryService:
             if digest.hexdigest() != item.sha256:
                 raise DeliveryIntegrityError("Falha de integridade SHA-256.")
             temporary.replace(final); now = self._now(); self.items.update_received(item_uuid, "VERIFIED", str(final), now)
+            if hasattr(self, 'audit'):
+                verified = self.items.find_by_uuid(item_uuid)
+                self._record_item(delivery, verified, 'DELIVERY_RECEIVED', self.audit.capture(delivery.organization_id, user_id=0))
             return final
         except Exception:
             temporary.unlink(missing_ok=True); self.items.mark_failed_unless_verified(item_uuid); raise
@@ -525,12 +619,17 @@ class DocumentDeliveryService:
                     outgoing.write(chunk);digest.update(chunk);size+=len(chunk)
             if size != row["size"] or digest.hexdigest() != row["sha256"]:
                 raise DeliveryIntegrityError("A exportação do arquivo recebido falhou na validação SHA-256.")
+        delivery = self._delivery(row['delivery_id'])
+        self._record_item(delivery, row, 'DELIVERY_DOWNLOAD', self.audit.capture(delivery.organization_id))
         return target
 
     def add_received_to_ged(self, item_id: int, **metadata):
         if self.document_service is None: raise DeliveryValidationError("Serviço documental indisponível.")
         cancelled = metadata.get("cancelled")
         row, source = self._received_item(item_id, "delivery.download", cancelled)
+        metadata['source_type'] = 'DELIVERY'
+        if row['source_document_uuid']:
+            metadata['public_uuid'] = row['source_document_uuid']
         return self.document_service.import_document(str(source), title=metadata.pop("title", row["logical_name"]), **metadata)
 
     def metadata(self, delivery_id: int) -> dict:
@@ -544,7 +643,7 @@ class DocumentDeliveryService:
         values["sender_username"] = sender.username if sender else None
         values["recipient_username"] = recipient.username if recipient else None
         values["request_uuid"] = request.request_uuid if request else None
-        values["items"] = [{key: getattr(item,key) for key in ("item_uuid","logical_name","size","sha256")} for item in items]
+        values["items"] = [{key: getattr(item,key) for key in ("item_uuid","logical_name","size","sha256","source_document_uuid")} for item in items]
         return values
 
     def request_payload(self, request_id: int) -> dict:
@@ -677,11 +776,39 @@ class DocumentDeliveryService:
         )
         self._request_transition(current, "COMPLETED")
 
+    def _record_item(self, delivery, item, event, actor):
+        from app.repositories.document_repository import DocumentRepository
+        def value(key):
+            return item[key] if isinstance(item, dict) or hasattr(item, 'keys') else getattr(item, key)
+        document_id = value('document_id')
+        document = DocumentRepository(database=self.database).find_by_id(document_id, delivery.organization_id) if document_id else None
+        if document is None:
+            document = SimpleNamespace(public_uuid=value('source_document_uuid'), name=value('logical_name'), source_type='DELIVERY')
+        self.audit.record(event, organization_id=delivery.organization_id, actor=actor,
+            target_type='document', target_id=document_id, document=document,
+            sha256_after=value('sha256'), details={'protocol':delivery.protocol_number,
+                'delivery_uuid':delivery.delivery_uuid, 'sender_instance_id':delivery.sender_instance_id,
+                'recipient_instance_id':delivery.recipient_instance_id})
+
     def _record(self, delivery, event: str, description: str, actor: int | None = None) -> None:
+        if actor is not None:
+            captured = self.audit.capture(delivery.organization_id, user_id=actor,
+                instance_id=delivery.recipient_instance_id if 'ACK' in event else None)
+        elif delivery.direction == 'OUTGOING':
+            captured = self.audit.deserialize_actor(delivery.audit_actor_json) or self.audit.capture(delivery.organization_id, user_id=delivery.sender_user_id)
+        else:
+            captured = self.audit.capture(delivery.organization_id, user_id=0)
+        self.audit.record(event, organization_id=delivery.organization_id, actor=captured,
+            target_type='delivery', target_id=delivery.id, description=description,
+            details={'protocol':delivery.protocol_number,'direction':delivery.direction})
+        for item in self.items.list_by_delivery(delivery.id):
+            self._record_item(delivery, item, event, captured)
         self.history.record(DeliveryHistoryEntity(organization_id=delivery.organization_id, request_id=delivery.request_id,
             delivery_id=delivery.id, event_type=event, actor_user_id=actor or getattr(getattr(self.context,"current_user",None),"id",None), description=description, created_at=self._now()))
 
     def _record_request(self, request, event: str, description: str) -> None:
+        self.audit.record(event, organization_id=request.organization_id,
+            target_type='document_request', target_id=request.id, description=description)
         self.history.record(DeliveryHistoryEntity(
             organization_id=request.organization_id,
             request_id=request.id,
@@ -698,9 +825,15 @@ class DocumentDeliveryService:
         self.features.require(organization, "document_requests")
         if not self.context:
             return
-        if organization_id != getattr(getattr(self.context,"active_organization",None),"id",None):
+        actor=AuditService.current_actor()
+        if actor is not None and actor.username != getattr(self.context.current_user,'username',None):
+            raise PermissionError('A sessão que iniciou a operação não está mais ativa.')
+        if actor is None and organization_id != getattr(getattr(self.context,"active_organization",None),"id",None):
             raise PermissionError("Ative a organização da entrega.")
-        self.context.require_permission(permission)
+        if hasattr(self.context,'require_organization_permission'):
+            self.context.require_organization_permission(organization_id,permission)
+        else:
+            self.context.require_permission(permission)
 
     def _validate_recipient(self, organization_id: int, user_id: int) -> None:
         user = self.users.find_by_id(user_id); member = self.members.find(organization_id, user_id)

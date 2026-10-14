@@ -11,7 +11,7 @@ from uuid import uuid4
 from app.errors.persistence_exceptions import DatabaseError
 
 logger = logging.getLogger(__name__)
-CURRENT_SCHEMA_VERSION = 23
+CURRENT_SCHEMA_VERSION = 24
 GIB = 1024 ** 3
 
 
@@ -1571,6 +1571,61 @@ BEFORE DELETE ON validation_records
 BEGIN SELECT RAISE(ABORT,'Validation history cannot be deleted'); END;
     """)
 
+
+def _execute_enterprise_script(connection, script):
+    # executescript commits before executing: use complete statements to retain rollback.
+    statement = ''
+    for line in script.splitlines(keepends=True):
+        statement += line
+        if sqlite3.complete_statement(statement):
+            connection.execute(statement)
+            statement = ''
+    if statement.strip():
+        raise sqlite3.OperationalError('Incomplete enterprise migration SQL')
+
+
+def _upgrade_enterprise_v24(connection):
+    # Structural upgrade is the sole privileged path; ordinary repository writes remain blocked.
+    for trigger in ('audit_log_no_update','audit_log_no_delete','document_uuid_immutable'):
+        connection.execute(f'DROP TRIGGER IF EXISTS {trigger}')
+    additions = {
+        'organizations': {'public_uuid': 'TEXT'},
+        'documents': {'public_uuid': 'TEXT'},
+        'sync_jobs': {'actor_json': 'TEXT'},
+        'document_deliveries': {'audit_actor_json': 'TEXT'},
+        'document_delivery_items': {'source_document_uuid': 'TEXT'},
+        'audit_log': {name: 'TEXT' for name in (
+            'event_uuid', 'actor_username', 'actor_name', 'organization_name',
+            'organization_uuid', 'instance_id', 'document_uuid', 'document_name',
+            'source_type', 'sha256_before', 'sha256_after', 'details_json')},
+    }
+    for table, fields in additions.items():
+        present = _columns(connection, table)
+        for name, declaration in fields.items():
+            if name not in present:
+                connection.execute(f'ALTER TABLE {table} ADD COLUMN {name} {declaration}')
+    for table in ('organizations', 'documents'):
+        for row in connection.execute(f'SELECT id FROM {table} WHERE public_uuid IS NULL').fetchall():
+            connection.execute(f'UPDATE {table} SET public_uuid=? WHERE id=?', (str(uuid4()), row[0]))
+        connection.execute(f'CREATE UNIQUE INDEX IF NOT EXISTS idx_{table}_public_uuid ON {table}(public_uuid)')
+    for row in connection.execute('SELECT id FROM audit_log WHERE event_uuid IS NULL').fetchall():
+        connection.execute('UPDATE audit_log SET event_uuid=? WHERE id=?', (str(uuid4()), row[0]))
+    connection.execute("""UPDATE audit_log SET
+        actor_username=COALESCE((SELECT username FROM users WHERE id=audit_log.user_id),'LEGACY_UNKNOWN'),
+        actor_name=(SELECT display_name FROM users WHERE id=audit_log.user_id),
+        organization_name=(SELECT name FROM organizations WHERE id=audit_log.organization_id),
+        organization_uuid=(SELECT public_uuid FROM organizations WHERE id=audit_log.organization_id)
+        WHERE actor_username IS NULL
+    """)
+    # Existing detached history cannot be assigned to an organization or actor retroactively.
+    for row in connection.execute('SELECT h.*, d.organization_id, d.public_uuid, d.name, d.source_type, o.name AS org_name, o.public_uuid AS org_uuid FROM history h LEFT JOIN documents d ON d.id=h.document_id LEFT JOIN organizations o ON o.id=d.organization_id').fetchall():
+        connection.execute('INSERT INTO audit_log(event_uuid,organization_id,action,target_type,target_id,description,created_at,actor_username,organization_name,organization_uuid,document_uuid,document_name,source_type) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+            (str(uuid4()), row['organization_id'], row['action'], 'document', row['document_id'],
+             row['description'], row['created_at'], 'LEGACY_UNKNOWN', row['org_name'],
+             row['org_uuid'], row['public_uuid'], row['name'], row['source_type']))
+    connection.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_audit_event_uuid ON audit_log(event_uuid)')
+    _execute_enterprise_script(connection, "\n-- Consolidated audit events retain snapshots independently from live documents.\nCREATE INDEX IF NOT EXISTS idx_audit_document ON audit_log(organization_id, document_uuid, created_at);\nCREATE INDEX IF NOT EXISTS idx_audit_instance ON audit_log(organization_id, instance_id, created_at);\nCREATE TRIGGER IF NOT EXISTS audit_log_no_update BEFORE UPDATE ON audit_log\nBEGIN SELECT RAISE(ABORT,'Consolidated audit events are immutable'); END;\nCREATE TRIGGER IF NOT EXISTS audit_log_no_delete BEFORE DELETE ON audit_log\nBEGIN SELECT RAISE(ABORT,'Consolidated audit events cannot be deleted'); END;\nCREATE TRIGGER IF NOT EXISTS document_uuid_immutable BEFORE UPDATE OF public_uuid ON documents\nWHEN NEW.public_uuid IS NOT OLD.public_uuid\nBEGIN SELECT RAISE(ABORT,'Document identity is immutable'); END;\nCREATE TRIGGER IF NOT EXISTS validation_links_immutable BEFORE UPDATE ON validation_records\nWHEN OLD.status IN ('ACTIVE','REVOKED') AND (\n (NEW.document_id IS NOT OLD.document_id AND NOT (NEW.document_id IS NULL AND OLD.document_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM documents WHERE id=OLD.document_id))) OR\n (NEW.delivery_id IS NOT OLD.delivery_id AND NOT (NEW.delivery_id IS NULL AND OLD.delivery_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM document_deliveries WHERE id=OLD.delivery_id))) OR\n (NEW.receipt_id IS NOT OLD.receipt_id AND NOT (NEW.receipt_id IS NULL AND OLD.receipt_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM delivery_acknowledgement_receipts WHERE id=OLD.receipt_id))) OR\n (NEW.created_by_user_id IS NOT OLD.created_by_user_id AND NOT (NEW.created_by_user_id IS NULL AND OLD.created_by_user_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM users WHERE id=OLD.created_by_user_id))))\nBEGIN SELECT RAISE(ABORT,'Historical validation links cannot be reassigned'); END;\nCREATE TRIGGER IF NOT EXISTS validation_revocation_immutable BEFORE UPDATE ON validation_records\nWHEN OLD.status='REVOKED' AND (NEW.revoked_at IS NOT OLD.revoked_at OR\n NEW.revoked_by_user_id IS NOT OLD.revoked_by_user_id OR NEW.revocation_reason IS NOT OLD.revocation_reason)\nBEGIN SELECT RAISE(ABORT,'Revocation evidence is immutable'); END;\n")
+
 def migrate(connection: sqlite3.Connection, schema_path: Path) -> int:
     """Cria o schema mínimo ou atualiza bancos legados sem perder documentos."""
     try:
@@ -1611,6 +1666,10 @@ def migrate(connection: sqlite3.Connection, schema_path: Path) -> int:
                 _upgrade_multicloud_workspace_v22(connection)
             if current < 23:
                 _upgrade_validation_v23(connection)
+            if current < 24:
+                if not connection.in_transaction:
+                    connection.execute("BEGIN IMMEDIATE")
+                _upgrade_enterprise_v24(connection)
             connection.execute(
                 "UPDATE documents SET source_path = path WHERE source_path IS NULL"
             )

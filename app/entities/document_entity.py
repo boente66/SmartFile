@@ -6,6 +6,7 @@ from typing import Optional
 
 @dataclass
 class DocumentEntity:
+    public_uuid: str | None = None
     id: Optional[int] = None
     organization_id: int = 1
     folder_id: Optional[int] = None

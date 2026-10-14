@@ -78,6 +78,9 @@ class DocumentView(QWidget):
     configure_transport_requested = pyqtSignal()
     document_requests_requested = pyqtSignal()
     audit_history_requested = pyqtSignal()
+    document_export_requested = pyqtSignal(int)
+    document_audit_requested = pyqtSignal(int)
+    corporate_design_requested = pyqtSignal()
     remote_mount_requested = pyqtSignal()
 
     def __init__(self):
@@ -335,6 +338,8 @@ class DocumentView(QWidget):
             IconProvider.icon("history"), "Histórico auditável",
             self.audit_history_requested.emit,
         )
+        self.design_action = self.enterprise_menu.addAction('Modo Design Corporativo…',self.corporate_design_requested.emit)
+        self.more_document_audit = self.more_menu.addAction('Documento → Histórico/Auditoria',lambda:self.document_audit_requested.emit(self.selected_document_id()))
         self.more_menu.aboutToShow.connect(self._update_more_menu)
         self.btn_more.setMenu(self.more_menu)
         self.btn_more.setToolTip("Mais ações — clique para abrir o menu contextual")
@@ -813,6 +818,7 @@ class DocumentView(QWidget):
         self.audit_action.setEnabled(
             context is None or context.has_permission("audit.view")
         )
+        self.design_action.setEnabled(can_organization)
         self._update_more_menu()
 
     def apply_profile_features(self, feature_set) -> None:
@@ -864,6 +870,16 @@ class DocumentView(QWidget):
         self.storage_progress.setAccessibleName(
             f"Uso do armazenamento {summary.percent:.1f} por cento, estado {summary.level}"
         )
+
+    def set_physical_storage_usage(self,usage):
+        details=self.storage_label.toolTip()+(
+            f'\nFísico da organização — GED: {usage.ged_bytes:,} bytes'
+            f'\nValidações históricas: {usage.validation_bytes:,} bytes'
+            f'\nComprovantes: {usage.receipt_bytes:,} bytes'
+            f'\nRecebidos na LAN: {usage.inbox_bytes:,} bytes'
+            f'\nTotal físico gerenciado desta instalação (todas as organizações): {usage.installation_total_bytes:,} bytes'
+            '\nInclui órfãos nos diretórios gerenciados; não inclui banco, logs, backups externos ou cache. A quota GED não mudou.')
+        self.storage_label.setToolTip(details);self.storage_label.setAccessibleDescription(details)
 
     def set_cloud_quota_loading(self, provider: str) -> None:
         name = self._cloud_provider_name(provider)
@@ -1070,6 +1086,8 @@ class DocumentView(QWidget):
         can_update = self._context is None or self._context.has_permission("document.update")
         can_create = self._context is None or self._context.has_permission("document.create")
         if document_id is not None:
+            menu.addAction("Exportar cópia…",lambda:self.document_export_requested.emit(document_id))
+            menu.addAction("Histórico/Auditoria",lambda:self.document_audit_requested.emit(document_id))
             copy_action = menu.addAction(IconProvider.icon("copy"),"Copiar",lambda:self.copy_requested.emit(document_id))
             copy_action.setShortcut(QKeySequence.StandardKey.Copy)
             if trash:
@@ -1143,6 +1161,7 @@ class DocumentView(QWidget):
         can_update = self._context is None or self._context.has_permission("document.update")
         can_create = self._context is None or self._context.has_permission("document.create")
         trash = getattr(self, "_current_scope", "documents") == "trash"
+        self.more_document_audit.setEnabled(selected)
         self.more_copy_action.setEnabled(selected)
         self.more_paste_action.setEnabled(can_create)
         self.more_rename_action.setEnabled(selected and can_update and not trash)

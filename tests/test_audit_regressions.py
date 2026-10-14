@@ -189,7 +189,8 @@ def delivery_for_scope(tmp_path, organization_id=2, recipient=1):
            'transfer_status':'VERIFIED','size':3,'sha256':'0'*64}
     service.database = SimpleNamespace(fetch_one=lambda *args:row)
     service.context=SessionContext(current_user=UserModel(1,'user',None,'User',None,True,False,None),session_id=1,
-        active_organization=SimpleNamespace(id=organization_id),permissions={'delivery.download'})
+        active_organization=SimpleNamespace(id=organization_id),permissions={'delivery.download'},
+        memberships=[OrganizationMemberEntity(organization_id=organization_id,user_id=1,role='VIEWER')])
     service.organizations=SimpleNamespace(repository=SimpleNamespace(find_by_id=lambda _:SimpleNamespace(id=1)))
     service.features=SimpleNamespace(require=lambda *args:None)
     service._delivery=lambda _:SimpleNamespace(organization_id=1,recipient_user_id=recipient,direction='INCOMING')

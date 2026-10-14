@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 @dataclass(slots=True)
 class OrganizationEntity:
+    public_uuid: str | None = None
     id: int | None = None
     name: str = ""
     description: str | None = None

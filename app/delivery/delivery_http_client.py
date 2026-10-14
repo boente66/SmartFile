@@ -146,6 +146,13 @@ class DeliveryHttpClient:
         finally:
             connection.close()
 
+    def organization_identity(self,host,port,local_instance_id):
+        connection=self._connection(host,port)
+        try:
+            connection.request('GET','/api/v1/organization/identity',headers={'X-SmartFile-Instance':local_instance_id})
+            return self._response(connection)
+        finally:connection.close()
+
     def _connection(self, host: str, port: int): return http.client.HTTPConnection(host, port, timeout=self.timeout)
 
     @staticmethod

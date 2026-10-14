@@ -50,6 +50,16 @@ class HandwrittenSignatureService:
             return float(rectangle.width), float(rectangle.height)
 
     def apply(self, request: HandwrittenSignatureRequest) -> HandwrittenSignatureResult:
+        before=None
+        if self.validation_service is not None:
+            self.validation_service._require(self.validation_service.active_organization_id(),'tools.use')
+            before=self.validation_service.artifacts.hash_file(request.input_path)[0]
+        result = self._apply_registered(request)
+        if self.validation_service is not None:
+            self.validation_service.record_derivative('SIGN_VISUAL', request.input_path, result.output_path, previous_sha256=before)
+        return result
+
+    def _apply_registered(self, request: HandwrittenSignatureRequest) -> HandwrittenSignatureResult:
         if not request.qr_visible:
             return self._apply(request)
         if self.validation_service is None:

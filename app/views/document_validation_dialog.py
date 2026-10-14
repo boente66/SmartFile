@@ -1,6 +1,6 @@
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QLabel,
-                             QPushButton, QTextBrowser)
+                             QPushButton, QTextBrowser, QComboBox)
 
 
 class DocumentValidationDialog(QDialog):
@@ -12,6 +12,7 @@ class DocumentValidationDialog(QDialog):
     revoke_requested = pyqtSignal()
     configure_requested = pyqtSignal()
     input_changed = pyqtSignal()
+    matching_record_selected = pyqtSignal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -34,6 +35,11 @@ class DocumentValidationDialog(QDialog):
         self.check = QPushButton("Verificar"); self.check.clicked.connect(self.check_requested); row.addWidget(self.check)
         config = QPushButton("Configuração de validação…"); config.clicked.connect(self.configure_requested)
         self.config = config; row.addWidget(config); layout.addLayout(row)
+        self.matches = QComboBox()
+        self.matches.setAccessibleName('Registros correspondentes ao hash')
+        self.matches.currentIndexChanged.connect(self.matching_record_selected.emit)
+        self.matches.hide()
+        layout.addWidget(self.matches)
         self.result = QTextBrowser(); self.result.setOpenExternalLinks(False); layout.addWidget(self.result, 1)
         row = QHBoxLayout()
         self.open_original = QPushButton("Abrir original registrado")
@@ -46,12 +52,24 @@ class DocumentValidationDialog(QDialog):
 
     def clear_result(self):
         self.result.clear()
+        self.matches.blockSignals(True); self.matches.clear(); self.matches.blockSignals(False); self.matches.hide()
         for button in (self.open_original, self.export, self.revoke):
             button.setEnabled(False)
 
     def display(self, result, *, can_export=True, can_revoke=False):
         import html
         record = result.record
+        if result.matching_records:
+            self.matches.blockSignals(True)
+            self.matches.clear()
+            for match in result.matching_records:
+                self.matches.addItem(f'{match.human_code} — {match.status} — {match.logical_name_snapshot} — {match.created_at}')
+            self.matches.setCurrentIndex(-1)
+            self.matches.blockSignals(False)
+            self.matches.show()
+            self.result.setPlainText(result.message + '\n\n' + '\n'.join(
+                f'{match.human_code}: {match.status}; {match.signature_type}; {match.created_at}; SHA-256 {match.final_sha256}' for match in result.matching_records))
+            return
         if record is None:
             self.result.setPlainText(result.message or result.record_state)
             return

@@ -36,6 +36,7 @@ class DocumentValidationController:
         dialog.config.setVisible(self._has("validation.configure"))
         dialog.file_label.setText(self._file.name if self._file else "Nenhum arquivo selecionado")
         dialog.check_requested.connect(self.check)
+        dialog.matching_record_selected.connect(self.select_matching_record)
         dialog.select_file_requested.connect(self.select_file)
         dialog.read_qr_requested.connect(self.read_qr)
         dialog.input_changed.connect(self.invalidate)
@@ -77,7 +78,7 @@ class DocumentValidationController:
         dialog = self.dialog
         for previous in self._workers:
             previous.requestInterruption()
-        worker = DocumentValidationWorker(operation)
+        worker = DocumentValidationWorker(operation, audit_actor=self.service.audit.capture(organization_id))
         self._workers.add(worker)
         def current():
             return (self.dialog is dialog and generation == self._generation
@@ -103,6 +104,12 @@ class DocumentValidationController:
             self.dialog.result.setPlainText("Informe um código/QR ou selecione um arquivo."); return
         organization_id = self.service.active_organization_id()
         self._start(lambda cancelled: self.service.validate(organization_id, locator, file_path, cancelled=cancelled), self._display)
+
+    def select_matching_record(self, index):
+        if self._result and 0 <= index < len(self._result.matching_records):
+            record = self._result.matching_records[index]
+            self.dialog.locator.setText(record.human_code)
+            self.check()
 
     def _display(self, result):
         self._result = result

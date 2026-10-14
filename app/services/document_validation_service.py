@@ -20,9 +20,12 @@ class DocumentValidationService:
         self.context = context
         self.repository = ValidationRepository(database=database)
         self.artifacts = CanonicalArtifactService(database.paths)
-        self.audit = AuditService(database)
+        self.audit = AuditService(database, context)
 
     def active_organization_id(self):
+        actor = self.audit.current_actor()
+        if actor is not None:
+            return actor.organization_id
         if self.context is not None:
             return getattr(self.context.active_organization, "id", None)
         row = self.database.fetch_one("SELECT value FROM app_settings WHERE key='active_organization_id'")
@@ -32,9 +35,17 @@ class DocumentValidationService:
 
     def _require(self, organization_id, permission):
         if self.context is not None:
-            if organization_id != getattr(self.context.active_organization, "id", None):
+            actor = self.audit.current_actor()
+            if actor is not None and actor.username != getattr(self.context.current_user, 'username', None):
+                raise PermissionError('A sessão que iniciou a operação não está mais ativa.')
+            if actor is None and organization_id != getattr(self.context.active_organization, "id", None):
                 raise PermissionError("Ative a organização do registro antes desta operação.")
-            self.context.require_permission(permission)
+            if hasattr(self.context, 'require_organization_permission'):
+                self.context.require_organization_permission(organization_id, permission)
+            else:
+                if organization_id != getattr(self.context.active_organization, 'id', None):
+                    raise PermissionError('Ative a organização do registro antes desta operação.')
+                self.context.require_permission(permission)
         row = self.database.fetch_one("SELECT status FROM organizations WHERE id=?", (organization_id,))
         if row is None or row[0] != "ACTIVE":
             raise PermissionError("Organização indisponível.")
@@ -44,11 +55,30 @@ class DocumentValidationService:
         return datetime.now(timezone.utc).isoformat()
 
     def _user_id(self):
-        return getattr(getattr(self.context, "current_user", None), "id", None)
+        actor = self.audit.current_actor()
+        return actor.user_id if actor is not None else getattr(getattr(self.context, "current_user", None), "id", None)
 
     def _audit(self, action, record):
+        from types import SimpleNamespace
+        from app.repositories.document_repository import DocumentRepository
+        document = DocumentRepository(database=self.database).find_by_id(
+            record.document_id, record.organization_id) if record.document_id else None
+        target_type = 'document' if document else 'validation_record'
+        target_id = document.id if document else record.id
+        if document is None:
+            snapshot = self.audit.repository.find_validation_document_snapshot(
+                record.organization_id, record.id)
+            if snapshot is not None:
+                document = SimpleNamespace(public_uuid=snapshot['document_uuid'],
+                    name=snapshot['document_name'], source_type=snapshot['source_type'])
+                target_type, target_id = 'document', snapshot['target_id']
+            else:
+                document = SimpleNamespace(public_uuid='validation:' + record.human_code,
+                    name=record.logical_name_snapshot, source_type='VALIDATION')
         self.audit.record(action, organization_id=record.organization_id,
-                          user_id=self._user_id(), target_type="validation_record", target_id=record.id)
+            user_id=self._user_id(), target_type=target_type,
+            target_id=target_id, document=document,
+            sha256_after=record.final_sha256, details={'validation_id': record.id})
 
     def base_url(self, organization_id):
         self._require(organization_id, "validation.view")
@@ -173,7 +203,16 @@ class DocumentValidationService:
         if file_path:
             supplied_hash, _ = self.artifacts.hash_file(file_path, cancelled)
             if not locator:
-                record = self.repository.lookup("final_sha256", supplied_hash, organization_id)
+                matches = self.repository.lookup_all_by_hash(supplied_hash, organization_id)
+                if len(matches) > 1:
+                    self._require(organization_id, 'validation.view')
+                    with self.database.transaction():
+                        for match in matches:
+                            self._audit('VALIDATION_HASH_MATCHES_FOUND', match)
+                    return DocumentValidationResult('MULTIPLE_RECORDS', file_integrity='HASH_MATCH',
+                        matching_records=tuple(matches),
+                        message='Há vários registros com os mesmos bytes. Selecione o registro para consultar seu status e original.')
+                record = matches[0] if matches else None
         if record is None:
             return DocumentValidationResult("RECORD_NOT_FOUND", message="Registro não encontrado nesta instalação/fonte de validação.")
         if cancelled():
@@ -254,6 +293,19 @@ class DocumentValidationService:
             revoked = self.repository.revoke(record, self._now(), self._user_id(), reason)
             self._audit("VALIDATION_REVOKED", revoked)
         return revoked
+
+    def record_derivative(self, action, source, output, *, previous_sha256=None):
+        organization_id = self.active_organization_id()
+        self._require(organization_id, 'tools.use')
+        from app.repositories.document_repository import DocumentRepository
+        document = DocumentRepository(database=self.database).find_by_scoped_path(Path(source).resolve(), organization_id)
+        before = previous_sha256 or self.artifacts.hash_file(source)[0]
+        after, _ = self.artifacts.hash_file(output)
+        self.audit.record(action, organization_id=organization_id,
+            target_type='document' if document else 'derived_document',
+            target_id=document.id if document else None, document=document,
+            sha256_before=before, sha256_after=after,
+            details={'output_name': Path(output).name, 'source_preserved': True})
 
     def recover_pending(self, organization_id, hours=24):
         self._require(organization_id, "validation.configure")

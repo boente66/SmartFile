@@ -34,6 +34,19 @@ class PDFSignatureService:
 
     def sign(self, request: SignatureRequest) -> SignatureResult:
         try:
+            before=None
+            if self.validation_service is not None:
+                self.validation_service._require(self.validation_service.active_organization_id(),'tools.use')
+                before=self.validation_service.artifacts.hash_file(request.input_path)[0]
+            result = self._sign_registered(request)
+            if self.validation_service is not None:
+                self.validation_service.record_derivative('SIGN_A1', request.input_path, result.output_path, previous_sha256=before)
+            return result
+        finally:
+            request.certificate_password = ""
+
+    def _sign_registered(self, request: SignatureRequest) -> SignatureResult:
+        try:
             if not request.qr_visible:
                 return self._sign(request)
             if self.validation_service is None:

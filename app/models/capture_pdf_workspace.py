@@ -33,6 +33,7 @@ class CapturePdfWorkspace:
     source: str | None = None
     dirty: bool = False
     output_name: str = "Novo documento"
+    public_uuid: str = field(default_factory=lambda:str(uuid4()))
 
     def add_pages(self, pages: list[CapturePdfPage]) -> None:
         if not pages:

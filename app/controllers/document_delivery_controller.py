@@ -172,12 +172,15 @@ class DocumentDeliveryController:
             self.worker=DeliverySendWorker(self.coordinator,delivery.id,self.view);self.worker.progress.connect(lambda value,message:self.view.show_status(f"{message} {value}%"));self.worker.succeeded.connect(lambda _:self._sent());self.worker.failed.connect(lambda message:self._send_failed(message));self.worker.finished.connect(self._worker_done);self.worker.finished.connect(self.worker.deleteLater);self.worker.start();self.refresh()
         except Exception as exc:self._error(exc)
     def retry(self,delivery_id):
-        delivery=self.service.deliveries.find_by_id(delivery_id)
-        if delivery:self.service.deliveries.update(delivery_id,next_attempt_at=self.service._now(),status="QUEUED",attempts=0,last_error=None);self.coordinator.process_pending();self.refresh()
+        try:
+            self.service.retry_delivery(delivery_id);self.coordinator.process_pending();self.refresh()
+        except Exception as exc:self._error(exc)
     def view_delivery(self,delivery_id):
         delivery=self.service.deliveries.find_by_id(delivery_id);items=self.service.items.list_by_delivery(delivery_id)
         if not delivery or not items:return
         try:
+            self.service.authorized_delivery(delivery_id,'delivery.view',recipient_only=True)
+            for item in items:self.service._received_item(item.id,'delivery.view')
             pdf_items=[(item.logical_name,Path(item.received_path)) for item in items if item.received_path and Path(item.received_path).suffix.lower()==".pdf"]
             if pdf_items and self.pdf_viewer:
                 sender=self.service.users.find_by_id(delivery.sender_user_id)
@@ -229,7 +232,7 @@ class DocumentDeliveryController:
                 progress(int((index-1)*100/len(items)),f"{message}: {index}/{len(items)}")
                 operation(item,organization_id,cancelled);count+=1
             return count
-        worker=FileOperationWorker(task);self._file_worker=worker
+        worker=FileOperationWorker(task, audit_actor=self.service.audit.capture(organization_id));self._file_worker=worker
         def current():
             return (not self._closing and self._file_worker is worker
                     and organization_id==getattr(self.context.active_organization,"id",None))
@@ -297,11 +300,11 @@ class DocumentDeliveryController:
         if self.receipt_worker is worker:self.receipt_worker=None
 
     def view_receipt(self,delivery_id):
-        receipt=self.service.receipts.find_by_delivery(delivery_id);delivery=self.service.deliveries.find_by_id(delivery_id)
-        if receipt is None or delivery is None or not receipt.pdf_path:return
         try:
+            receipt=self.service.open_receipt(delivery_id)
+            delivery=self.service.deliveries.find_by_id(delivery_id)
             context=PDFViewerContext(
-                kind="DELIVERY_RECEIPT",title="Comprovante de recebimento",
+                kind="DELIVERY_RECEIPT",title="Comprovante de envio" if getattr(receipt,"kind",None)=="SENT" else "Comprovante de recebimento",
                 protocol_number=delivery.protocol_number,delivery_id=delivery.id,
                 back_view="deliveries",back_tab="received" if delivery.direction=="INCOMING" else "sent",
                 items=[("Comprovante de recebimento",Path(receipt.pdf_path))],

@@ -94,6 +94,7 @@ class ConvertService:
                 raise
         if progress_callback:
             progress_callback(100, "Conversão finalizada")
+        return tuple(target for target, _device, _inode in published)
 
     @staticmethod
     def _execute_to_staging(job, progress_callback=None, cancellation_callback=None):

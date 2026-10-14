@@ -23,11 +23,16 @@ class ValidationRepository(BaseRepository):
             (record_id, organization_id)))
 
     def lookup(self, column, value, organization_id):
-        if column not in {"public_token", "human_code", "final_sha256"}:
+        if column not in {"public_token", "human_code"}:
             raise ValueError("Consulta inválida.")
         return self._entity(self._fetch_one(
             f"SELECT * FROM validation_records WHERE {column}=? AND organization_id=? ORDER BY id DESC LIMIT 1",
             (value, organization_id)))
+
+    def lookup_all_by_hash(self, value, organization_id):
+        return [self._entity(row) for row in self._fetch_all(
+            'SELECT * FROM validation_records WHERE final_sha256=? AND organization_id=? ORDER BY id DESC',
+            (value, organization_id))]
 
     def list_by_document(self, document_id, organization_id):
         return [self._entity(row) for row in self._fetch_all(

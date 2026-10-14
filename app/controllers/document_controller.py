@@ -8,12 +8,14 @@ from pathlib import Path
 from typing import Optional
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QDialog, QInputDialog, QMessageBox
+from PyQt6.QtWidgets import QDialog, QFileDialog, QInputDialog, QMessageBox
 
 from app.controllers.convert_controller import ConvertController
 from app.controllers.pdf_controller import PDFController
 from app.controllers.pdf_viewer_controller import PDFViewerController
 from app.services.document_service import DocumentService
+from app.services.organization_identity_service import OrganizationIdentityService
+from app.views.organization_audit_dialog import OrganizationAuditDialog
 from app.views.document_view import DocumentView
 from app.workers.cloud_sync_worker import CloudSyncWorker
 from app.workers.file_operation_worker import FileOperationWorker
@@ -48,6 +50,7 @@ class DocumentController:
         self.pdf_viewer_controller = pdf_viewer_controller
         self.session_context = session_context
         self.transport_job_notifier = transport_job_notifier
+        self.identity = OrganizationIdentityService(self.service.database, session_context)
         self.service.cloud_manager.session_context = session_context
         self._current_search = ""
         self._current_type = "Todos"
@@ -101,6 +104,8 @@ class DocumentController:
         self.view.resume_sync_requested.connect(lambda: self.on_pause_sync(False))
         self.view.disconnect_cloud_requested.connect(self.on_disconnect_cloud)
         self.view.cloud_history_requested.connect(self.on_cloud_history)
+        self.view.document_export_requested.connect(self.on_export_document)
+        self.view.document_audit_requested.connect(self.on_document_audit)
         self.view.cloud_login_requested.connect(self.on_add_cloud_account)
         self.view.cloud_oauth_settings_requested.connect(self.on_configure_cloud_oauth)
         self.view.map_cloud_folder_requested.connect(self.on_map_cloud_folder)
@@ -132,6 +137,8 @@ class DocumentController:
         if reset_folder:
             self._current_folder_id = None
         self._refresh_organizations()
+        if hasattr(self.main_view,'corporate_header'):
+            self.main_view.corporate_header.apply_identity(self.identity.get(self.service.active_organization_id),self.service.organization_service.active().name)
         self.view.apply_cloud_permissions(self.session_context)
         self._apply_profile_features()
         self._refresh_folders()
@@ -171,7 +178,7 @@ class DocumentController:
                 except InterruptedError:raise
                 except Exception as exc:errors.append(f"{path.name}: {exc}")
             return imported, errors
-        worker = FileOperationWorker(task)
+        worker = FileOperationWorker(task, audit_actor=self.service.audit.capture(organization_id) if hasattr(self.service, "audit") else None)
         self._import_worker = worker
         def current():
             return self._import_worker is worker and self.service.active_organization_id == organization_id
@@ -216,17 +223,52 @@ class DocumentController:
         self._refresh_documents()
 
     def on_open_document(self, document_id: int):
+        organization_id=self.service.active_organization_id
+        actor=self.service.audit.capture(organization_id)
+        worker=FileOperationWorker(lambda _progress,_cancelled:self.service.open_document(document_id),audit_actor=actor)
+        if not hasattr(self,'_open_workers'):self._open_workers=set()
+        self._open_workers.add(worker)
+        def current():
+            return not getattr(self,'_closing',False) and organization_id==self.service.active_organization_id and (self.session_context is None or actor.username==getattr(self.session_context.current_user,'username',None))
+        def opened(document):
+            if not current():return
+            if document.path.lower().endswith('.pdf') and self.pdf_viewer_controller:
+                self.pdf_viewer_controller.open_document(document.path,PDFViewerContext(title=document.name))
+            else:self._open_file(document.path)
+            self.view.set_status(f'Documento aberto: {document.name}')
+        worker.succeeded.connect(opened)
+        worker.failed.connect(lambda message:QMessageBox.warning(self.view,'Abrir documento',message) if current() else None)
+        worker.finished.connect(lambda:self._open_workers.discard(worker));worker.finished.connect(worker.deleteLater)
+        worker.start()
+
+    def on_export_document(self, document_id: int):
         try:
-            document = self.service.open_document(document_id)
-            if document.path.lower().endswith(".pdf") and self.pdf_viewer_controller:
-                self.pdf_viewer_controller.open_document(document.path, PDFViewerContext(title=document.name))
-            else:
-                self._open_file(document.path)
-            self.view.set_status(f"Documento aberto: {document.name}")
-        except FileNotFoundError as exc:
-            QMessageBox.warning(self.view, "Mini GED", str(exc))
+            document = self.service.get_document(document_id)
+            destination, _ = QFileDialog.getSaveFileName(self.view, "Exportar cópia", document.name)
+            if not destination:
+                return
+            organization_id = self.service.active_organization_id
+            actor = self.service.audit.capture(organization_id)
+            worker = FileOperationWorker(
+                lambda _progress, cancelled: self.service.export_document(
+                    document_id, destination, cancelled=cancelled, organization_id=organization_id),
+                audit_actor=actor,
+            )
+            if not hasattr(self, '_open_workers'):
+                self._open_workers = set()
+            self._open_workers.add(worker)
+            def current():
+                return (not getattr(self, '_closing', False)
+                    and organization_id == self.service.active_organization_id
+                    and (self.session_context is None
+                         or actor.username == getattr(self.session_context.current_user, 'username', None)))
+            worker.succeeded.connect(lambda _path: self.view.set_status("Cópia exportada com SHA-256 confirmado.") if current() else None)
+            worker.failed.connect(lambda message: QMessageBox.warning(self.view, "Exportar cópia", message) if current() else None)
+            worker.finished.connect(lambda: self._open_workers.discard(worker))
+            worker.finished.connect(worker.deleteLater)
+            worker.start()
         except Exception as exc:
-            QMessageBox.critical(self.view, "Mini GED", str(exc))
+            QMessageBox.warning(self.view, "Exportar cópia", str(exc))
 
     def on_document_selected(self, document_id: int):
         document = self.service.get_document(document_id)
@@ -497,6 +539,14 @@ class DocumentController:
             self.service.cloud_manager.remove_account(self.service.active_organization_id)
             self.service.cloud_storage_quota_service.clear(organization_id)
             self._refresh_cloud()
+
+    def on_document_audit(self, document_id):
+        try:
+            rows = self.service.audit.for_document(self.service.active_organization_id, document_id)
+            identity = self.identity.get(self.service.active_organization_id)
+            OrganizationAuditDialog(rows,self.view,identity=identity,administrative=False).exec()
+        except Exception as exc:
+            QMessageBox.warning(self.view,'Histórico/Auditoria',str(exc))
 
     def on_cloud_history(self):
         rows = self.service.database.fetch_all(
@@ -1028,6 +1078,9 @@ class DocumentController:
             self._cloud_quota_worker = None
 
     def shutdown(self) -> None:
+        self._closing = True
+        for worker in list(getattr(self,'_open_workers',())):
+            worker.requestInterruption();worker.wait()
         if self._import_worker is not None:
             self._import_worker.requestInterruption()
             self._import_worker.wait(5000)
@@ -1062,6 +1115,36 @@ class DocumentController:
 
     def _refresh_storage(self):
         self.view.set_storage_usage(self.service.get_storage_usage())
+        if getattr(self, '_closing', False):
+            return
+        if getattr(self, '_physical_worker', None) is not None:
+            self._physical_refresh_pending = True
+            return
+        organization_id = self.service.active_organization_id
+        actor = self.service.audit.capture(organization_id)
+        worker = FileOperationWorker(
+            lambda _progress, cancelled: self.service.get_physical_storage_usage(
+                organization_id, cancelled=cancelled), audit_actor=actor)
+        self._physical_worker = worker
+        self._physical_refresh_pending = False
+        if not hasattr(self, '_open_workers'):
+            self._open_workers = set()
+        self._open_workers.add(worker)
+        def current():
+            return (not getattr(self, '_closing', False)
+                and organization_id == self.service.active_organization_id
+                and (self.session_context is None
+                     or actor.username == getattr(self.session_context.current_user, 'username', None)))
+        worker.succeeded.connect(lambda usage: self.view.set_physical_storage_usage(usage) if current() else None)
+        worker.failed.connect(lambda message: self.view.set_status(message) if current() else None)
+        def finished():
+            self._open_workers.discard(worker)
+            self._physical_worker = None
+            if not getattr(self, '_closing', False) and (self._physical_refresh_pending or not current()):
+                self._refresh_storage()
+        worker.finished.connect(finished)
+        worker.finished.connect(worker.deleteLater)
+        worker.start()
 
     def _apply_profile_features(self):
         organization = self.service.organization_service.active()

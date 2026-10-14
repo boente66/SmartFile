@@ -4,6 +4,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 
 from app.cloud.cloud_provider import CloudAuthenticationError, CloudError
 from app.errors.cloud_exceptions import CloudTokenExpiredError
+from app.services.audit_service import AuditService
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +19,14 @@ class CloudSyncWorker(QThread):
         super().__init__()
         self.sync_service = sync_service
         self.organization_id = organization_id
+        audit=getattr(sync_service,"audit",None)
+        self.audit_actor=audit.capture(organization_id) if audit else None
 
     def run(self):
+        with AuditService.bind(self.audit_actor):
+            self._run_sync()
+
+    def _run_sync(self):
         result = None
         error_message = None
         authentication_provider = None

@@ -11,8 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_public_and_debian_versions_are_consistent():
-    assert __version__ == "0.9.0-beta.9"
-    assert debian_version() == "0.9.0~beta9"
+    assert __version__ == "0.9.0-beta.10"
+    assert debian_version() == "0.9.0~beta10"
 
 
 def test_resource_resolution_uses_project_root_in_source_mode():
@@ -85,7 +85,7 @@ def test_appstream_metadata_identifies_desktop_launcher_and_beta():
     release = component.find("./releases/release")
     assert release is not None
     assert release.attrib == {
-        "version": "0.9.0-beta.9",
+        "version": "0.9.0-beta.10",
         "date": "2026-10-13",
         "type": "development",
     }
