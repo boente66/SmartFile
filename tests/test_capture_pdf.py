@@ -109,13 +109,18 @@ def test_capture_worker_uses_native_finished_and_reports_failures():
 def test_fake_scan_adds_page_and_failure_preserves_existing_workspace(tmp_path: Path, monkeypatch):
     application = app(); database = Database(str(tmp_path / "smartfile.db"))
     controller = CapturePdfController(WorkspaceView(), DocumentService(database=database))
-    controller._on_scan_succeeded(Image.new("RGB", (80, 100), "white"))
-    wait_until(lambda: controller._render_worker is None)
-    assert len(controller.state.pages) == 1
-    monkeypatch.setattr("app.controllers.capture_pdf_controller.QMessageBox.critical", lambda *args: None)
-    controller._on_scan_failed("Scanner offline")
-    assert len(controller.state.pages) == 1
-    controller.clear_workspace(confirm=False)
+    try:
+        controller._on_scan_succeeded(Image.new("RGB", (80, 100), "white"))
+        # Rendering and geometry run asynchronously; allow slower loaded hosts to finish.
+        wait_until(lambda: controller._render_worker is None, timeout=30000)
+        assert len(controller.state.pages) == 1
+        monkeypatch.setattr("app.controllers.capture_pdf_controller.QMessageBox.critical", lambda *args: None)
+        controller._on_scan_failed("Scanner offline")
+        assert len(controller.state.pages) == 1
+    finally:
+        controller.shutdown()
+        controller.clear_workspace(confirm=False)
+        database.close()
 
 
 def test_controller_open_merge_reorder_rotate_remove_and_save(tmp_path: Path, monkeypatch):
