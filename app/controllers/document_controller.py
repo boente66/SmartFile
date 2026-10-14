@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QObject, QTimer, pyqtSlot
 from PyQt6.QtWidgets import QDialog, QFileDialog, QInputDialog, QMessageBox
 
 from app.controllers.convert_controller import ConvertController
@@ -35,6 +35,42 @@ from app.workers.cloud_folder_worker import CloudFolderMappingWorker
 from app.controllers.remote_mount_controller import RemoteMountController
 
 logger = logging.getLogger(__name__)
+
+
+class _DocumentFileCallbacks(QObject):
+    """GUI-owned Qt slots: queued signals never outlive their receiver."""
+    def __init__(self, controller, worker, actor, organization_id, succeeded, failed, finished=None):
+        super().__init__(controller.view)
+        self.controller, self.worker = controller, worker
+        self.actor, self.organization_id = actor, organization_id
+        self.success_callback, self.failure_callback = succeeded, failed
+        self.finished_callback = finished
+
+    def current(self):
+        controller = self.controller
+        return (not getattr(controller, '_closing', False)
+            and self.organization_id == controller.service.active_organization_id
+            and (controller.session_context is None
+                 or self.actor.username == getattr(controller.session_context.current_user, 'username', None)))
+
+    @pyqtSlot(object)
+    def succeeded(self, value):
+        if self.current():
+            self.success_callback(value)
+
+    @pyqtSlot(str)
+    def failed(self, message):
+        if self.current():
+            self.failure_callback(message)
+
+    @pyqtSlot()
+    def finished(self):
+        controller = self.controller
+        controller._open_workers.discard(self.worker)
+        controller._worker_callbacks.discard(self)
+        if self.finished_callback is not None:
+            self.finished_callback(self.current())
+        self.deleteLater()
 
 
 class DocumentController:
@@ -222,24 +258,33 @@ class DocumentController:
     def on_refresh_documents(self):
         self._refresh_documents()
 
-    def on_open_document(self, document_id: int):
-        organization_id=self.service.active_organization_id
-        actor=self.service.audit.capture(organization_id)
-        worker=FileOperationWorker(lambda _progress,_cancelled:self.service.open_document(document_id),audit_actor=actor)
-        if not hasattr(self,'_open_workers'):self._open_workers=set()
+    def _track_file_worker(self, worker, actor, organization_id, succeeded, failed, finished=None):
+        if not hasattr(self, '_open_workers'):
+            self._open_workers = set()
+        if not hasattr(self, '_worker_callbacks'):
+            self._worker_callbacks = set()
+        receiver = _DocumentFileCallbacks(self, worker, actor, organization_id, succeeded, failed, finished)
         self._open_workers.add(worker)
-        def current():
-            return not getattr(self,'_closing',False) and organization_id==self.service.active_organization_id and (self.session_context is None or actor.username==getattr(self.session_context.current_user,'username',None))
-        def opened(document):
-            if not current():return
-            if document.path.lower().endswith('.pdf') and self.pdf_viewer_controller:
-                self.pdf_viewer_controller.open_document(document.path,PDFViewerContext(title=document.name))
-            else:self._open_file(document.path)
-            self.view.set_status(f'Documento aberto: {document.name}')
-        worker.succeeded.connect(opened)
-        worker.failed.connect(lambda message:QMessageBox.warning(self.view,'Abrir documento',message) if current() else None)
-        worker.finished.connect(lambda:self._open_workers.discard(worker));worker.finished.connect(worker.deleteLater)
+        self._worker_callbacks.add(receiver)
+        worker.succeeded.connect(receiver.succeeded)
+        worker.failed.connect(receiver.failed)
+        worker.finished.connect(receiver.finished)
+        worker.finished.connect(worker.deleteLater)
         worker.start()
+
+    def on_open_document(self, document_id: int):
+        organization_id = self.service.active_organization_id
+        actor = self.service.audit.capture(organization_id)
+        worker = FileOperationWorker(
+            lambda _progress, _cancelled: self.service.open_document(document_id), audit_actor=actor)
+        def opened(document):
+            if document.path.lower().endswith('.pdf') and self.pdf_viewer_controller:
+                self.pdf_viewer_controller.open_document(document.path, PDFViewerContext(title=document.name))
+            else:
+                self._open_file(document.path)
+            self.view.set_status(f'Documento aberto: {document.name}')
+        self._track_file_worker(worker, actor, organization_id, opened,
+            lambda message: QMessageBox.warning(self.view, 'Abrir documento', message))
 
     def on_export_document(self, document_id: int):
         try:
@@ -254,19 +299,9 @@ class DocumentController:
                     document_id, destination, cancelled=cancelled, organization_id=organization_id),
                 audit_actor=actor,
             )
-            if not hasattr(self, '_open_workers'):
-                self._open_workers = set()
-            self._open_workers.add(worker)
-            def current():
-                return (not getattr(self, '_closing', False)
-                    and organization_id == self.service.active_organization_id
-                    and (self.session_context is None
-                         or actor.username == getattr(self.session_context.current_user, 'username', None)))
-            worker.succeeded.connect(lambda _path: self.view.set_status("Cópia exportada com SHA-256 confirmado.") if current() else None)
-            worker.failed.connect(lambda message: QMessageBox.warning(self.view, "Exportar cópia", message) if current() else None)
-            worker.finished.connect(lambda: self._open_workers.discard(worker))
-            worker.finished.connect(worker.deleteLater)
-            worker.start()
+            self._track_file_worker(worker, actor, organization_id,
+                lambda _path: self.view.set_status("Cópia exportada com SHA-256 confirmado."),
+                lambda message: QMessageBox.warning(self.view, "Exportar cópia", message))
         except Exception as exc:
             QMessageBox.warning(self.view, "Exportar cópia", str(exc))
 
@@ -1127,24 +1162,12 @@ class DocumentController:
                 organization_id, cancelled=cancelled), audit_actor=actor)
         self._physical_worker = worker
         self._physical_refresh_pending = False
-        if not hasattr(self, '_open_workers'):
-            self._open_workers = set()
-        self._open_workers.add(worker)
-        def current():
-            return (not getattr(self, '_closing', False)
-                and organization_id == self.service.active_organization_id
-                and (self.session_context is None
-                     or actor.username == getattr(self.session_context.current_user, 'username', None)))
-        worker.succeeded.connect(lambda usage: self.view.set_physical_storage_usage(usage) if current() else None)
-        worker.failed.connect(lambda message: self.view.set_status(message) if current() else None)
-        def finished():
-            self._open_workers.discard(worker)
+        def finished(current):
             self._physical_worker = None
-            if not getattr(self, '_closing', False) and (self._physical_refresh_pending or not current()):
+            if not getattr(self, '_closing', False) and (self._physical_refresh_pending or not current):
                 self._refresh_storage()
-        worker.finished.connect(finished)
-        worker.finished.connect(worker.deleteLater)
-        worker.start()
+        self._track_file_worker(worker, actor, organization_id,
+            self.view.set_physical_storage_usage, self.view.set_status, finished)
 
     def _apply_profile_features(self):
         organization = self.service.organization_service.active()

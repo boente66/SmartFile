@@ -477,3 +477,30 @@ def test_upgrade_23_to_24_rolls_back_on_failure():
         assert connection.execute('PRAGMA foreign_key_check').fetchall() == []
     finally:
         connection.close()
+
+
+def test_document_worker_queued_callbacks_are_safe_after_shutdown():
+    from PyQt6.QtCore import QCoreApplication, QEvent
+    from PyQt6.QtWidgets import QApplication, QWidget
+    from app.controllers.document_controller import DocumentController
+    global _GUI_APP
+    _GUI_APP = QApplication.instance() or QApplication([])
+    controller = DocumentController.__new__(DocumentController)
+    controller.view = QWidget()
+    controller.service = SimpleNamespace(active_organization_id=1)
+    controller.session_context = None
+    controller._closing = False
+    called = []
+    worker = FileOperationWorker(lambda _progress, _cancelled: 42)
+    controller._track_file_worker(worker, SimpleNamespace(username='demo'), 1,
+        called.append, called.append)
+    controller._closing = True
+    assert worker.wait(2000)
+    _GUI_APP.processEvents()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    _GUI_APP.processEvents()
+    assert called == []
+    assert controller._open_workers == set()
+    assert controller._worker_callbacks == set()
+    controller.view.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)

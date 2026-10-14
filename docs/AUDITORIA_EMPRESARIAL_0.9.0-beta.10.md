@@ -13,6 +13,9 @@ Público informado pela organização: uso empresarial por adultos.
 - Audit_log e history anteriores não conservavam todos os snapshots de ator,
   instalação, origem e documento após exclusão. Reutilizados e ampliados, com
   UUID públicos, hashes e triggers de proteção do histórico consolidado.
+- O gate Windows revelou callback de worker após encerramento da tela.
+  As novas operações de documentos usam receptores QObject com slots explícitos
+  e ciclo de vida associado à view, com regressão de encerramento.
 - Workers e filas não transportavam o escopo individual completo. Agora capturam
   ator e organização antes da execução, conservam esse escopo e rejeitam mistura
   de organizações ou troca indevida do usuário autenticado.
@@ -73,7 +76,9 @@ services usam repositories/database.
 
 ## Validação
 
-Validação local: **664 testes aprovados** (620 da base + 44 regressões).
+Validação local antes do ajuste de ciclo de vida Qt: **664 testes aprovados**
+(620 da base + 44 regressões). A correção Qt acrescenta uma regressão de
+encerramento; resultados completos finais constam nas notas públicas da entrega.
 Teste focado adicional da tela corporativa: **1 aprovado**.
 Gates aprovados: python -m pytest -q, python -m compileall -q app run.py,
 python -m pip check e git diff --check.
