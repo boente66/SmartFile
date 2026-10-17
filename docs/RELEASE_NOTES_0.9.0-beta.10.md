@@ -2,6 +2,14 @@
 
 Auditoria empresarial e identidade institucional. Schema 24.
 
+Correção de QR em 16/10/2026, mantendo versão e schema por solicitação do usuário:
+o QR pode ser posicionado abaixo/ao lado da assinatura e ajustado na prévia por
+duplo clique e arraste. No PDF salvo, duplo clique no QR registrado permite gerar
+uma cópia reposicionada com novo registro/hash, preservando o original. PDFs A1
+exigem confirmação e nova assinatura da cópia, sem reutilizar a validade da antiga.
+Instaladores recompilados substituem os anteriores desta beta; consulte o
+MANIFEST.json atualizado para identificar o commit e verificar os checksums.
+
 - Eventos identificam usuário SmartFile, organização, instalação existente,
   documento, origem, horário UTC e hashes quando os bytes mudam.
 - Histórico contextual e consulta administrativa BUSINESS com filtros e CSV/PDF.

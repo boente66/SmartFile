@@ -20,6 +20,8 @@ class PDFSignatureController:
         self._signature_worker = None
         self._validation_worker = None
         self._connect_viewer()
+        from app.controllers.qr_reposition_controller import QrRepositionController
+        self.qr_reposition = QrRepositionController(self)
 
     def set_document_service(self, service):
         self.document_service = service

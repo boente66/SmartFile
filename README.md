@@ -2,7 +2,8 @@
 
 **Download atual: [0.9.0-beta.10 — Linux, Windows e manuais](https://github.com/boente66/SmartFile/releases/tag/v0.9.0-beta.10)** · Schema 24.
 
-Os instaladores publicados correspondem ao commit `1a87e7996f28798df17165acd0d7e764029c6e17`.
+O commit e os checksums dos instaladores estão registrados no `MANIFEST.json` da entrega.
+A correção de posicionamento do QR mantém a versão beta.10 e exige reinstalar o pacote atualizado.
 
 O SmartFile é uma aplicação desktop multiplataforma para gestão local de
 documentos. O projeto reúne Mini GED, organizações, pastas lógicas, scanner,

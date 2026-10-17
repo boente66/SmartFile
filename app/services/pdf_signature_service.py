@@ -41,12 +41,16 @@ class PDFSignatureService:
             result = self._sign_registered(request)
             if self.validation_service is not None:
                 self.validation_service.record_derivative('SIGN_A1', request.input_path, result.output_path, previous_sha256=before)
+                if request.replace_qr:
+                    self.validation_service.record_derivative('QR_REPOSITION', request.input_path, result.output_path, previous_sha256=before)
             return result
         finally:
             request.certificate_password = ""
 
     def _sign_registered(self, request: SignatureRequest) -> SignatureResult:
         try:
+            if request.replace_qr and not request.qr_visible:
+                raise SignatureError("O reposicionamento exige um novo QR e registro de validação.")
             if not request.qr_visible:
                 return self._sign(request)
             if self.validation_service is None:
@@ -80,10 +84,14 @@ class PDFSignatureService:
             from app.services.signature_verification_service import SignatureVerificationService
             # Inserting marks into an already signed PDF would invalidate previous signatures.
             with request.input_path.open("rb") as stream:
-                if PdfFileReader(stream).embedded_signatures:
+                if PdfFileReader(stream).embedded_signatures and not request.replace_qr:
                     raise SignatureError("Insira o QR antes da primeira assinatura digital; preserve as assinaturas existentes.")
             from io import BytesIO
             with fitz.open(request.input_path) as document:
+                if request.replace_qr:
+                    from app.services.qr_reposition_service import QrRepositionService
+                    location = QrRepositionService(self.validation_service).inspect(request.input_path, request.qr_page_number)
+                    QrRepositionService.remove(document, location, remove_signatures=True)
                 SignatureVerificationService.insert_qr(document, request.verification_url, request.qr_page_number, request.qr_rect, request.qr_human_code)
                 qr_source = BytesIO(document.tobytes())
         signer = self.certificate_service.load_a1(

@@ -511,3 +511,134 @@ def test_non_pdf_cannot_be_activated_with_pdf_mime(service, tmp_path):
         service.activate(record, source)
     assert service.get(record.organization_id, record.id).status == "PENDING"
     assert service.get(record.organization_id, record.id).artifact_storage_ref is None
+
+@pytest.mark.parametrize('rotation', [0, 90, 180, 270])
+def test_reposition_qr_preserves_original_content_and_registers_new_bytes(service, tmp_path, rotation):
+    from app.services.qr_reposition_service import QrRepositionService, RepositionResult
+    from app.services.signature_verification_service import SignatureVerificationService as QR
+    original = tmp_path / 'registered.pdf'
+    def produce(payload, code):
+        with fitz.open() as doc:
+            page = doc.new_page(width=595, height=842)
+            page.insert_text((180, 200), 'Conteudo que deve ser preservado')
+            page.set_rotation(rotation)
+            QR.insert_qr(doc, payload, 1, (20, 20, 110, 110), code)
+            doc.save(original)
+        return RepositionResult(original)
+    service.finalize(produce, logical_name=original.name, artifact_type=A.UNSIGNED_REGISTERED_DOCUMENT, signature_type=S.NONE)
+    old = service.validate(service.active_organization_id(), file_path=original).record
+    before = original.read_bytes()
+    mover = QrRepositionService(service)
+    location = mover.inspect(original, 1, (50, 50))
+    assert location.rect == pytest.approx((20, 20, 110, 110), abs=.1)
+    output = tmp_path / 'repositioned.pdf'
+    mover.move(original, output, 1, (200, 250, 290, 340))
+    assert original.read_bytes() == before
+    checked = service.validate(service.active_organization_id(), file_path=output)
+    assert checked.file_integrity == 'HASH_MATCH'
+    assert checked.record.id != old.id
+    assert checked.record.public_token != old.public_token
+    assert checked.record.final_sha256 != old.final_sha256
+    assert service.validate(service.active_organization_id(), Locator.build_payload(old), original).file_integrity == 'HASH_MATCH'
+    with fitz.open(output) as doc:
+        text = doc[0].get_text()
+        assert 'Conteudo que deve ser preservado' in text
+        assert text.count('Validar documento') == 1
+        old_code = 'SFV-' + '-'.join(old.human_code[i:i+4] for i in range(3,19,4))
+        assert old_code not in text
+    assert mover.inspect(output, 1, (220, 270)).rect == pytest.approx((200, 250, 290, 340), abs=.1)
+    with pytest.raises(ValueError):
+        mover.inspect(output, 1, (50, 50))
+    with pytest.raises(FileExistsError):
+        mover.move(original, output, 1, (200, 250, 290, 340))
+
+
+def test_reposition_a1_requires_new_signature_and_preserves_old(service, tmp_path):
+    from app.services.qr_reposition_service import QrRepositionService
+    from test_pdf_signature import _request
+    from app.services.pdf_signature_service import PDFSignatureService
+    signing = PDFSignatureService(validation_service=service)
+    request = _request(tmp_path / 'a1')
+    request.qr_visible = True; request.qr_rect = (30, 120, 120, 210)
+    first = signing.sign(request).output_path
+    original = first.read_bytes()
+    mover = QrRepositionService(service)
+    assert mover.inspect(first, 1).digitally_signed
+    with pytest.raises(ValueError, match='assinado novamente'):
+        mover.move(first, tmp_path/'not-signed.pdf', 1, (150, 250, 240, 340))
+    request.input_path = first; request.output_path = tmp_path/'signed-again.pdf'
+    request.certificate_password = 'secret'; request.replace_qr = True
+    request.qr_rect = (150, 250, 240, 340)
+    second = signing.sign(request).output_path
+    assert first.read_bytes() == original
+    assert len(signing.validate(second)) == 1
+    assert signing.validate(second)[0].integrity_ok
+    assert service.validate(service.active_organization_id(), file_path=second).signature_status == 'VALID'
+    assert mover.inspect(second, 1).rect == pytest.approx((150, 250, 240, 340), abs=.1)
+
+
+def test_adjacent_qr_does_not_overlap_signature_or_leave_page():
+    from app.utils.qr_placement import adjacent_qr
+    assert adjacent_qr((595,842),(40,600,240,670)) == (40,678,130,768)
+    # Below is unavailable: side placement is accepted only when its label fits.
+    assert adjacent_qr((595,842),(40,680,240,750)) == (248,680,338,770)
+    with pytest.raises(ValueError):
+        adjacent_qr((200,200),(0,0,200,200))
+
+
+def test_reposition_refuses_changed_or_revoked_original(service, tmp_path):
+    from app.services.qr_reposition_service import QrRepositionService, RepositionResult
+    from app.services.signature_verification_service import SignatureVerificationService as QR
+    path = tmp_path/'registered.pdf'
+    def produce(payload, code):
+        with fitz.open() as doc:
+            doc.new_page(); QR.insert_qr(doc,payload,1,(20,20,110,110),code); doc.save(path)
+        return RepositionResult(path)
+    service.finalize(produce, logical_name=path.name, artifact_type=A.UNSIGNED_REGISTERED_DOCUMENT, signature_type=S.NONE)
+    mover = QrRepositionService(service)
+    record = mover.inspect(path,1).record
+    changed = tmp_path/'changed.pdf'; changed.write_bytes(path.read_bytes()+b'\n% changed')
+    with pytest.raises(ValueError):
+        mover.inspect(changed,1)
+    service.revoke(record.organization_id,record.id,'Documento substituído')
+    with pytest.raises(ValueError):
+        mover.inspect(path,1)
+
+
+def test_qr_selection_follows_signature_and_manual_drag_is_independent():
+    from test_handwritten_signature import _app
+    from PyQt6.QtCore import QEvent, QPointF, Qt
+    from PyQt6.QtGui import QMouseEvent, QPixmap
+    from PyQt6.QtTest import QTest
+    from PyQt6.QtWidgets import QApplication
+    from app.views.widgets.signature_qr_options import SignatureQrOptions
+    from app.views.widgets.pdf_signature_placement_widget import PDFSignaturePlacementWidget
+    from app.views.widgets.qr_placement_overlay import QrPlacementOverlay
+    app = _app()
+    page = QPixmap(595,842); page.fill(Qt.GlobalColor.white)
+    placement = PDFSignaturePlacementWidget(page,595,842)
+    options = SignatureQrOptions(2)
+    options.set_anchor((595,842),(40,600,240,670),2)
+    options.visible.setChecked(True)
+    overlay = QrPlacementOverlay(placement,options)
+    placement.show(); app.processEvents()
+    try:
+        assert options.values()['qr_rect'] == (40,678,130,768)
+        assert options.values()['qr_page_number'] == 2
+        options.position.setCurrentIndex(1)
+        assert options.values()['qr_rect'] == (248,600,338,690)
+        options.set_anchor((595,842),(50,500,250,570),2)
+        assert options.x.value() == 258
+        QTest.mouseDClick(overlay, Qt.MouseButton.LeftButton)
+        QTest.mousePress(overlay, Qt.MouseButton.LeftButton, pos=overlay.rect().center())
+        point = QPointF(overlay.rect().center())+QPointF(-30,-30)
+        event = QMouseEvent(QEvent.Type.MouseMove,point,Qt.MouseButton.NoButton,Qt.MouseButton.LeftButton,Qt.KeyboardModifier.NoModifier)
+        QApplication.sendEvent(overlay,event)
+        QTest.mouseRelease(overlay,Qt.MouseButton.LeftButton)
+        assert options.position.currentData() == 'manual'
+        assert options.x.value() < 258
+        manual = options.values()['qr_rect']
+        options.set_anchor((595,842),(10,100,210,170),2)
+        assert options.values()['qr_rect'] == manual
+    finally:
+        placement.close(); options.close()

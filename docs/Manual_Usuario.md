@@ -1289,6 +1289,19 @@ Assinatura manuscrita é visual e não identifica criptograficamente o signatár
 A verificação criptográfica apresentada refere-se ao original registrado, não
 à cópia divergente. Hash não certifica identidade nem validade jurídica.
 
+Na prévia de assinatura, **Adicionar QR de validação** posiciona o QR abaixo da
+assinatura; a opção **Ao lado da assinatura** permite a alternativa lateral.
+Dê duplo clique na área de prévia do QR e arraste para definir uma posição manual.
+O código legível abaixo do QR também precisa caber na página.
+
+Para corrigir um PDF já salvo, abra a cópia registrada no visualizador e dê duplo
+clique sobre o QR. Ajuste a posição e escolha **Salvar nova cópia**. O original e
+seu registro permanecem preservados; o resultado recebe outro QR e novo hash.
+Somente QRs SmartFile ativos e identificáveis nos bytes registrados são editados.
+PDFs alterados externamente ou QRs desconhecidos não são removidos automaticamente.
+Se houver assinatura A1, confirme a remoção das assinaturas da nova cópia e
+assine novamente com um certificado; cancelar mantém o original intacto.
+
 O QR é inserido antes da assinatura/finalização; o hash é calculado sobre o PDF
 final. Comprovante e documento têm registros separados. A assinatura ou a
 reexportação posterior de um arquivo altera seus bytes e exige nova comparação.

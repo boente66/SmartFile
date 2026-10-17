@@ -24,6 +24,7 @@ class SignatureRequest:
     timestamp_url: str | None = None
     pades_profile: str = "PAdES-B-B"
 
+    replace_qr: bool = False
     qr_visible: bool = False
     verification_url: str | None = None
     qr_page_number: int = 1

@@ -84,6 +84,14 @@ atômica, sem sobrescrita; leitura valida contenção e arquivo regular. Abrir e
 exportar conferem tamanho/hash e exportam bytes idênticos. Não há edição in place
 nem exclusão do artefato pela API. Falhas não produzem registro ACTIVE fictício.
 
+QrRepositionService identifica a imagem e os streams isolados do QR SmartFile
+somente em bytes correspondentes a um registro ACTIVE da organização. A correção
+remove apenas esses streams na nova cópia, sem redação de conteúdo ao redor;
+gera novo token, hash e registro, preservando o artefato anterior. Documento A1
+requer confirmação e nova assinatura da cópia, removendo os campos criptográficos
+antigos dessa cópia. A operação é auditada como QR_REPOSITION. Views emitem sinais;
+o controller usa worker com ator capturado e o service coordena a validação.
+
 Estado administrativo, disponibilidade do artefato, integridade da cópia,
 assinatura A1/PAdES e confiança da cadeia são resultados independentes. O QR é
 localizador; não contém o hash final nem prova autenticidade visual. Copiar o QR

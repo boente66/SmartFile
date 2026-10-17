@@ -291,6 +291,8 @@ class AppController:
         return answer == QMessageBox.StandardButton.Yes
 
     def shutdown(self) -> None:
+        if self.pdf_signature_controller is not None:
+            self.pdf_signature_controller.qr_reposition.shutdown()
         settings=getattr(self,"organization_settings_controller",None)
         if settings:
             settings.shutdown()

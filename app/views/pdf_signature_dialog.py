@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
-    QCheckBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog,
+    QMessageBox, QCheckBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog,
     QComboBox, QFormLayout, QHBoxLayout, QLineEdit, QPushButton, QSpinBox, QVBoxLayout, QScrollArea, QWidget,
 )
 from PyQt6.QtGui import QPixmap
@@ -79,6 +79,12 @@ class PDFSignatureDialog(QDialog):
         form_container.addWidget(buttons)
         self.placement.area_changed.connect(self._set_coordinates)
         self._update_visible_fields(False)
+        for field in self.coordinates:
+            field.valueChanged.connect(self._sync_qr_anchor)
+        self.page_spin.valueChanged.connect(self._sync_qr_anchor)
+        self._sync_qr_anchor()
+        from app.views.widgets.qr_placement_overlay import QrPlacementOverlay
+        self.qr_overlay = QrPlacementOverlay(self.placement, self.qr_options)
 
     def build_request(self) -> SignatureRequest:
         x1, y1, x2, y2 = (spin.value() for spin in self.coordinates)
@@ -121,3 +127,17 @@ class PDFSignatureDialog(QDialog):
     def _set_coordinates(self, x1, y1, x2, y2):
         for spin, value in zip(self.coordinates, (x1, y1, x2, y2)):
             spin.setValue(value)
+
+    def _sync_qr_anchor(self):
+        x1, y1, x2, y2 = [f.value() for f in self.coordinates]
+        height = self.placement._page_height
+        self.qr_options.set_anchor((self.placement._page_width, height),
+                                   (x1, height-y2, x2, height-y1), self.page_spin.value())
+
+    def accept(self):
+        try:
+            self.qr_options.values()
+        except ValueError as exc:
+            QMessageBox.warning(self, "Posição do QR", str(exc))
+            return
+        super().accept()

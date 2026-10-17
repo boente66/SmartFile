@@ -103,6 +103,7 @@ class HandwrittenSignatureDialog(QDialog):
         buttons.accepted.connect(self._accept_if_ready)
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
+        self.caption.toggled.connect(lambda: self._set_position(*self._position))
         self._page_preview = page_preview
         self.canvas.set_stroke_width(float(self.thickness.currentData()))
 
@@ -147,6 +148,8 @@ class HandwrittenSignatureDialog(QDialog):
         self.placement = SignaturePlacementWidget(
             self._page_preview, signature, self.page_size, self.rotation
         )
+        from app.views.widgets.qr_placement_overlay import QrPlacementOverlay
+        self.qr_overlay = QrPlacementOverlay(self.placement, self.qr_options)
         self.placement.position_changed.connect(self._set_position)
         self.placement_container.insertWidget(0, self.placement, 1)
         self.steps.setCurrentIndex(1)
@@ -165,6 +168,20 @@ class HandwrittenSignatureDialog(QDialog):
 
     def _set_position(self, x: float, y: float, width: float, height: float) -> None:
         self._position = (x, y, width, height)
+        # Position signals are in unrotated PDF coordinates; the QR uses visual coordinates.
+        angle = self.rotation % 360
+        if angle == 0:
+            visual = (x, y, x + width, y + height)
+            size = self.page_size
+        else:
+            pw, ph = self.page_size
+            if angle == 90:
+                visual, size = (ph-y-height, x, ph-y, x+width), (ph, pw)
+            elif angle == 180:
+                visual, size = (pw-x-width, ph-y-height, pw-x, ph-y), (pw, ph)
+            else:
+                visual, size = (y, pw-x-width, y+height, pw-x), (ph, pw)
+        self.qr_options.set_anchor(size, visual, self.page_spin.value(), 31 if self.caption.isChecked() else 0)
 
     def _accept_if_ready(self) -> None:
         if self.steps.currentIndex() == 0 or not self._signature_bytes:
@@ -172,6 +189,11 @@ class HandwrittenSignatureDialog(QDialog):
             return
         if self._position[2] <= 0 or self._position[3] <= 0:
             QMessageBox.warning(self, "Assinatura manuscrita", "Defina uma posição válida na página.")
+            return
+        try:
+            self.qr_options.values()
+        except ValueError as exc:
+            QMessageBox.warning(self, "Posição do QR", str(exc))
             return
         self.accept()
 

@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QHBoxLayout, QScrollArea
 )
 from PyQt6.QtGui import QPixmap
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QEvent, pyqtSignal
 
 
 class PreviewWidget(QWidget):
@@ -11,6 +11,8 @@ class PreviewWidget(QWidget):
     Widget de preview grande com zoom.
     Reutilizável por PDF e Scanner.
     """
+
+    page_double_clicked = pyqtSignal(float, float)
 
     def __init__(self):
         super().__init__()
@@ -26,6 +28,7 @@ class PreviewWidget(QWidget):
         self.scroll.setWidgetResizable(True)
 
         self.image_label = QLabel()
+        self.image_label.installEventFilter(self)
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.scroll.setWidget(self.image_label)
 
@@ -83,3 +86,16 @@ class PreviewWidget(QWidget):
             Qt.TransformationMode.SmoothTransformation
         )
         self.image_label.setPixmap(scaled)
+
+    def eventFilter(self, watched, event):
+        if watched is self.image_label and event.type() == QEvent.Type.MouseButtonDblClick:
+            pixmap = self.image_label.pixmap()
+            if pixmap is not None and not pixmap.isNull():
+                left = (self.image_label.width() - pixmap.width()) / 2
+                top = (self.image_label.height() - pixmap.height()) / 2
+                x = (event.position().x() - left) / pixmap.width()
+                y = (event.position().y() - top) / pixmap.height()
+                if 0 <= x <= 1 and 0 <= y <= 1:
+                    self.page_double_clicked.emit(x, y)
+                    return True
+        return super().eventFilter(watched, event)
