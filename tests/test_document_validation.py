@@ -582,6 +582,7 @@ def test_adjacent_qr_does_not_overlap_signature_or_leave_page():
     assert adjacent_qr((595,842),(40,600,240,670)) == (40,678,130,768)
     # Below is unavailable: side placement is accepted only when its label fits.
     assert adjacent_qr((595,842),(40,680,240,750)) == (248,680,338,770)
+    assert adjacent_qr((595,842),(40,732,240,802)) == (248,725,338,815)
     with pytest.raises(ValueError):
         adjacent_qr((200,200),(0,0,200,200))
 
@@ -642,3 +643,21 @@ def test_qr_selection_follows_signature_and_manual_drag_is_independent():
         assert options.values()['qr_rect'] == manual
     finally:
         placement.close(); options.close()
+
+
+def test_qr_preview_can_move_without_visible_a1_stamp(tmp_path):
+    from test_handwritten_signature import _app
+    from PyQt6.QtGui import QPixmap
+    from PyQt6.QtCore import Qt
+    from app.views.pdf_signature_dialog import PDFSignatureDialog
+    _app()
+    pixmap = QPixmap(595,842); pixmap.fill(Qt.GlobalColor.white)
+    dialog = PDFSignatureDialog(tmp_path/'input.pdf',1,preview=pixmap)
+    try:
+        assert not dialog.visible_check.isChecked()
+        dialog.qr_options.visible.setChecked(True)
+        assert dialog.placement.isEnabled()
+        assert dialog.qr_options.values()['qr_rect'] == (248,725,338,815)
+        assert dialog.qr_overlay.isEnabled()
+    finally:
+        dialog.close()

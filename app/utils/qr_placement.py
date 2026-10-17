@@ -2,7 +2,7 @@
 def adjacent_qr(page_size, signature, size=90.0, side="below", caption=0.0):
     width, height = page_size
     x0, y0, x1, y1 = signature
-    candidates = [(x0, y1 + caption + 8), (x1 + 8, y0)]
+    candidates = [(x0, y1 + caption + 8), (x1 + 8, min(y0, height - size - 27))]
     if side == "right":
         candidates.reverse()
     for x, y in candidates:

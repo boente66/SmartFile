@@ -65,6 +65,8 @@ class PDFSignatureDialog(QDialog):
         form.addRow("Saída:", output_row)
         form_container.addLayout(form)
         self.qr_options = SignatureQrOptions(page_count)
+        self.qr_options.visible.toggled.connect(
+            lambda enabled: self.placement.setEnabled(enabled or self.visible_check.isChecked()))
         form_container.addWidget(self.qr_options)
         govbr = QPushButton("Abrir assinador Gov.br")
         govbr.setToolTip("Assine no portal oficial e abra o PDF baixado no SmartFile para validar. Nenhum documento é enviado automaticamente.")
@@ -122,7 +124,7 @@ class PDFSignatureDialog(QDialog):
     def _update_visible_fields(self, visible: bool):
         self.page_spin.setEnabled(visible)
         for spin in self.coordinates: spin.setEnabled(visible)
-        self.placement.setEnabled(visible)
+        self.placement.setEnabled(visible or self.qr_options.visible.isChecked())
 
     def _set_coordinates(self, x1, y1, x2, y2):
         for spin, value in zip(self.coordinates, (x1, y1, x2, y2)):
